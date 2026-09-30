@@ -196,6 +196,7 @@ def AvxRegOrMem.toStrSimd {w} (memBytes? : Option Nat) (rm : AvxRegOrMem w) (add
   match rm, memBytes? with
   | .avx r, some _ => ToString.toString (r.as .W128)
   | .avx r, none => ToString.toString r
+  | .mem a, some 1 => "BYTE PTR " ++ a.toStr addr_w
   | .mem a, some 2 => "WORD PTR " ++ a.toStr addr_w
   | .mem a, some 4 => "DWORD PTR " ++ a.toStr addr_w
   | .mem a, some 8 => "QWORD PTR " ++ a.toStr addr_w

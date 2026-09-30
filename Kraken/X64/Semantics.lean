@@ -341,6 +341,7 @@ def AvxRegOrMem.interpSimd {w} [Labels] [AddressSize]
   (ret : w.type → MachineData → Effects) : Effects :=
   let addr (a : AddrExpr) := (a.interp s.regs p).zeroExtend 64
   match o, bytes? with
+  | .mem a, some 1 => s.load (addr a) .W8 (fun v s => ret (v.zeroExtend _) s)
   | .mem a, some 2 => s.load (addr a) .W16 (fun v s => ret (v.zeroExtend _) s)
   | .mem a, some 4 => s.load (addr a) .W32 (fun v s => ret (v.zeroExtend _) s)
   | .mem a, some 8 => s.load (addr a) .W64 (fun v s => ret (v.zeroExtend _) s)
