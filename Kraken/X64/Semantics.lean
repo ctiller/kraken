@@ -473,6 +473,11 @@ def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
     zf := result == BitVec.zero _
     sf := result.msb, cf := f.cf, af := f.af, of := f.of, df := f.df }
 
+def runStringOp (loop : Nat → MachineData → Effects) (rep : RepPrefix) (s : MachineData) (next : MachineData → Effects) : Effects :=
+  match rep with
+  | .none => loop 1 s
+  | _ => if s.regs.get64 .rcx == 0 then next s else loop 1000000 s
+
 def movsLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Nat → MachineData → Effects
   | 0, _ => .unimplemented "rep count exceeded limit"
   | fuel + 1, s =>
@@ -732,36 +737,11 @@ def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Na
     next { s with status }
   | .cld => next { s with status := { s.status with df := false } }
   | .std => next { s with status := { s.status with df := true } }
-  | .movs rep =>
-    match rep with
-    | .none => movsLoop w rep next 1 s
-    | _ =>
-      if s.regs.get64 .rcx == 0 then next s
-      else movsLoop w rep next 1000000 s
-  | .stos rep =>
-    match rep with
-    | .none => stosLoop w rep next 1 s
-    | _ =>
-      if s.regs.get64 .rcx == 0 then next s
-      else stosLoop w rep next 1000000 s
-  | .lods rep =>
-    match rep with
-    | .none => lodsLoop w rep next 1 s
-    | _ =>
-      if s.regs.get64 .rcx == 0 then next s
-      else lodsLoop w rep next 1000000 s
-  | .cmps rep =>
-    match rep with
-    | .none => cmpsLoop w rep next 1 s
-    | _ =>
-      if s.regs.get64 .rcx == 0 then next s
-      else cmpsLoop w rep next 1000000 s
-  | .scas rep =>
-    match rep with
-    | .none => scasLoop w rep next 1 s
-    | _ =>
-      if s.regs.get64 .rcx == 0 then next s
-      else scasLoop w rep next 1000000 s
+  | .movs rep => runStringOp (movsLoop w rep next) rep s next
+  | .stos rep => runStringOp (stosLoop w rep next) rep s next
+  | .lods rep => runStringOp (lodsLoop w rep next) rep s next
+  | .cmps rep => runStringOp (cmpsLoop w rep next) rep s next
+  | .scas rep => runStringOp (scasLoop w rep next) rep s next
 -- Arithmetic
   | .lea dst src => next (s.setReg dst ((src.interp s.regs p).zeroExtend _))
   | .add dst src =>

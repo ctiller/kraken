@@ -16,7 +16,7 @@ Mnemonics carry a width suffix whenever the operands may not determine the width
 -/
 namespace Kraken.X64.ATT
 
-def suffix : Width → String | .W8 => "b" | .W16 => "w" | .W32 => "l" | .W64 => "q"
+def suffix (w : Width) : String := w.attSuffix
 
 def reg {w} (r : Reg w) : String := "%" ++ r.toStr
 
@@ -106,21 +106,11 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .sahf => "sahf"
   | .cld => "cld"
   | .std => "std"
-  | .movs rep =>
-    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
-    s!"{pfx}movs{s}"
-  | .stos rep =>
-    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
-    s!"{pfx}stos{s}"
-  | .lods rep =>
-    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
-    s!"{pfx}lods{s}"
-  | .cmps rep =>
-    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
-    s!"{pfx}cmps{s}"
-  | .scas rep =>
-    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
-    s!"{pfx}scas{s}"
+  | .movs rep => s!"{rep.toStrPrefix}movs{s}"
+  | .stos rep => s!"{rep.toStrPrefix}stos{s}"
+  | .lods rep => s!"{rep.toStrPrefix}lods{s}"
+  | .cmps rep => s!"{rep.toStrPrefix}cmps{s}"
+  | .scas rep => s!"{rep.toStrPrefix}scas{s}"
   | .lea d a => s!"lea {addr aw a}, {reg d}"
   | .add d x => two "add" (operand aw x) (rm aw d)
   | .adc d x => two "adc" (operand aw x) (rm aw d)

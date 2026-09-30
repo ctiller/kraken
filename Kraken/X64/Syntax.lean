@@ -33,6 +33,7 @@ namespace Width
   | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
 @[simp, reducible] def ofBytes : Nat → Width
   | 1 => .W8 | 2 => .W16 | 4 => .W32 | _ => .W64
+@[simp, reducible] def attSuffix : Width → String | .W8 => "b" | .W16 => "w" | .W32 => "l" | .W64 => "q"
 @[kstep] abbrev bytesv (w : Width) {n} : BitVec n := BitVec.ofNat n w.bytes
 @[kstep] abbrev type (w : Width) : Type := BitVec w.bits
 instance {w : Width} : Coe Bool w.type where coe := fun b : Bool => BitVec.ofNat _ b.toNat
@@ -222,6 +223,12 @@ inductive RelRegOrMem | rel (_ : ConstExpr) | reg (r : Reg .W64) | mem (_ : Addr
 
 inductive RepPrefix | none | rep | repe | repne
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+
+def RepPrefix.toStrPrefix : RepPrefix → String
+  | .none => ""
+  | .rep => "rep "
+  | .repe => "repe "
+  | .repne => "repne "
 
 inductive Operation (w : Width)
   -- Data movement
