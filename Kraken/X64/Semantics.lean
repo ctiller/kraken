@@ -386,9 +386,7 @@ match d with
 
 def MachineData.storeScalar [Labels] [AddressSize] {w : AvxWidth} (s : MachineData) (addr : BitVec 64) (op : SimdScalarMov)
   (v : w.type) (next : MachineData → Effects) : Effects :=
-  match op with
-  | .movss => s.store addr (v.take 32) next
-  | .movsd => s.store addr (v.take 64) next
+  s.store addr (w := .ofBytes op.bytes) (v.take _) next
 
 @[kstep] def Operand.interp {w} [Labels] [AddressSize]
   (o : Operand w) (s : MachineData) (p : Std.Rco Int64)
@@ -1059,18 +1057,16 @@ match i with
       let sval := (s.zmms.get s_reg).take 128
       let v := dval.replaceLow (sval.take (op.bytes * 8))
       next (s.setAvxLegacyReg d (v.zeroExtend _))
-    | .avx d, .mem a =>
-      let addr := (a.interp s.regs p).zeroExtend 64
-      s.load addr (.ofBytes op.bytes) (fun v s =>
-        next (s.setAvxLegacyReg d (v.zeroExtend _)))
+    | .avx d, .mem _ =>
+      src.interpSimd (some op.bytes) s p (legacy := true) (fun v s =>
+        next (s.setAvxLegacyReg d v))
     | .mem a, .avx s_reg =>
       s.storeScalar ((a.interp s.regs p).zeroExtend 64) op (s.zmms.get s_reg) next
     | _, _ => next s
   | .vexMovs op dst src => match dst, src with
-    | .avx d, .mem a =>
-      let addr := (a.interp s.regs p).zeroExtend 64
-      s.load addr (.ofBytes op.bytes) (fun v s =>
-        next (s.setAvxReg d (v.zeroExtend _)))
+    | .avx d, .mem _ =>
+      src.interpSimd (some op.bytes) s p (legacy := false) (fun v s =>
+        next (s.setAvxReg d v))
     | .mem a, .avx s_reg =>
       s.storeScalar ((a.interp s.regs p).zeroExtend 64) op (s.zmms.get s_reg) next
     | _, _ => next s
