@@ -22,5 +22,5 @@ def SimdShiftOp.interp {n} : SimdShiftOp → BitVec n → Nat → BitVec n
   | .psrld, a, c => a.map1 32 (· >>> c) | .psrlq, a, c => a.map1 64 (· >>> c)
   | .psraw, a, c => a.map1 16 (·.sshiftRight c) | .psrad, a, c => a.map1 32 (·.sshiftRight c)
   -- Byte shifts of each 128-bit lane.
-  | .pslldq, a, c => a.map1 128 (· <<< (min c 16 * 8))
-  | .psrldq, a, c => a.map1 128 (· >>> (min c 16 * 8))
+  | .pslldq, a, c => a.map1 128 (· <<< (c * 8))
+  | .psrldq, a, c => a.map1 128 (· >>> (c * 8))

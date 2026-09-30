@@ -88,8 +88,8 @@ def SimdInt.interp : SimdInt → BitVec 128 → BitVec 128 → BitVec 128
   | .phsubw => .hop 16 (· - ·)
   | .phsubd => .hop 32 (· - ·)
   | .phsubsw => .hop 16 fun a b => .satS 16 (a.toInt - b.toInt)
-  | .psllvd => .map2 32 fun a b => if b.toNat ≥ 32 then 0#32 else a <<< b.toNat
-  | .psllvq => .map2 64 fun a b => if b.toNat ≥ 64 then 0#64 else a <<< b.toNat
-  | .psrlvd => .map2 32 fun a b => if b.toNat ≥ 32 then 0#32 else a >>> b.toNat
-  | .psrlvq => .map2 64 fun a b => if b.toNat ≥ 64 then 0#64 else a >>> b.toNat
-  | .psravd => .map2 32 fun a b => a.sshiftRight (min b.toNat 32)
+  | .psllvd => .map2 32 fun a b => a <<< min b.toNat 32
+  | .psllvq => .map2 64 fun a b => a <<< min b.toNat 64
+  | .psrlvd => .map2 32 fun a b => a >>> b.toNat
+  | .psrlvq => .map2 64 fun a b => a >>> b.toNat
+  | .psravd => .map2 32 fun a b => a.sshiftRight b.toNat
