@@ -443,6 +443,20 @@ def cpopNatRec_ {w} (x : BitVec w) (pos acc : Nat) : Nat :=
 def cpop_ {w} (x : BitVec w) : BitVec w := BitVec.ofNat w (cpopNatRec_ x w 0)
 end BitVec
 
+def crc32cStep (crc : BitVec 32) (b : BitVec 8) : BitVec 32 :=
+  let poly : BitVec 32 := 0x82F63B78#32
+  (List.range 8).foldl (fun c _ =>
+    if c.getLsbD 0 then (c >>> 1) ^^^ poly else c >>> 1
+  ) (crc ^^^ b.zeroExtend 32)
+
+def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
+  match w with
+  | .W16 => (v.extractLsb' 0 8 ++ v.extractLsb' 8 8).setWidth _
+  | .W32 => (v.take 8 ++ v.extractLsb' 8 8 ++ v.extractLsb' 16 8 ++ v.drop 24).setWidth _
+  | .W64 => (v.take 8 ++ v.extractLsb' 8 8 ++ v.extractLsb' 16 8 ++ v.extractLsb' 24 8
+          ++ v.extractLsb' 32 8 ++ v.extractLsb' 40 8 ++ v.extractLsb' 48 8 ++ v.drop 56).setWidth _
+  | .W8 => v
+
 @[kstep] def StatusFlags.from_result {w} (result : BitVec w) (f : from_result.Remaining) : StatusFlags :=
   { pf := (result.take 8).cpop_ % 2 == BitVec.zero _
     zf := result == BitVec.zero _
@@ -825,6 +839,28 @@ set_option maxHeartbeats 1000000
             ++ a.extractLsb' 32 8 ++ a.extractLsb' 40 8 ++ a.extractLsb' 48 8 ++ a.drop 56
       next (s.setReg dst (v.setWidth _))
     | _ => undefined (fun v => next (s.setReg dst v))
+  | .movbe dst src =>
+    match dst, src with
+    | .reg d, .mem _ =>
+      src.interp s p (fun v s =>
+        next (s.setReg d (byteSwap v)))
+    | .mem _, .reg s_reg =>
+      let v := s.regs.get s_reg
+      s.set dst (byteSwap v) p next
+    | _, _ => Effects.fault "movbe requires one memory and one register operand"
+  | .crc32 (w' := w') dst src =>
+    src.interp s p (fun src_val s =>
+      let acc := (s.regs.get dst).take 32
+      let n_bytes := w'.bytes
+      let res32 := (List.range n_bytes).foldl (fun c i =>
+        crc32cStep c (src_val.extractLsb' (i * 8) 8)
+      ) acc
+      next (s.setReg dst (res32.zeroExtend _)))
+  | .rorx dst src cnt =>
+    src.interp s p (fun a s =>
+      let count := (cnt.interp p).toInt.emod w.bits |>.toNat
+      let res := a.rotateRight count
+      next (s.setReg dst res))
   | .un op dst src =>
     src.interp s p (fun a s =>
     let (r, f) := op.interp a

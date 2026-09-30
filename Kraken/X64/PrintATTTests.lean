@@ -56,6 +56,11 @@ def corpus : List String := [
   "shrw $2, %ax", "sarl %cl, %eax", "shldq $4, %rax, %rbx", "shrd %cl, %ax, (%rsp)",
   "rolq $1, %rax", "rorb %cl, %al", "rclq $1, %rax", "rcrl %cl, (%rsp)",
   "bswap %eax", "bswapq %rax",
+  "movbew (%rsp), %ax", "movbel (%rsp), %eax", "movbeq (%rsp), %rax",
+  "movbew %ax, (%rsp)", "movbel %eax, (%rsp)", "movbeq %rax, (%rsp)",
+  "crc32b (%rsp), %eax", "crc32w (%rsp), %eax", "crc32l (%rsp), %eax", "crc32b (%rsp), %rax", "crc32q (%rsp), %rax",
+  "crc32b %bl, %eax", "crc32w %bx, %eax", "crc32l %ebx, %eax", "crc32b %bl, %rax", "crc32q %rbx, %rax",
+  "rorxl $5, (%rsp), %eax", "rorxq $13, (%rsp), %rax", "rorxl $7, %ebx, %eax", "rorxq $63, %rbx, %rax",
   -- control flow
   "foo:\n  jmp foo", "je foo", "jne .L1", "jb foo", "jae foo", "ja foo", "jbe foo",
   "jl foo", "jle foo", "call foo", "call %rax", "jmp %rax",

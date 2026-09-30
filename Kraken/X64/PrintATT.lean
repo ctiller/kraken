@@ -139,6 +139,9 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .rcl d c => two "rcl" (count c) (rm aw d)
   | .rcr d c => two "rcr" (count c) (rm aw d)
   | .bswap d => s!"bswap {reg d}"
+  | .movbe d x => two "movbe" (rm aw x) (rm aw d)
+  | .crc32 (w' := w') d x => s!"crc32{suffix w'} {rm aw x}, {reg d}"
+  | .rorx d x c => s!"rorx{s} ${const c}, {rm aw x}, {reg d}"
   | .un op d x => s!"{Mnemonic.name op} {rm aw x}, {reg d}"
   | .bin op d a b =>
     if op.src2First then s!"{Mnemonic.name op} {rm aw b}, {reg a}, {reg d}"

@@ -596,6 +596,22 @@ def parseXchg (op_w : Option Width) : Parser Instr := do
   | dst, .reg r => pure (toInstr addr_w (.xchg dst r))
   | .mem _, .mem _ => fail "xchg cannot have two memory operands"
 
+def parseMovbe (op_w : Option Width) : Parser Instr := do
+  let (addr_w, ⟨_w, a, b⟩) ← match op_w with
+    | some w =>
+      let (addr_w1, a) ← parseAO parseRegOrMem w
+      parseComma
+      let (addr_w2, b) ← parseAO parseRegOrMem w
+      let addr_w ← mergeAddrWidths addr_w1 addr_w2
+      pure (addr_w, ⟨w, a, b⟩)
+    | none =>
+      let a ← parseRegOrMem; parseComma
+      ascribeOrInfer a parseRegOrMem
+  match a, b with
+  | .mem a, .reg r => pure (toInstr addr_w (.movbe (.reg r) (.mem a)))
+  | .reg r, .mem a => pure (toInstr addr_w (.movbe (.mem a) (.reg r)))
+  | _, _ => fail "movbe requires one register and one memory operand"
+
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
 def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
   (Mnemonic.ofName? mn).map (·, none) <|> do
@@ -1193,6 +1209,39 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
       fail "inconsistency in {mn}"
     else
       pure (toInstr .none (.bswap dst))
+
+  | "movbe" =>
+    parseMovbe .none
+
+  | "movbeq" | "movbel" | "movbew" =>
+    let w ← instrWidth mn
+    parseMovbe (some w)
+
+  | "crc32" =>
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨w_dst, dst⟩ ← parseRegW
+    let src : RegOrMem w_dst ← ascribe w_dst src
+    pure (toInstr addr_w (.crc32 dst src))
+
+  | "crc32q" | "crc32l" | "crc32w" | "crc32b" =>
+    let w_src ← instrWidth mn
+    let (addr_w, src) ← parseRegOrMemAO w_src; parseComma
+    let ⟨_w_dst, dst⟩ ← parseRegW
+    pure (toInstr addr_w (.crc32 dst src))
+
+  | "rorx" =>
+    let cnt ← parseImmComma
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨w, dst⟩ ← parseRegW
+    let src ← ascribe w src
+    pure (toInstr addr_w (.rorx dst src cnt))
+
+  | "rorxq" | "rorxl" =>
+    let w ← instrWidth mn
+    let cnt ← parseImmComma
+    let (addr_w, src) ← parseRegOrMemAO w; parseComma
+    let dst ← parseRegO w
+    pure (toInstr addr_w (.rorx dst src cnt))
 
   -- Stack operations
   | "push" =>
