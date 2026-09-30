@@ -1,4 +1,3 @@
-# Undefined flags: cf, pf, af, zf, sf, of
 # Test parse gaps: movzbl/movswq/movslq from stack memory, nops, hints
 
 # Setup test values on the stack

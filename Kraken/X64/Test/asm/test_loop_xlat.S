@@ -1,5 +1,4 @@
 # Test: xlat/xlatb, jrcxz/jecxz, loop/loope/loopz/loopne/loopnz
-# Undefined flags: af, cf, sf, zf, pf, of
 
   # ---------------------------------------------------------------------------
   # 1. Test xlat / xlatb
