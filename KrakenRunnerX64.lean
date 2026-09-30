@@ -227,19 +227,21 @@ set_option maxHeartbeats 4000000 in
 def genPool (n : Nat) : StateM StdGen (Array String) :=
   (Array.range n).filterMapM fun _ => (Kraken.X64.ATT.instr <$> gen).run
 
--- Loads a random 64-bit value into a register other than rsp.
+-- Initializes a register other than rsp.
 def genSeed : GenM String := do
   let r ← gen; guard (r != Reg64.rsp)
   let r := Kraken.X64.ATT.reg (.low r .W64)
-  if ← pick #[false, false, false, true] then
-    let off ← nextNat (stackSize - 300)
-    return s!"leaq -{off + 300}(%rsp), {r}"
   let movabs : GenM String := do return s!"movabsq ${← nextNat (2 ^ 64)}, {r}"
-  if ← pick #[true, false] then return ← movabs
-  -- Also fill one of ymm0-15 with four distinct random qwords via the stack; they start zeroed,
-  -- so vector ops would otherwise see only zeros (or identical lanes).
-  let qs ← [32, 24, 16, 8].mapM fun o => do return s!"{← movabs}\nmovq {r}, -{o}(%rsp)"
-  return "\n".intercalate qs ++ s!"\nvmovdqu -32(%rsp), %ymm{← nextNat 16}"
+  oneOf #[movabs,
+    -- An address in the stack mapping, for memory operands.
+    do return s!"leaq -{(← nextNat (stackSize - 300)) + 300}(%rsp), {r}",
+    -- A small count (for rep, loop, and shifts by %cl).
+    do return s!"movq ${← nextNat 16}, {r}",
+    -- A random value that is also spread over one of ymm0-15 as four distinct qwords via the
+    -- stack; they start zeroed, so vector ops would otherwise see only zeros.
+    do
+      let qs ← [32, 24, 16, 8].mapM fun o => do return s!"{← movabs}\nmovq {r}, -{o}(%rsp)"
+      return "\n".intercalate qs ++ s!"\nvmovdqu -32(%rsp), %ymm{← nextNat 16}"]
 
 -- Four random register initializations (`genSeed`) followed by `length` instructions from `pool`, each drawn
 -- until `stepDeterministic` accepts one. A final `add` makes all flags defined.
@@ -259,7 +261,9 @@ public def main (args : List String) : IO UInt32 := do
   | "--generate" :: seed :: count :: length :: only =>
     -- Draw more candidates when only instructions starting with one of `only` are wanted.
     let (pool, g) := (genPool (if only.isEmpty then 5000 else 200000)).run (mkStdGen seed.toNat!)
-    let pool ← assemblable (pool.filter fun l => only.isEmpty || only.any fun o => l.startsWith o)
+    -- Deduplicated, so that forms with few operand choices (e.g. `vzeroall`) don't dominate.
+    let pool := (pool.filter fun l => only.isEmpty || only.any fun o => l.startsWith o).qsort (· < ·)
+    let pool ← assemblable pool.toList.eraseReps.toArray
     let gen := (List.range count.toNat!).mapM fun _ => genSequence pool length.toNat!
     IO.println (toJson (gen.run' g).run).compress
     return 0
