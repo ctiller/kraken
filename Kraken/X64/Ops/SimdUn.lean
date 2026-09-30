@@ -37,7 +37,6 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .pabsw => .map1 16 fun x => if x.msb then -x else x
   | .pabsd => .map1 32 fun x => if x.msb then -x else x
   | .pmovzxbw => fun a => .ofLanes n 16 fun i => (a.lane 8 i).zeroExtend 16
-  | .aesimc => fun a => .ofLanes n 128 fun i => aesInvMixColumns (a.lane 128 i)
   | .pmovzxbd => fun a => .ofLanes n 32 fun i => (a.lane 8 i).zeroExtend 32
   | .pmovzxbq => fun a => .ofLanes n 64 fun i => (a.lane 8 i).zeroExtend 64
   | .pmovzxwd => fun a => .ofLanes n 32 fun i => (a.lane 16 i).zeroExtend 32
@@ -64,12 +63,9 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .cvttpd2dq => fun a => .ofLanes n 32 fun i => if i < n / 64 then FpFmt.f64.toInt 32 3 (a.lane 64 i) else 0
   | .cvtph2ps => fun a => .ofLanes n 32 fun i => f16ToF32 (a.lane 16 i)
   | .phminposuw => fun a =>
-    let words := List.range 8 |>.map fun i => (i, (a.lane 16 i).toNat)
-    let (minIdx, minVal) := words.foldl (fun (bestIdx, bestVal) (idx, val) =>
-      if val < bestVal then (idx, val) else (bestIdx, bestVal)
-    ) (0, 0x10000)
-    let res19 := (BitVec.ofNat 3 minIdx) ++ (BitVec.ofNat 16 minVal)
-    res19.zeroExtend n
+    let best := (List.range 8).foldl (fun m i => min m ((a.lane 16 i).toNat * 8 + i)) (0x10000 * 8)
+    (BitVec.ofNat 3 (best % 8) ++ BitVec.ofNat 16 (best / 8)).zeroExtend n
+  | .aesimc => fun a => .ofLanes n 128 fun i => aesInvMixColumns (a.lane 128 i)
   | .pbroadcastb => fun a => .ofLanes n 8 fun _ => a.lane 8 0
   | .pbroadcastw => fun a => .ofLanes n 16 fun _ => a.lane 16 0
   | .pbroadcastd | .broadcastss => fun a => .ofLanes n 32 fun _ => a.lane 32 0
