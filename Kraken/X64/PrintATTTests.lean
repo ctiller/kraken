@@ -41,6 +41,8 @@ def corpus : List String := [
   "mulq %rbx", "mulb (%rsp)", "mulx %rax, %rbx, %rcx", "mulxl (%rsp), %eax, %ebx",
   "imulq %rbx", "imulw %ax, %bx", "imulq (%rsp), %rbx", "imulq $3, %rax, %rbx",
   "imull $-3, (%rsp), %eax",
+  "divq %rbx", "divb (%rsp)", "idivq %rbx", "idivw (%rsp)",
+  "cbtw", "cwtl", "cltq", "cwtd", "cltd", "cqto",
   -- bitwise
   "testq $1, %rax", "testb %al, (%rsp)", "andq %rax, %rbx", "notq %rax",
   "orw $5, %ax", "xorl %eax, %eax",

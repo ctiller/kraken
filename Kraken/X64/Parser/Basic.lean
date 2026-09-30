@@ -725,6 +725,44 @@ def parseInstr : Parser Instr := do
       let (addr_w, src) ← parseRegOrMemAO w
       pure (toInstr addr_w (.imul1 src))
     )
+
+  | "div" =>
+    let ( addr_w, src ) ← parseRegOrMem
+    let ⟨ _w, src ⟩ ← assertW src
+    pure (toInstr addr_w (.div src))
+
+  | "divq" | "divl" | "divw" | "divb" =>
+    let w ← instrWidth mn
+    let ( addr_w, src ) ← parseRegOrMemAO w
+    pure (toInstr addr_w (.div src))
+
+  | "idiv" =>
+    let ( addr_w, src ) ← parseRegOrMem
+    let ⟨ _w, src ⟩ ← assertW src
+    pure (toInstr addr_w (.idiv src))
+
+  | "idivq" | "idivl" | "idivw" | "idivb" =>
+    let w ← instrWidth mn
+    let ( addr_w, src ) ← parseRegOrMemAO w
+    pure (toInstr addr_w (.idiv src))
+
+  | "cbtw" | "cbw" =>
+    pure (toInstr .none (w := .W16) .cbw)
+
+  | "cwtl" | "cwde" =>
+    pure (toInstr .none (w := .W32) .cbw)
+
+  | "cltq" | "cdqe" =>
+    pure (toInstr .none (w := .W64) .cbw)
+
+  | "cwtd" | "cwd" =>
+    pure (toInstr .none (w := .W16) .cwd)
+
+  | "cltd" | "cdq" =>
+    pure (toInstr .none (w := .W32) .cwd)
+
+  | "cqto" | "cqo" =>
+    pure (toInstr .none (w := .W64) .cwd)
   | "neg" =>
     let ( addr_w, dst) ← parseRegOrMem
     let ⟨ _w, dst ⟩ ← assertW dst
