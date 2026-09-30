@@ -598,6 +598,17 @@ def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) 
   let ⟨w, dst⟩ ← parseAvxRegW
   pure (addr_w, ⟨w, ← ascribeAvx w src, dst⟩)
 
+/-- `src, %dst` where the source has `memBytes? dst.bytes` bytes if that is `some`; a register
+source is then named at 128 bits (`%xmm`) whatever the destination width. -/
+def parseAvxNarrowSrcDst (memBytes? : Nat → Option Nat) :
+    Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
+  let (addr_w, src) ← parseAvxRegOrMem; parseComma
+  let ⟨w, dst⟩ ← parseAvxRegW
+  match src, memBytes? w.bytes with
+  | ⟨some .W128, .avx r⟩, some _ => pure (addr_w, ⟨w, .avx (r.as w), dst⟩)
+  | ⟨some _, _⟩, some _ => fail "expected an xmm register or memory"
+  | _, _ => pure (addr_w, ⟨w, ← ascribeAvx w src, dst⟩)
+
 /-- `src2, %src1, %dst` with AVX operands. -/
 def parseAvxSrc2Src1Dst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w × AvxReg w) := do
   let (addr_w, src2) ← parseAvxRegOrMem; parseComma
@@ -653,10 +664,10 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
     let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
     pure (toAvxInstr addr_w (.vex op dst src1 src2))
   else if let some op := Mnemonic.ofName? (α := SimdUnOp) mn then some do
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
     pure (toAvxInstr addr_w (.sseUn op dst src))
   else if let some op := Mnemonic.ofName? (α := SimdUnOp) v then some do
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
     pure (toAvxInstr addr_w (.vexUn op dst src))
   else if let some op := Mnemonic.ofName? (α := SimdUnImmOp) mn then some do
     let imm ← parseImmComma

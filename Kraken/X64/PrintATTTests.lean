@@ -88,7 +88,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
     if op.src2First then s!"{mn} 8(%rsp), %ebx, %ecx" else s!"{mn} %ebx, 8(%rsp), %ecx"]) ++
   failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++
   failing SimdMov (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"]) ++
-  failing SimdUnOp (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"v{mn} %ymm3, %ymm4"]) ++
+  failing SimdUnOp (fun op mn => [s!"{mn} (%rsp), %xmm1",
+    s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else "y"}mm3, %ymm4"]) ++
   failing SimdUnImmOp (fun _ mn => [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $255, %ymm3, %ymm4"]) ++
   failing SimdBinImmOp (fun _ mn => [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $2, %ymm2, %ymm3, %ymm4"]) ++
   failing SimdShiftOp (fun _ mn => [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++

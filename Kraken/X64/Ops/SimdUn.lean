@@ -12,6 +12,7 @@ meta import Lean.Elab.Deriving.ToExpr
 
 inductive SimdUnOp
   | pabsb | pabsw | pabsd
+  | pmovzxbw
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic SimdUnOp := ⟨mnemonics% SimdUnOp⟩
@@ -20,8 +21,10 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .pabsb => .map1 8 fun x => if x.msb then -x else x
   | .pabsw => .map1 16 fun x => if x.msb then -x else x
   | .pabsd => .map1 32 fun x => if x.msb then -x else x
+  | .pmovzxbw => fun a => .ofLanes n 16 fun i => (a.lane 8 i).zeroExtend 16
 
 /-- The size in bytes of a memory operand for a vector of `bytes` bytes, if smaller (e.g. for
 widening conversions). -/
 def SimdUnOp.memBytes? : SimdUnOp → Nat → Option Nat
   | .pabsb, _ | .pabsw, _ | .pabsd, _ => none
+  | .pmovzxbw, bytes => some (bytes / 2)

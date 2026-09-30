@@ -92,6 +92,11 @@ inductive AvxReg : AvxWidth → Type
   | zmm (_ : RegMm) : AvxReg AvxWidth.W512
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
+/-- The same register at width `w'` (e.g. the `%xmm` part of a `%ymm` register). -/
+def AvxReg.as {w} (w' : AvxWidth) (r : AvxReg w) : AvxReg w' :=
+  let n := match r with | .xmm n | .ymm n | .zmm n => n
+  match w' with | .W128 => .xmm n | .W256 => .ymm n | .W512 => .zmm n
+
 abbrev Label := String
 
 inductive ConstExpr

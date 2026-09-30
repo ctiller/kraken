@@ -49,6 +49,12 @@ def avxRm {w} (aw : Width) : AvxRegOrMem w → String
   | .avx r => avxReg r
   | .mem a => addr aw a
 
+/-- A source operand of `bytes?` bytes if `some` (narrower than the vector): a register is then
+named at 128 bits. -/
+def avxSrc {w} (aw : Width) (bytes? : Option Nat) : AvxRegOrMem w → String
+  | .avx r => if bytes?.isSome then avxReg (r.as .W128) else avxReg r
+  | .mem a => addr aw a
+
 def operand {w} (aw : Width) : Operand w → String
   | .regOrMem x => rm aw x
   | .imm (.label l) => l
@@ -151,8 +157,8 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vmov op d x => two s!"v{Mnemonic.name op}" d x
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
-  | .sseUn op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
-  | .vexUn op d x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
+  | .sseUn op d x => s!"{Mnemonic.name op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
+  | .vexUn op d x => s!"v{Mnemonic.name op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
   | .sseUnImm op d x i | .sseImm op d x i =>
     s!"{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
   | .vexUnImm op d x i => s!"v{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
