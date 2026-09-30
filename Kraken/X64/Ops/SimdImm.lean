@@ -144,12 +144,13 @@ def f64cmpPred (pred : Nat) (a b : BitVec 64) : BitVec 64 :=
   let eq := !unord && fa == fb
   if fpPredicateMatch pred lt eq unord then 0xffffffffffffffff#64 else 0#64
 
-def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) (legacy : Bool := false) : BitVec n :=
+def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) (legacy : Bool := false)
+    (memSrc : Bool := false) : BitVec n :=
   match op with
   | .shufps => .ofLanes n 32 fun i =>
     (if i % 4 < 2 then a else b).pick4 32 i (imm >>> (i % 4 * 2)).toNat
   | .shufpd => .ofLanes n 64 fun i =>
-    (if i % 2 == 0 then a else b).lane 64 (i / 2 * 2 + (imm >>> (i % 2)).toNat % 2)
+    (if i % 2 == 0 then a else b).lane 64 (i / 2 * 2 + (imm >>> i).toNat % 2)
   | .palignr => .ofLanes n 128 fun laneIdx =>
     let a128 := a.lane 128 laneIdx
     let b128 := b.lane 128 laneIdx
@@ -173,8 +174,8 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
   | .mpsadbw => .ofLanes n 128 fun laneIdx =>
     let a128 := a.lane 128 laneIdx
     let b128 := b.lane 128 laneIdx
-    let s1_off := if (imm.toNat >>> (laneIdx * 4 + 2)) &&& 1 == 1 then 4 else 0
-    let s2_off := ((imm.toNat >>> (laneIdx * 4)) &&& 3) * 4
+    let s1_off := if (imm.toNat >>> (laneIdx * 3 + 2)) &&& 1 == 1 then 4 else 0
+    let s2_off := ((imm.toNat >>> (laneIdx * 3)) &&& 3) * 4
     .ofLanes 128 16 fun i =>
       let sum := (List.range 4).foldl (fun acc j =>
         let b1 := (a128.lane 8 (s1_off + i + j)).toNat
@@ -199,7 +200,8 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
     .ofLanes 128 64 fun i =>
       if (imm >>> i).getLsbD 0 then sum else 0#64
   | .insertps =>
-    let src_idx := (imm.toNat >>> 6) &&& 3
+    -- A memory source is the dword itself (in lane 0): COUNT_S is ignored.
+    let src_idx := if memSrc then 0 else (imm.toNat >>> 6) &&& 3
     let dst_idx := (imm.toNat >>> 4) &&& 3
     let zmask := imm.toNat &&& 0xf
     let val := b.lane 32 src_idx

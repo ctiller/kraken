@@ -39,7 +39,7 @@ def GprBinOp.interp {n} : GprBinOp → BitVec n → BitVec n → BitVec n × Fla
     let shifted := b.ushiftRight start
     let mask := if len >= n then ~~~(0 : BitVec n) else (1 <<< len) - 1
     let r := if start >= n then 0 else shifted &&& mask
-    (r, { cf := false, pf := .undef, af := .undef, zf := r == 0, of := false })
+    (r, { cf := false, pf := .undef, af := .undef, zf := r == 0, sf := .undef, of := false })
   | .bzhi, a, b =>
     let idx := a.toNat &&& 0xff
     let r := if idx < n then b &&& ((1 <<< idx) - 1) else b

@@ -123,7 +123,7 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   ]) ++
   failing SimdToGprOp (fun op mn =>
     if op.memBytes?.isSome then [s!"{mn} (%rsp), %rax", s!"v{mn} %xmm1, %rax"]
-    else [s!"{mn} %xmm1, %eax", s!"v{mn} %xmm1, %rax"]) ++
+    else [s!"{mn} %xmm1, %eax", s!"v{mn} %xmm1, %rax", s!"v{mn} %ymm1, %eax"]) ++
   failing SimdExtractOp (fun op mn =>
     let imm := if op.hasImm then "$1, " else ""
     [s!"{mn} {imm}%xmm1, (%rsp)", s!"v{mn} {imm}%xmm1, %rax"]) ++

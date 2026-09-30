@@ -933,10 +933,10 @@ match i with
     src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a ((imm.interp p).toBitVec.take 8))))
   | .sseImm op dst src imm =>
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b ((imm.interp p).toBitVec.take 8) (legacy := true))))
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b ((imm.interp p).toBitVec.take 8) (legacy := true) (src matches .mem _))))
   | .vexImm op dst src1 src2 imm =>
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
-    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b ((imm.interp p).toBitVec.take 8) (legacy := false))))
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b ((imm.interp p).toBitVec.take 8) (legacy := false) (src2 matches .mem _))))
   | .sseShift op dst count =>
     count.interp s p (legacy := true) (fun c s =>
     next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) c)))

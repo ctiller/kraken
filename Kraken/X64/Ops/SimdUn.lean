@@ -59,18 +59,9 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .cvttps2dq => .map1 32 sseCvttps2dqLane
   | .cvtdq2pd => fun a => .ofLanes n 64 fun i => (Float.ofInt (a.lane 32 i).toInt).toBitVec
   | .cvtps2pd => fun a => .ofLanes n 64 fun i => sseCvtss2sd (a.lane 32 i)
-  | .cvtpd2ps => fun a =>
-    let r0 := sseCvtsd2ss (a.lane 64 0)
-    let r1 := sseCvtsd2ss (a.lane 64 1)
-    (BitVec.append r1 r0).zeroExtend n
-  | .cvtpd2dq => fun a =>
-    let r0 := sseCvtpd2dqLane (a.lane 64 0)
-    let r1 := sseCvtpd2dqLane (a.lane 64 1)
-    (BitVec.append r1 r0).zeroExtend n
-  | .cvttpd2dq => fun a =>
-    let r0 := sseCvttpd2dqLane (a.lane 64 0)
-    let r1 := sseCvttpd2dqLane (a.lane 64 1)
-    (BitVec.append r1 r0).zeroExtend n
+  | .cvtpd2ps => fun a => .ofLanes n 32 fun i => if i < n / 64 then sseCvtsd2ss (a.lane 64 i) else 0
+  | .cvtpd2dq => fun a => .ofLanes n 32 fun i => if i < n / 64 then sseCvtpd2dqLane (a.lane 64 i) else 0
+  | .cvttpd2dq => fun a => .ofLanes n 32 fun i => if i < n / 64 then sseCvttpd2dqLane (a.lane 64 i) else 0
   | .cvtph2ps => fun a => .ofLanes n 32 fun i => f16ToF32 (a.lane 16 i)
   | .phminposuw => fun a =>
     let words := List.range 8 |>.map fun i => (i, (a.lane 16 i).toNat)

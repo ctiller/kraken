@@ -811,7 +811,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     let (addr_w, src) ← parseAvxRegOrMem; parseComma
     let dst ← parseRegW
     let w ← regWidth w? dst
-    let vsrc ← ascribeAvx .W128 src
+    let vsrc ← ascribeAvx (if op.memBytes?.isSome then .W128 else src.1.getD .W128) src
     if h : dst.w = w then
       pure (toAvxInstr addr_w (.vexToGpr op (h ▸ dst.reg) vsrc))
     else fail "impossible"
