@@ -82,28 +82,12 @@ def SimdInt.interp : SimdInt → BitVec 128 → BitVec 128 → BitVec 128
   | .psignb => .map2 8 fun a b => if b.toInt < 0 then -a else if b == 0 then 0 else a
   | .psignw => .map2 16 fun a b => if b.toInt < 0 then -a else if b == 0 then 0 else a
   | .psignd => .map2 32 fun a b => if b.toInt < 0 then -a else if b == 0 then 0 else a
-  | .phaddw => fun a b => .ofLanes 128 16 fun i =>
-      if i < 4 then a.lane 16 (2 * i) + a.lane 16 (2 * i + 1)
-      else b.lane 16 (2 * (i - 4)) + b.lane 16 (2 * (i - 4) + 1)
-  | .phaddd => fun a b => .ofLanes 128 32 fun i =>
-      if i < 2 then a.lane 32 (2 * i) + a.lane 32 (2 * i + 1)
-      else b.lane 32 (2 * (i - 2)) + b.lane 32 (2 * (i - 2) + 1)
-  | .phaddsw => fun a b => .ofLanes 128 16 fun i =>
-      let (v1, v2) := if i < 4
-        then ((a.lane 16 (2 * i)).toInt, (a.lane 16 (2 * i + 1)).toInt)
-        else ((b.lane 16 (2 * (i - 4))).toInt, (b.lane 16 (2 * (i - 4) + 1)).toInt)
-      .satS 16 (v1 + v2)
-  | .phsubw => fun a b => .ofLanes 128 16 fun i =>
-      if i < 4 then a.lane 16 (2 * i) - a.lane 16 (2 * i + 1)
-      else b.lane 16 (2 * (i - 4)) - b.lane 16 (2 * (i - 4) + 1)
-  | .phsubd => fun a b => .ofLanes 128 32 fun i =>
-      if i < 2 then a.lane 32 (2 * i) - a.lane 32 (2 * i + 1)
-      else b.lane 32 (2 * (i - 2)) - b.lane 32 (2 * (i - 2) + 1)
-  | .phsubsw => fun a b => .ofLanes 128 16 fun i =>
-      let (v1, v2) := if i < 4
-        then ((a.lane 16 (2 * i)).toInt, (a.lane 16 (2 * i + 1)).toInt)
-        else ((b.lane 16 (2 * (i - 4))).toInt, (b.lane 16 (2 * (i - 4) + 1)).toInt)
-      .satS 16 (v1 - v2)
+  | .phaddw => .hop 16 (· + ·)
+  | .phaddd => .hop 32 (· + ·)
+  | .phaddsw => .hop 16 fun a b => .satS 16 (a.toInt + b.toInt)
+  | .phsubw => .hop 16 (· - ·)
+  | .phsubd => .hop 32 (· - ·)
+  | .phsubsw => .hop 16 fun a b => .satS 16 (a.toInt - b.toInt)
   | .psllvd => .map2 32 fun a b => if b.toNat ≥ 32 then 0#32 else a <<< b.toNat
   | .psllvq => .map2 64 fun a b => if b.toNat ≥ 64 then 0#64 else a <<< b.toNat
   | .psrlvd => .map2 32 fun a b => if b.toNat ≥ 32 then 0#32 else a >>> b.toNat

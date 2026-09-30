@@ -76,30 +76,14 @@ def SimdFp.interp : SimdFp → BitVec 128 → BitVec 128 → BitVec 128
   | .sqrtsd => fun a b => a.replaceLow (sseUnOp64 Float.sqrt (b.lane 64 0))
   | .cvtss2sd => fun a b => a.replaceLow (FpFmt.f32.convert .f64 0 (b.lane 32 0))
   -- Asymmetric / horizontal ops
-  | .addsubps => fun a b => .ofLanes 128 32 fun
-    | 0 => sseBinOp (· - ·) (a.lane 32 0) (b.lane 32 0)
-    | 1 => sseBinOp (· + ·) (a.lane 32 1) (b.lane 32 1)
-    | 2 => sseBinOp (· - ·) (a.lane 32 2) (b.lane 32 2)
-    | _ => sseBinOp (· + ·) (a.lane 32 3) (b.lane 32 3)
-  | .addsubpd => fun a b => .ofLanes 128 64 fun
-    | 0 => sseBinOp64 (· - ·) (a.lane 64 0) (b.lane 64 0)
-    | _ => sseBinOp64 (· + ·) (a.lane 64 1) (b.lane 64 1)
-  | .haddps => fun a b => .ofLanes 128 32 fun
-    | 0 => sseBinOp (· + ·) (a.lane 32 0) (a.lane 32 1)
-    | 1 => sseBinOp (· + ·) (a.lane 32 2) (a.lane 32 3)
-    | 2 => sseBinOp (· + ·) (b.lane 32 0) (b.lane 32 1)
-    | _ => sseBinOp (· + ·) (b.lane 32 2) (b.lane 32 3)
-  | .haddpd => fun a b => .ofLanes 128 64 fun
-    | 0 => sseBinOp64 (· + ·) (a.lane 64 0) (a.lane 64 1)
-    | _ => sseBinOp64 (· + ·) (b.lane 64 0) (b.lane 64 1)
-  | .hsubps => fun a b => .ofLanes 128 32 fun
-    | 0 => sseBinOp (· - ·) (a.lane 32 0) (a.lane 32 1)
-    | 1 => sseBinOp (· - ·) (a.lane 32 2) (a.lane 32 3)
-    | 2 => sseBinOp (· - ·) (b.lane 32 0) (b.lane 32 1)
-    | _ => sseBinOp (· - ·) (b.lane 32 2) (b.lane 32 3)
-  | .hsubpd => fun a b => .ofLanes 128 64 fun
-    | 0 => sseBinOp64 (· - ·) (a.lane 64 0) (a.lane 64 1)
-    | _ => sseBinOp64 (· - ·) (b.lane 64 0) (b.lane 64 1)
+  | .addsubps => fun a b => .ofLanes 128 32 fun i =>
+    (if i % 2 == 0 then sseBinOp (· - ·) else sseBinOp (· + ·)) (a.lane 32 i) (b.lane 32 i)
+  | .addsubpd => fun a b => .ofLanes 128 64 fun i =>
+    (if i % 2 == 0 then sseBinOp64 (· - ·) else sseBinOp64 (· + ·)) (a.lane 64 i) (b.lane 64 i)
+  | .haddps => .hop 32 (sseBinOp (· + ·))
+  | .haddpd => .hop 64 (sseBinOp64 (· + ·))
+  | .hsubps => .hop 32 (sseBinOp (· - ·))
+  | .hsubpd => .hop 64 (sseBinOp64 (· - ·))
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdFp.memBytes? : SimdFp → Option Nat

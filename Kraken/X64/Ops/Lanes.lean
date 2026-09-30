@@ -44,6 +44,13 @@ def unpckh {n} (k : Nat) (a b : BitVec n) : BitVec n :=
     let half := n / (2 * k)
     if i % 2 == 0 then a.lane k (half + i / 2) else b.lane k (half + i / 2)
 
+/-- Horizontal operation on one 128-bit lane: first half from pairs of `a`, second half from pairs of `b`. -/
+def hop (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec 128) : BitVec 128 :=
+  ofLanes 128 k fun i =>
+    let half := 128 / (2 * k)
+    if i < half then f (a.lane k (2 * i)) (a.lane k (2 * i + 1))
+    else f (b.lane k (2 * (i - half))) (b.lane k (2 * (i - half) + 1))
+
 def toFloat32 (v : BitVec 32) : Float32 := Float32.ofBits (UInt32.ofBitVec v)
 
 /-- Replaces the low `n` bits of `old` with `new`, keeping the upper bits of `old`. -/
