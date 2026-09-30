@@ -27,6 +27,10 @@ def satS (k : Nat) (v : Int) : BitVec k := .ofInt k (max (-2 ^ (k - 1)) (min (2 
 def satU (k : Nat) (v : Int) : BitVec k := .ofInt k (max 0 (min (2 ^ k - 1) v))
 
 def toFloat32 (v : BitVec 32) : Float32 := Float32.ofBits (UInt32.ofBitVec v)
+
+/-- Replaces the lowest `k` bits of `old` with `new`, preserving all higher lanes. -/
+def replaceLow {n k : Nat} (old : BitVec n) (new : BitVec k) : BitVec n :=
+  ofLanes n k fun i => if i == 0 then new else old.lane k i
 end BitVec
 
 def Float32.toBitVec (f : Float32) : BitVec 32 := UInt32.toBitVec (Float32.toBits f)

@@ -31,9 +31,6 @@ attribute [kstep]
   BitVec.ofInt_toInt
   BitVec.signed
   BitVec.truncate
-def BitVec.replaceLow {w n} (old : BitVec w) (new : BitVec n) : BitVec w :=
-  (BitVec.append (old.drop n) new).setWidth _
-
 namespace Reg
 @[kstep] def base {w} (r : Reg w) : Reg64 := match r with
   | .low r _ => r
