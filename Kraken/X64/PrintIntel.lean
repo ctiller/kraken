@@ -195,6 +195,7 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .hint op => Mnemonic.name op
   | .nopm x => s!"nop {x.toStr addr_w}"
   | .memHint op a => s!"{Mnemonic.name op} BYTE PTR {a.toStr addr_w}"
+  | .movnti dst src => s!"movnti {(RegOrMem.mem (w:=w) dst).toStr addr_w}, {src}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
 def SimdCount.toStr (c : SimdCount) (addr_w : Width := .W64) : String := match c with

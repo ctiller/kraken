@@ -471,6 +471,9 @@ set_option maxHeartbeats 1000000
   (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects) : Effects :=
   match (generalizing := false) (motive := Operation w → Effects) i with
   | .mov dst src => src.interp s p (fun val s => s.set dst val p next)
+  | .movnti dst src =>
+    let addr := (dst.interp s.regs p).zeroExtend 64
+    s.store addr (s.regs.get src) next
   | .movsx dst src => src.interp s p (fun val s => s.set dst (val.signExtend _) p next)
   | .movzx dst src => src.interp s p (fun val s => s.set dst (val.zeroExtend _) p next)
   | .push src =>

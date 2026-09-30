@@ -1009,6 +1009,19 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     let w ← instrWidth mn
     commaSeparated w parseOperand parseRegOrMem .mov
 
+  | "movnti" | "movntil" | "movntiq" =>
+    let w? : Option Width := match mn with
+      | "movntil" => some .W32
+      | "movntiq" => some .W64
+      | _ => none
+    let src ← parseRegW; parseComma
+    let w ← regWidth w? src
+    if w != .W32 && w != .W64 then fail "movnti requires 32-bit or 64-bit operand"
+    let (addr_w, dst) ← parseMemory
+    if h : src.w = w then
+      pure (toInstr (some addr_w) (w := w) (.movnti dst (h ▸ src.reg)))
+    else fail "impossible"
+
 
   | "xchg" =>
     parseXchg .none

@@ -30,6 +30,7 @@ def corpus : List String := [
   "movq 8(%rip), %rax", "movsx %al, %ecx", "movzx %bx, %rdx", "movsbq %al, %rax",
   "movzwl %cx, %edx", "movslq %eax, %rbx", "movslq (%rsp), %rax", "movsbl (%rsp), %ecx",
   "movswq (%rsp), %rdx", "movzbl (%rsp), %ecx", "movzwq (%rsp), %rax",
+  "movnti %eax, (%rsp)", "movnti %rax, (%rsp)", "movnti %eax, -16(%rbp,%rcx,8)",
   "pushq %rbx", "pushq $7", "pushw (%rsp)", "popq %rax", "popq 8(%rsp)",
   "sete %al", "setnz 3(%rsp)", "setb %dh", "setae %bl", "seta %cl", "setbe %al",
   "setl %al", "setle %al", "seto %al", "setno %al", "sets %al", "setns %al",
