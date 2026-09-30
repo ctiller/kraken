@@ -2,6 +2,7 @@ module
 
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Lanes
+public import Kraken.X64.Ops.SimdCrypto
 public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
@@ -12,22 +13,6 @@ meta import Lean.Elab.Deriving.ToExpr
 * fused multiply-adds `vop src3, src2, dst` (`.fma`: `dst := op(dst, src2, src3)`). -/
 
 @[expose] public section
-
-def sha256Rnds2 (a b mask : BitVec 128) : BitVec 128 :=
-  let ch (e f g : BitVec 32) : BitVec 32 := (e &&& f) ^^^ (~~~e &&& g)
-  let maj (a b c : BitVec 32) : BitVec 32 := (a &&& b) ^^^ (a &&& c) ^^^ (b &&& c)
-  let capSigma0 (x : BitVec 32) : BitVec 32 := x.rotateRight 2 ^^^ x.rotateRight 13 ^^^ x.rotateRight 22
-  let capSigma1 (x : BitVec 32) : BitVec 32 := x.rotateRight 6 ^^^ x.rotateRight 11 ^^^ x.rotateRight 25
-  let a0 := b.lane 32 3; let b0 := b.lane 32 2; let c0 := a.lane 32 3; let d0 := a.lane 32 2
-  let e0 := b.lane 32 1; let f0 := b.lane 32 0; let g0 := a.lane 32 1; let h0 := a.lane 32 0
-  let wk0 := mask.lane 32 0; let wk1 := mask.lane 32 1
-  let t1_0 := ch e0 f0 g0 + capSigma1 e0 + wk0 + h0
-  let a1 := t1_0 + maj a0 b0 c0 + capSigma0 a0
-  let e1 := t1_0 + d0
-  let t1_1 := ch e1 e0 f0 + capSigma1 e1 + wk1 + g0
-  let a2 := t1_1 + maj a1 a0 b0 + capSigma0 a1
-  let e2 := t1_1 + c0
-  .ofLanes 128 32 fun | 0 => e1 | 1 => e2 | 2 => a1 | _ => a2
 
 /-- Operations with an implicit `xmm0` third source: variable blends, and `sha256rnds2`. -/
 inductive SimdBlendvOp
