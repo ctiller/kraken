@@ -6,6 +6,10 @@ public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
+/-! SSE/AVX conversions between vector registers and GPRs/memory:
+`SimdToGprOp` (vector to GPR/mask), `SimdExtractOp` (lane extract to GPR/mem),
+and `SimdInsertOp` (lane insert from GPR/mem). -/
+
 @[expose] public section
 
 inductive SimdToGprOp
