@@ -113,7 +113,7 @@ undefined. Each instruction is run under every assignment of the undefined flags
 memory agree across all runs; returns the resulting state and the new mask of flags that disagree.
 
 The two-sample resolution of `undefined` is sound because Semantics.lean only ever stores an
-undefined choice directly into a flag, all flags, or a register, never computes with it. -/
+undefined choice directly into a flag, all flags, or a destination, never computes with it. -/
 def stepDeterministic (d : MachineData) (mask : Nat) (asmCode : String) : Option (MachineData × Nat) := do
   let exe := (← (Kraken.X64.Parser.parse asmCode).toOption).fakeLayout
   let := exe.labels
@@ -179,7 +179,8 @@ instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
 -- Opcode families: uniformly over their opcodes.
 instance {α : Type} [Mnemonic α] : Gen α := ⟨(·.1) <$> pick Mnemonic.names⟩
 
--- No labels (for `jcc`), nop lengths or alignments; other control flow is rejected by
+-- No labels (for `jcc`, `jrcxz`, `loop`), nop lengths or alignments; instructions with label
+-- operands are never generated (only asm tests cover them). Other control flow is rejected by
 -- `stepDeterministic`.
 instance : Gen String := ⟨failure⟩
 instance : Gen Nat := ⟨failure⟩
