@@ -31,7 +31,7 @@ of 4 containing `i`. -/
 def BitVec.pick4 {n} (k : Nat) (x : BitVec n) (i sel : Nat) : BitVec k := x.lane k (i / 4 * 4 + sel % 4)
 
 def roundImmMode (imm : BitVec 8) : Nat :=
-  if (imm >>> 2).getLsbD 0 then 0 else (imm &&& 3).toNat
+  if imm.getLsbD 2 then 0 else (imm &&& 3).toNat
 
 def SimdUnImmOp.interp {n} : SimdUnImmOp → BitVec n → BitVec 8 → BitVec n
   | .pshufd, a, imm => .ofLanes n 32 fun i => a.pick4 32 i (imm >>> (i % 4 * 2)).toNat
@@ -66,7 +66,12 @@ def clmul64 (a b : BitVec 64) : BitVec 128 :=
   (List.range 64).foldl (fun acc i =>
     if b.getLsbD i then acc ^^^ ((a.zeroExtend 128) <<< i) else acc) 0#128
 
-
+def dpp {k : Nat} (mulOp addOp : BitVec k → BitVec k → BitVec k) (count : Nat)
+    (imm : BitVec 8) (a b : BitVec 128) : BitVec 128 :=
+  let p (i : Nat) : BitVec k :=
+    if imm.getLsbD (4 + i) then mulOp (a.lane k i) (b.lane k i) else 0#k
+  let sum := (List.range count).foldl (fun acc i => addOp acc (p i)) 0#k
+  .ofLanes 128 k fun i => if imm.getLsbD i then sum else 0#k
 
 def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) (legacy : Bool := false)
     (memSrc : Bool := false) : BitVec n :=
@@ -75,26 +80,16 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
     (if i % 4 < 2 then a else b).pick4 32 i (imm >>> (i % 4 * 2)).toNat
   | .shufpd => .ofLanes n 64 fun i =>
     (if i % 2 == 0 then a else b).lane 64 (i / 2 * 2 + (imm >>> i).toNat % 2)
-  | .palignr => .ofLanes n 128 fun laneIdx =>
-    let a128 := a.lane 128 laneIdx
-    let b128 := b.lane 128 laneIdx
-    let concat := a128 ++ b128
-    let shift := imm.toNat * 8
-    if shift >= 256 then 0#128 else (concat >>> shift).truncate 128
+  | .palignr => .map2 128 (fun a128 b128 => ((a128 ++ b128) >>> (imm.toNat * 8)).truncate 128) a b
   | .pblendw => .ofLanes n 16 fun i =>
-    if (imm >>> (i % 8)).getLsbD 0 then b.lane 16 i else a.lane 16 i
-  | .blendps => .ofLanes n 32 fun i =>
-    if (imm >>> i).getLsbD 0 then b.lane 32 i else a.lane 32 i
+    if imm.getLsbD (i % 8) then b.lane 16 i else a.lane 16 i
+  | .blendps | .pblendd => .ofLanes n 32 fun i =>
+    if imm.getLsbD i then b.lane 32 i else a.lane 32 i
   | .blendpd => .ofLanes n 64 fun i =>
-    if (imm >>> i).getLsbD 0 then b.lane 64 i else a.lane 64 i
-  | .pblendd => .ofLanes n 32 fun i =>
-    if (imm >>> (i % 8)).getLsbD 0 then b.lane 32 i else a.lane 32 i
-  | .pclmulqdq => .ofLanes n 128 fun laneIdx =>
-    let a128 := a.lane 128 laneIdx
-    let b128 := b.lane 128 laneIdx
-    let qwordA := a128.lane 64 (if imm.getLsbD 0 then 1 else 0)
-    let qwordB := b128.lane 64 (if imm.getLsbD 4 then 1 else 0)
-    clmul64 qwordA qwordB
+    if imm.getLsbD i then b.lane 64 i else a.lane 64 i
+  | .pclmulqdq => .map2 128 (fun a128 b128 =>
+    clmul64 (a128.lane 64 (if imm.getLsbD 0 then 1 else 0))
+            (b128.lane 64 (if imm.getLsbD 4 then 1 else 0))) a b
   | .mpsadbw => .ofLanes n 128 fun laneIdx =>
     let a128 := a.lane 128 laneIdx
     let b128 := b.lane 128 laneIdx
@@ -107,22 +102,8 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
         let diff : Int := (b1 : Int) - (b2 : Int)
         acc + diff.natAbs) 0
       BitVec.ofNat 16 sum
-  | .dpps => .ofLanes n 128 fun laneIdx =>
-    let p0 := if (imm >>> 4).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 0)) (b.lane 32 (laneIdx * 4 + 0)) else 0#32
-    let p1 := if (imm >>> 5).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 1)) (b.lane 32 (laneIdx * 4 + 1)) else 0#32
-    let p2 := if (imm >>> 6).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 2)) (b.lane 32 (laneIdx * 4 + 2)) else 0#32
-    let p3 := if (imm >>> 7).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 3)) (b.lane 32 (laneIdx * 4 + 3)) else 0#32
-    let s0 := sseBinOp (· + ·) p0 p1
-    let s1 := sseBinOp (· + ·) p2 p3
-    let sum := sseBinOp (· + ·) s0 s1
-    .ofLanes 128 32 fun i =>
-      if (imm >>> i).getLsbD 0 then sum else 0#32
-  | .dppd => .ofLanes n 128 fun laneIdx =>
-    let p0 := if (imm >>> 4).getLsbD 0 then sseBinOp64 (· * ·) (a.lane 64 (laneIdx * 2 + 0)) (b.lane 64 (laneIdx * 2 + 0)) else 0#64
-    let p1 := if (imm >>> 5).getLsbD 0 then sseBinOp64 (· * ·) (a.lane 64 (laneIdx * 2 + 1)) (b.lane 64 (laneIdx * 2 + 1)) else 0#64
-    let sum := sseBinOp64 (· + ·) p0 p1
-    .ofLanes 128 64 fun i =>
-      if (imm >>> i).getLsbD 0 then sum else 0#64
+  | .dpps => .map2 128 (dpp (sseBinOp (· * ·)) (sseBinOp (· + ·)) 4 imm) a b
+  | .dppd => .map2 128 (dpp (sseBinOp64 (· * ·)) (sseBinOp64 (· + ·)) 2 imm) a b
   | .insertps =>
     -- A memory source is the dword itself (in lane 0): COUNT_S is ignored.
     let src_idx := if memSrc then 0 else (imm.toNat >>> 6) &&& 3
@@ -137,18 +118,14 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
   | .roundsd =>
     let rounded := FpFmt.f64.roundInt (roundImmMode imm) (b.lane 64 0)
     a.replaceLow rounded
-  | .cmpps =>
-    let pred := if legacy then imm.toNat &&& 7 else imm.toNat &&& 31
-    .map2 32 (f32cmpPred pred) a b
-  | .cmppd =>
-    let pred := if legacy then imm.toNat &&& 7 else imm.toNat &&& 31
-    .map2 64 (f64cmpPred pred) a b
-  | .cmpss =>
-    let pred := if legacy then imm.toNat &&& 7 else imm.toNat &&& 31
-    a.replaceLow (f32cmpPred pred (a.lane 32 0) (b.lane 32 0))
-  | .cmpsd =>
-    let pred := if legacy then imm.toNat &&& 7 else imm.toNat &&& 31
-    a.replaceLow (f64cmpPred pred (a.lane 64 0) (b.lane 64 0))
+  | .cmpps | .cmppd | .cmpss | .cmpsd =>
+    let pred := if legacy then imm.toNat &&& 7 else imm.toNat
+    match op with
+    | .cmpps => .map2 32 (f32cmpPred pred) a b
+    | .cmppd => .map2 64 (f64cmpPred pred) a b
+    | .cmpss => a.replaceLow (f32cmpPred pred (a.lane 32 0) (b.lane 32 0))
+    | .cmpsd => a.replaceLow (f64cmpPred pred (a.lane 64 0) (b.lane 64 0))
+    | _ => a
   | .perm2f128 | .perm2i128 => .ofLanes n 128 fun i =>
     let ctrl := (imm.toNat >>> (i * 4))
     if (ctrl >>> 3) &&& 1 == 1 then 0#128
