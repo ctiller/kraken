@@ -37,19 +37,23 @@ def decode (f : FpFmt) (x : BitVec f.bits) : Bool × Nat × Int :=
   if f.expField x = 0 then (x.msb, m, 1 - f.bias - f.m)
   else (x.msb, m + 2 ^ f.m, f.expField x - f.bias - f.m)
 
+/-- `v / 2^s` rounded with `mode`: 0 nearest-even, 1 down, 2 up, 3 toward zero. -/
+def roundShift (sign : Bool) (v s mode : Nat) : Nat :=
+  let (r, rem) := (v / 2 ^ s, v % 2 ^ s)
+  let inc := match mode with
+    | 0 => 2 * rem > 2 ^ s || (2 * rem = 2 ^ s && r % 2 = 1)
+    | 1 => rem > 0 && sign
+    | 2 => rem > 0 && !sign
+    | _ => false
+  if inc then r + 1 else r
+
 /-- `(-1)^sign * v * 2^e` rounded with `mode`:
 0 = nearest even, 1 = down (-inf), 2 = up (+inf), 3 = toward zero (`v ≠ 0`). -/
 def round (f : FpFmt) (sign : Bool) (v : Nat) (e : Int) (mode : Nat := 0) : BitVec f.bits :=
   let emin := 1 - f.bias - f.m  -- the exponent of the smallest subnormal's unit
   let q := max (e + Nat.log2 v - f.m) emin  -- the exponent of the result's unit
   let s := (q - e).toNat
-  let (r, rem) := (v / 2 ^ s * 2 ^ (e - q + s).toNat, v % 2 ^ s)
-  let inc := match mode with
-    | 0 => 2 * rem > 2 ^ s || (2 * rem = 2 ^ s && r % 2 = 1)
-    | 1 => rem > 0 && sign
-    | 2 => rem > 0 && !sign
-    | _ => false
-  let r := if inc then r + 1 else r
+  let r := roundShift sign (v * 2 ^ (e - q + s).toNat) s mode
   -- Rounding up may carry into a new bit.
   let (r, q) := if r = 2 ^ (f.m + 1) then (r / 2, q + 1) else (r, q)
   let biased := if r ≥ 2 ^ f.m then q - emin + 1 else 0
@@ -58,6 +62,35 @@ def round (f : FpFmt) (sign : Bool) (v : Nat) (e : Int) (mode : Nat := 0) : BitV
       .ofNat _ ((if sign then 2 ^ (f.bits - 1) else 0) + (2 ^ f.e - 2) * 2 ^ f.m + (2 ^ f.m - 1))
     else f.inf sign
   else .ofNat _ ((if sign then 2 ^ (f.bits - 1) else 0) + biased.toNat * 2 ^ f.m + r % 2 ^ f.m)
+
+/-- Converts `x` to a signed integer of `w` bits with `mode`. NaN, Inf, or out-of-range -> `1 <<< (w - 1)`. -/
+def toInt (f : FpFmt) (w : Nat) (mode : Nat) (x : BitVec f.bits) : BitVec w :=
+  let indefinite : BitVec w := .ofInt w (-(2 ^ (w - 1) : Int))
+  if f.isNaN x || f.isInf x then indefinite
+  else
+    let (sign, v, e) := f.decode x
+    if v == 0 then 0
+    else
+      let q := if e ≥ 0 then v * 2 ^ e.toNat else roundShift sign v (-e).toNat mode
+      let res : Int := if sign then -(q : Int) else q
+      let minVal : Int := -(2 ^ (w - 1) : Int)
+      let maxVal : Int := (2 ^ (w - 1) : Int) - 1
+      if res < minVal || res > maxVal then indefinite
+      else .ofInt w res
+
+/-- Rounds `x` to an integer value in the same format with `mode`.
+NaN -> quieted NaN, Inf or already-integer -> x, else rounded integer preserving sign (including -0). -/
+def roundInt (f : FpFmt) (mode : Nat) (x : BitVec f.bits) : BitVec f.bits :=
+  if f.isNaN x then f.quiet x
+  else if f.isInf x then x
+  else
+    let (sign, v, e) := f.decode x
+    if e ≥ 0 || v == 0 then x
+    else
+      let s := (-e).toNat
+      let r := roundShift sign v s mode
+      if r == 0 then f.zero sign
+      else f.round sign r 0 mode
 
 /-- The signed integer `i` rounded to the format. -/
 def ofInt (f : FpFmt) (i : Int) : BitVec f.bits :=

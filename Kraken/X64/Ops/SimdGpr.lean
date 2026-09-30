@@ -8,41 +8,6 @@ meta import Lean.Elab.Deriving.ToExpr
 
 @[expose] public section
 
-/-- Helper to convert decoded float to signed integer of `bits` width with saturation to indefinite. -/
-def cvtFpToInt (sign : Bool) (v : Nat) (e : Int) (trunc : Bool) (bits : Nat) : BitVec bits :=
-  let indefinite : BitVec bits := BitVec.ofInt bits (-(2 ^ (bits - 1) : Int))
-  if v == 0 then 0
-  else
-    let i : Int :=
-      if e >= 0 then (v * 2 ^ e.toNat : Nat)
-      else
-        let s := (-e).toNat
-        let q := v / 2 ^ s
-        let rem := v % 2 ^ s
-        let half := 2 ^ (s - 1)
-        if trunc then q
-        else if rem > half || (rem == half && q % 2 == 1) then q + 1
-        else q
-    let res : Int := if sign then -i else i
-    let minVal : Int := -(2 ^ (bits - 1) : Int)
-    let maxVal : Int := (2 ^ (bits - 1) : Int) - 1
-    if res < minVal || res > maxVal then indefinite
-    else BitVec.ofInt bits res
-
-def cvtFloat32ToInt (x : BitVec 32) (trunc : Bool) (bits : Nat) : BitVec bits :=
-  let f := FpFmt.f32
-  if f.isNaN x || f.isInf x then BitVec.ofInt bits (-(2 ^ (bits - 1) : Int))
-  else
-    let (sign, v, e) := f.decode x
-    cvtFpToInt sign v e trunc bits
-
-def cvtFloat64ToInt (x : BitVec 64) (trunc : Bool) (bits : Nat) : BitVec bits :=
-  let f := FpFmt.f64
-  if f.isNaN x || f.isInf x then BitVec.ofInt bits (-(2 ^ (bits - 1) : Int))
-  else
-    let (sign, v, e) := f.decode x
-    cvtFpToInt sign v e trunc bits
-
 inductive SimdToGprOp
   | pmovmskb | movmskps | movmskpd
   | cvtss2si | cvttss2si | cvtsd2si | cvttsd2si
@@ -64,10 +29,10 @@ def SimdToGprOp.interp {n} (op : SimdToGprOp) (bits : Nat) (src : BitVec n) : Bi
     let mask : Nat := (List.range (n / 64)).foldl (fun acc i =>
       if (src.lane 64 i).msb then acc ||| (1 <<< i) else acc) 0
     BitVec.ofNat bits mask
-  | .cvtss2si => cvtFloat32ToInt (src.lane 32 0) false bits
-  | .cvttss2si => cvtFloat32ToInt (src.lane 32 0) true bits
-  | .cvtsd2si => cvtFloat64ToInt (src.lane 64 0) false bits
-  | .cvttsd2si => cvtFloat64ToInt (src.lane 64 0) true bits
+  | .cvtss2si => FpFmt.f32.toInt bits 0 (src.lane 32 0)
+  | .cvttss2si => FpFmt.f32.toInt bits 3 (src.lane 32 0)
+  | .cvtsd2si => FpFmt.f64.toInt bits 0 (src.lane 64 0)
+  | .cvttsd2si => FpFmt.f64.toInt bits 3 (src.lane 64 0)
 
 def SimdToGprOp.memBytes? : SimdToGprOp → Option Nat
   | .cvtss2si | .cvttss2si => some 4

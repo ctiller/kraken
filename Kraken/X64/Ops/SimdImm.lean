@@ -4,6 +4,7 @@ public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Lanes
 public import Kraken.X64.Ops.SimdCrypto
 public import Kraken.X64.Ops.SimdFpCmp
+public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -29,52 +30,6 @@ instance : Mnemonic SimdUnImmOp := ⟨mnemonics% SimdUnImmOp⟩
 of 4 containing `i`. -/
 def BitVec.pick4 {n} (k : Nat) (x : BitVec n) (i sel : Nat) : BitVec k := x.lane k (i / 4 * 4 + sel % 4)
 
-def roundFloat32 (mode : Nat) (a : BitVec 32) : BitVec 32 :=
-  if a.extractLsb' 23 8 == 0xff#8 then
-    if a.extractLsb' 0 23 != 0#23 then a ||| 0x400000#32
-    else a
-  else
-    let f := a.toFloat32
-    let isNeg := a.msb
-    let absF := if isNeg then -f else f
-    let absFloor := Float32.floor absF
-    let absDiff := absF - absFloor
-    let absRoundNearestEven :=
-      if absDiff < 0.5 then absFloor
-      else if absDiff > 0.5 then absFloor + 1.0
-      else if Float32.floor (absFloor / 2.0) * 2.0 == absFloor then absFloor
-      else absFloor + 1.0
-    let r := match mode with
-      | 0 => if isNeg then -absRoundNearestEven else absRoundNearestEven
-      | 1 => Float32.floor f
-      | 2 => Float32.ceil f
-      | _ => if isNeg then -absFloor else absFloor
-    let res := r.toBitVec
-    if res == 0#32 && isNeg then 0x80000000#32 else res
-
-def roundFloat64 (mode : Nat) (a : BitVec 64) : BitVec 64 :=
-  if a.extractLsb' 52 11 == 0x7ff#11 then
-    if a.extractLsb' 0 52 != 0#52 then a ||| 0x8000000000000#64
-    else a
-  else
-    let f := a.toFloat
-    let isNeg := a.msb
-    let absF := if isNeg then -f else f
-    let absFloor := Float.floor absF
-    let absDiff := absF - absFloor
-    let absRoundNearestEven :=
-      if absDiff < 0.5 then absFloor
-      else if absDiff > 0.5 then absFloor + 1.0
-      else if Float.floor (absFloor / 2.0) * 2.0 == absFloor then absFloor
-      else absFloor + 1.0
-    let r := match mode with
-      | 0 => if isNeg then -absRoundNearestEven else absRoundNearestEven
-      | 1 => Float.floor f
-      | 2 => Float.ceil f
-      | _ => if isNeg then -absFloor else absFloor
-    let res := r.toBitVec
-    if res == 0#64 && isNeg then 0x8000000000000000#64 else res
-
 def roundImmMode (imm : BitVec 8) : Nat :=
   if (imm >>> 2).getLsbD 0 then 0 else (imm &&& 3).toNat
 
@@ -87,8 +42,8 @@ def SimdUnImmOp.interp {n} : SimdUnImmOp → BitVec n → BitVec 8 → BitVec n
   | .permq, a, imm | .permpd, a, imm => .ofLanes n 64 fun i => a.lane 64 (imm >>> (i % 4 * 2) &&& 3).toNat
   | .permilps, a, imm => .ofLanes n 32 fun i => a.pick4 32 i (imm >>> (i % 4 * 2)).toNat
   | .permilpd, a, imm => .ofLanes n 64 fun i => a.lane 64 (i / 2 * 2 + (imm >>> i).toNat % 2)
-  | .roundps, a, imm => .map1 32 (roundFloat32 (roundImmMode imm)) a
-  | .roundpd, a, imm => .map1 64 (roundFloat64 (roundImmMode imm)) a
+  | .roundps, a, imm => .map1 32 (FpFmt.f32.roundInt (roundImmMode imm)) a
+  | .roundpd, a, imm => .map1 64 (FpFmt.f64.roundInt (roundImmMode imm)) a
   | .aeskeygenassist, a, imm => .map1 128 (aesKeygenAssist imm) a
 
 inductive SimdBinImmOp
@@ -208,10 +163,10 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
     let inserted : BitVec n := .ofLanes n 32 fun i => if i == dst_idx then val else a.lane 32 i
     .ofLanes n 32 fun i => if (zmask >>> i) &&& 1 == 1 then 0#32 else inserted.lane 32 i
   | .roundss =>
-    let rounded := roundFloat32 (roundImmMode imm) (b.lane 32 0)
+    let rounded := FpFmt.f32.roundInt (roundImmMode imm) (b.lane 32 0)
     a.replaceLow rounded
   | .roundsd =>
-    let rounded := roundFloat64 (roundImmMode imm) (b.lane 64 0)
+    let rounded := FpFmt.f64.roundInt (roundImmMode imm) (b.lane 64 0)
     a.replaceLow rounded
   | .cmpps =>
     let pred := if legacy then imm.toNat &&& 7 else imm.toNat &&& 31
