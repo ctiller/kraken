@@ -473,114 +473,24 @@ def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
     zf := result == BitVec.zero _
     sf := result.msb, cf := f.cf, af := f.af, of := f.of, df := f.df }
 
-def runStringOp (loop : Nat → MachineData → Effects) (rep : RepPrefix) (s : MachineData) (next : MachineData → Effects) : Effects :=
+def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineData → Effects)
+    (body : MachineData → (MachineData → Effects) → Effects) : Effects :=
+  let rec loop (fuel : Nat) (s : MachineData) : Effects :=
+    match fuel with
+    | 0 => .unimplemented "rep count exceeded limit"
+    | fuel + 1 =>
+      body s fun s =>
+        match rep with
+        | .none => next s
+        | _ =>
+          let rcx := s.regs.get64 .rcx - 1
+          let s := { s with regs := s.regs.set64 .rcx rcx }
+          if rcx == 0 || (cmp && s.status.zf == (rep == .repne)) then next s
+          else loop fuel s
   match rep with
   | .none => loop 1 s
   | _ => if s.regs.get64 .rcx == 0 then next s else loop 1000000 s
 
-def movsLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Nat → MachineData → Effects
-  | 0, _ => .unimplemented "rep count exceeded limit"
-  | fuel + 1, s =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    let rsi := s.regs.get64 .rsi
-    let rdi := s.regs.get64 .rdi
-    s.load rsi w (fun val s =>
-    s.store rdi val (fun s =>
-    let s := { s with regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
-    match rep with
-    | .none => next s
-    | _ =>
-      let rcx := s.regs.get64 .rcx - 1
-      let s := { s with regs := s.regs.set64 .rcx rcx }
-      if rcx == 0 then next s
-      else movsLoop w rep next fuel s))
-
-def stosLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Nat → MachineData → Effects
-  | 0, _ => .unimplemented "rep count exceeded limit"
-  | fuel + 1, s =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    let rdi := s.regs.get64 .rdi
-    let val := s.regs.get (Reg.low .rax w)
-    s.store rdi val (fun s =>
-    let s := { s with regs := s.regs.set64 .rdi (rdi + delta) }
-    match rep with
-    | .none => next s
-    | _ =>
-      let rcx := s.regs.get64 .rcx - 1
-      let s := { s with regs := s.regs.set64 .rcx rcx }
-      if rcx == 0 then next s
-      else stosLoop w rep next fuel s)
-
-def lodsLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Nat → MachineData → Effects
-  | 0, _ => .unimplemented "rep count exceeded limit"
-  | fuel + 1, s =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    let rsi := s.regs.get64 .rsi
-    s.load rsi w (fun val s =>
-    let s := s.setReg (Reg.low .rax w) val
-    let s := { s with regs := s.regs.set64 .rsi (rsi + delta) }
-    match rep with
-    | .none => next s
-    | _ =>
-      let rcx := s.regs.get64 .rcx - 1
-      let s := { s with regs := s.regs.set64 .rcx rcx }
-      if rcx == 0 then next s
-      else lodsLoop w rep next fuel s)
-
-def cmpsLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Nat → MachineData → Effects
-  | 0, _ => .unimplemented "rep count exceeded limit"
-  | fuel + 1, s =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    let rsi := s.regs.get64 .rsi
-    let rdi := s.regs.get64 .rdi
-    s.load rsi w (fun a s =>
-    s.load rdi w (fun b s =>
-    let v := a - b
-    let status := StatusFlags.from_result v {
-      cf := v.unsigned != a.unsigned - b.unsigned
-      af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-      of := v.signed != a.signed - b.signed }
-    let status := { status with df := s.status.df }
-    let s := { s with status, regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
-    match rep with
-    | .none => next s
-    | .repne =>
-      let rcx := s.regs.get64 .rcx - 1
-      let s := { s with regs := s.regs.set64 .rcx rcx }
-      if rcx == 0 || s.status.zf then next s
-      else cmpsLoop w rep next fuel s
-    | _ =>
-      let rcx := s.regs.get64 .rcx - 1
-      let s := { s with regs := s.regs.set64 .rcx rcx }
-      if rcx == 0 || !s.status.zf then next s
-      else cmpsLoop w rep next fuel s))
-
-def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Nat → MachineData → Effects
-  | 0, _ => .unimplemented "rep count exceeded limit"
-  | fuel + 1, s =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    let rdi := s.regs.get64 .rdi
-    let a := s.regs.get (Reg.low .rax w)
-    s.load rdi w (fun b s =>
-    let v := a - b
-    let status := StatusFlags.from_result v {
-      cf := v.unsigned != a.unsigned - b.unsigned
-      af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-      of := v.signed != a.signed - b.signed }
-    let status := { status with df := s.status.df }
-    let s := { s with status, regs := s.regs.set64 .rdi (rdi + delta) }
-    match rep with
-    | .none => next s
-    | .repne =>
-      let rcx := s.regs.get64 .rcx - 1
-      let s := { s with regs := s.regs.set64 .rcx rcx }
-      if rcx == 0 || s.status.zf then next s
-      else scasLoop w rep next fuel s
-    | _ =>
-      let rcx := s.regs.get64 .rcx - 1
-      let s := { s with regs := s.regs.set64 .rcx rcx }
-      if rcx == 0 || !s.status.zf then next s
-      else scasLoop w rep next fuel s)
 
 
 @[kstep] def Operation.interp [Labels] [address_size : AddressSize]
@@ -739,11 +649,55 @@ def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Na
     next { s with status }
   | .cld => next { s with status := { s.status with df := false } }
   | .std => next { s with status := { s.status with df := true } }
-  | .movs rep => runStringOp (movsLoop w rep next) rep s next
-  | .stos rep => runStringOp (stosLoop w rep next) rep s next
-  | .lods rep => runStringOp (lodsLoop w rep next) rep s next
-  | .cmps rep => runStringOp (cmpsLoop w rep next) rep s next
-  | .scas rep => runStringOp (scasLoop w rep next) rep s next
+  | .movs rep =>
+    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
+    stringLoop rep false s next fun s k =>
+      let rsi := s.regs.get64 .rsi
+      let rdi := s.regs.get64 .rdi
+      s.load rsi w fun val s =>
+      s.store rdi val fun s =>
+      k { s with regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
+  | .stos rep =>
+    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
+    stringLoop rep false s next fun s k =>
+      let rdi := s.regs.get64 .rdi
+      let val := s.regs.get (Reg.low .rax w)
+      s.store rdi val fun s =>
+      k { s with regs := s.regs.set64 .rdi (rdi + delta) }
+  | .lods rep =>
+    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
+    stringLoop rep false s next fun s k =>
+      let rsi := s.regs.get64 .rsi
+      s.load rsi w fun val s =>
+      let s := s.setReg (Reg.low .rax w) val
+      k { s with regs := s.regs.set64 .rsi (rsi + delta) }
+  | .cmps rep =>
+    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
+    stringLoop rep true s next fun s k =>
+      let rsi := s.regs.get64 .rsi
+      let rdi := s.regs.get64 .rdi
+      s.load rsi w fun a s =>
+      s.load rdi w fun b s =>
+      let v := a - b
+      let status := StatusFlags.from_result v {
+        cf := v.unsigned != a.unsigned - b.unsigned
+        af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
+        of := v.signed != a.signed - b.signed }
+      let status := { status with df := s.status.df }
+      k { s with status, regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
+  | .scas rep =>
+    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
+    stringLoop rep true s next fun s k =>
+      let rdi := s.regs.get64 .rdi
+      let a := s.regs.get (Reg.low .rax w)
+      s.load rdi w fun b s =>
+      let v := a - b
+      let status := StatusFlags.from_result v {
+        cf := v.unsigned != a.unsigned - b.unsigned
+        af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
+        of := v.signed != a.signed - b.signed }
+      let status := { status with df := s.status.df }
+      k { s with status, regs := s.regs.set64 .rdi (rdi + delta) }
 -- Arithmetic
   | .lea dst src => next (s.setReg dst ((src.interp s.regs p).zeroExtend _))
   | .add dst src =>
