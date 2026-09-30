@@ -56,6 +56,10 @@ def toFloat32 (v : BitVec 32) : Float32 := Float32.ofBits (UInt32.ofBitVec v)
 /-- Replaces the low `n` bits of `old` with `new`, keeping the upper bits of `old`. -/
 def replaceLow {w n} (old : BitVec w) (new : BitVec n) : BitVec w :=
   (BitVec.append (old.extractLsb' n (w - n)) new).setWidth _
+
+/-- Scalar operation replacing lane 0 with `f (a.lane k 0) (b.lane k 0)`. -/
+def scalar {n} (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec n) : BitVec n :=
+  a.replaceLow (f (a.lane k 0) (b.lane k 0))
 end BitVec
 
 def Float32.toBitVec (f : Float32) : BitVec 32 := UInt32.toBitVec (Float32.toBits f)

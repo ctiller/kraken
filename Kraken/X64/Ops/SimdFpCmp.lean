@@ -18,49 +18,73 @@ inductive SimdFpCmp
 
 instance : Mnemonic SimdFpCmp := ⟨mnemonics% SimdFpCmp⟩
 
-def f32cmp (p : Float32 → Float32 → Bool) (a b : BitVec 32) : BitVec 32 :=
-  if p a.toFloat32 b.toFloat32 then 0xffffffff#32 else 0#32
+def fpPredicateMatch (pred : Nat) (lt eq unord : Bool) : Bool :=
+  match pred % 16 with
+  | 0 => eq
+  | 1 => lt
+  | 2 => lt || eq
+  | 3 => unord
+  | 4 => !eq
+  | 5 => !lt
+  | 6 => !lt && !eq
+  | 7 => !unord
+  | 8 => eq || unord
+  | 9 => lt || unord
+  | 10 => lt || eq || unord
+  | 11 => false
+  | 12 => !eq && !unord
+  | 13 => !lt && !unord
+  | 14 => !lt && !eq && !unord
+  | _ => true
 
-def f64cmp (p : Float → Float → Bool) (a b : BitVec 64) : BitVec 64 :=
-  if p a.toFloat b.toFloat then 0xffffffffffffffff#64 else 0#64
+def f32cmpPred (pred : Nat) (a b : BitVec 32) : BitVec 32 :=
+  let fa := a.toFloat32; let fb := b.toFloat32
+  let unord := fa.isNaN || fb.isNaN
+  let lt := !unord && fa < fb
+  let eq := !unord && fa == fb
+  if fpPredicateMatch pred lt eq unord then 0xffffffff#32 else 0#32
 
-def isUnord32 (a b : Float32) : Bool := a.isNaN || b.isNaN
-def isUnord64 (a b : Float) : Bool := a.isNaN || b.isNaN
+def f64cmpPred (pred : Nat) (a b : BitVec 64) : BitVec 64 :=
+  let fa := a.toFloat; let fb := b.toFloat
+  let unord := fa.isNaN || fb.isNaN
+  let lt := !unord && fa < fb
+  let eq := !unord && fa == fb
+  if fpPredicateMatch pred lt eq unord then 0xffffffffffffffff#64 else 0#64
 
 /-- The operation on one 128-bit lane. -/
 def SimdFpCmp.interp : SimdFpCmp → BitVec 128 → BitVec 128 → BitVec 128
-  | .cmpeqps    => .map2 32 (f32cmp (· == ·))
-  | .cmpltps    => .map2 32 (f32cmp (· < ·))
-  | .cmpleps    => .map2 32 (f32cmp (· <= ·))
-  | .cmpunordps => .map2 32 (f32cmp isUnord32)
-  | .cmpneqps   => .map2 32 (f32cmp (· != ·))
-  | .cmpnltps   => .map2 32 (f32cmp fun a b => !(a < b))
-  | .cmpnleps   => .map2 32 (f32cmp fun a b => !(a <= b))
-  | .cmpordps   => .map2 32 (f32cmp fun a b => !isUnord32 a b)
-  | .cmpeqpd    => .map2 64 (f64cmp (· == ·))
-  | .cmpltpd    => .map2 64 (f64cmp (· < ·))
-  | .cmplepd    => .map2 64 (f64cmp (· <= ·))
-  | .cmpunordpd => .map2 64 (f64cmp isUnord64)
-  | .cmpneqpd   => .map2 64 (f64cmp (· != ·))
-  | .cmpnltpd   => .map2 64 (f64cmp fun a b => !(a < b))
-  | .cmpnlepd   => .map2 64 (f64cmp fun a b => !(a <= b))
-  | .cmpordpd   => .map2 64 (f64cmp fun a b => !isUnord64 a b)
-  | .cmpeqss    => fun a b => a.replaceLow (f32cmp (· == ·) (a.lane 32 0) (b.lane 32 0))
-  | .cmpltss    => fun a b => a.replaceLow (f32cmp (· < ·) (a.lane 32 0) (b.lane 32 0))
-  | .cmpless    => fun a b => a.replaceLow (f32cmp (· <= ·) (a.lane 32 0) (b.lane 32 0))
-  | .cmpunordss => fun a b => a.replaceLow (f32cmp isUnord32 (a.lane 32 0) (b.lane 32 0))
-  | .cmpneqss   => fun a b => a.replaceLow (f32cmp (· != ·) (a.lane 32 0) (b.lane 32 0))
-  | .cmpnltss   => fun a b => a.replaceLow (f32cmp (fun x y => !(x < y)) (a.lane 32 0) (b.lane 32 0))
-  | .cmpnless   => fun a b => a.replaceLow (f32cmp (fun x y => !(x <= y)) (a.lane 32 0) (b.lane 32 0))
-  | .cmpordss   => fun a b => a.replaceLow (f32cmp (fun x y => !isUnord32 x y) (a.lane 32 0) (b.lane 32 0))
-  | .cmpeqsd    => fun a b => a.replaceLow (f64cmp (· == ·) (a.lane 64 0) (b.lane 64 0))
-  | .cmpltsd    => fun a b => a.replaceLow (f64cmp (· < ·) (a.lane 64 0) (b.lane 64 0))
-  | .cmplesd    => fun a b => a.replaceLow (f64cmp (· <= ·) (a.lane 64 0) (b.lane 64 0))
-  | .cmpunordsd => fun a b => a.replaceLow (f64cmp isUnord64 (a.lane 64 0) (b.lane 64 0))
-  | .cmpneqsd   => fun a b => a.replaceLow (f64cmp (· != ·) (a.lane 64 0) (b.lane 64 0))
-  | .cmpnltsd   => fun a b => a.replaceLow (f64cmp (fun x y => !(x < y)) (a.lane 64 0) (b.lane 64 0))
-  | .cmpnlesd   => fun a b => a.replaceLow (f64cmp (fun x y => !(x <= y)) (a.lane 64 0) (b.lane 64 0))
-  | .cmpordsd   => fun a b => a.replaceLow (f64cmp (fun x y => !isUnord64 x y) (a.lane 64 0) (b.lane 64 0))
+  | .cmpeqps    => .map2 32 (f32cmpPred 0)
+  | .cmpltps    => .map2 32 (f32cmpPred 1)
+  | .cmpleps    => .map2 32 (f32cmpPred 2)
+  | .cmpunordps => .map2 32 (f32cmpPred 3)
+  | .cmpneqps   => .map2 32 (f32cmpPred 4)
+  | .cmpnltps   => .map2 32 (f32cmpPred 5)
+  | .cmpnleps   => .map2 32 (f32cmpPred 6)
+  | .cmpordps   => .map2 32 (f32cmpPred 7)
+  | .cmpeqpd    => .map2 64 (f64cmpPred 0)
+  | .cmpltpd    => .map2 64 (f64cmpPred 1)
+  | .cmplepd    => .map2 64 (f64cmpPred 2)
+  | .cmpunordpd => .map2 64 (f64cmpPred 3)
+  | .cmpneqpd   => .map2 64 (f64cmpPred 4)
+  | .cmpnltpd   => .map2 64 (f64cmpPred 5)
+  | .cmpnlepd   => .map2 64 (f64cmpPred 6)
+  | .cmpordpd   => .map2 64 (f64cmpPred 7)
+  | .cmpeqss    => .scalar 32 (f32cmpPred 0)
+  | .cmpltss    => .scalar 32 (f32cmpPred 1)
+  | .cmpless    => .scalar 32 (f32cmpPred 2)
+  | .cmpunordss => .scalar 32 (f32cmpPred 3)
+  | .cmpneqss   => .scalar 32 (f32cmpPred 4)
+  | .cmpnltss   => .scalar 32 (f32cmpPred 5)
+  | .cmpnless   => .scalar 32 (f32cmpPred 6)
+  | .cmpordss   => .scalar 32 (f32cmpPred 7)
+  | .cmpeqsd    => .scalar 64 (f64cmpPred 0)
+  | .cmpltsd    => .scalar 64 (f64cmpPred 1)
+  | .cmplesd    => .scalar 64 (f64cmpPred 2)
+  | .cmpunordsd => .scalar 64 (f64cmpPred 3)
+  | .cmpneqsd   => .scalar 64 (f64cmpPred 4)
+  | .cmpnltsd   => .scalar 64 (f64cmpPred 5)
+  | .cmpnlesd   => .scalar 64 (f64cmpPred 6)
+  | .cmpordsd   => .scalar 64 (f64cmpPred 7)
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdFpCmp.memBytes? : SimdFpCmp → Option Nat

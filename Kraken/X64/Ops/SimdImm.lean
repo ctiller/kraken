@@ -66,38 +66,7 @@ def clmul64 (a b : BitVec 64) : BitVec 128 :=
   (List.range 64).foldl (fun acc i =>
     if b.getLsbD i then acc ^^^ ((a.zeroExtend 128) <<< i) else acc) 0#128
 
-def fpPredicateMatch (pred : Nat) (lt eq unord : Bool) : Bool :=
-  match pred % 16 with
-  | 0 => eq
-  | 1 => lt
-  | 2 => lt || eq
-  | 3 => unord
-  | 4 => !eq
-  | 5 => !lt
-  | 6 => !lt && !eq
-  | 7 => !unord
-  | 8 => eq || unord
-  | 9 => lt || unord
-  | 10 => lt || eq || unord
-  | 11 => false
-  | 12 => !eq && !unord
-  | 13 => !lt && !unord
-  | 14 => !lt && !eq && !unord
-  | _ => true
 
-def f32cmpPred (pred : Nat) (a b : BitVec 32) : BitVec 32 :=
-  let fa := a.toFloat32; let fb := b.toFloat32
-  let unord := fa.isNaN || fb.isNaN
-  let lt := !unord && fa < fb
-  let eq := !unord && fa == fb
-  if fpPredicateMatch pred lt eq unord then 0xffffffff#32 else 0#32
-
-def f64cmpPred (pred : Nat) (a b : BitVec 64) : BitVec 64 :=
-  let fa := a.toFloat; let fb := b.toFloat
-  let unord := fa.isNaN || fb.isNaN
-  let lt := !unord && fa < fb
-  let eq := !unord && fa == fb
-  if fpPredicateMatch pred lt eq unord then 0xffffffffffffffff#64 else 0#64
 
 def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) (legacy : Bool := false)
     (memSrc : Bool := false) : BitVec n :=

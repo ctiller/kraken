@@ -58,21 +58,21 @@ def SimdFp.interp : SimdFp → BitVec 128 → BitVec 128 → BitVec 128
   | .minpd => .map2 64 sseMin64
   | .maxpd => .map2 64 sseMax64
   -- Scalar single precision (replaces only lane 0 of a)
-  | .addss => fun a b => a.replaceLow (sseBinOp (· + ·) (a.lane 32 0) (b.lane 32 0))
-  | .subss => fun a b => a.replaceLow (sseBinOp (· - ·) (a.lane 32 0) (b.lane 32 0))
-  | .mulss => fun a b => a.replaceLow (sseBinOp (· * ·) (a.lane 32 0) (b.lane 32 0))
-  | .divss => fun a b => a.replaceLow (sseBinOp (· / ·) (a.lane 32 0) (b.lane 32 0))
-  | .minss => fun a b => a.replaceLow (sseMin32 (a.lane 32 0) (b.lane 32 0))
-  | .maxss => fun a b => a.replaceLow (sseMax32 (a.lane 32 0) (b.lane 32 0))
+  | .addss => .scalar 32 (sseBinOp (· + ·))
+  | .subss => .scalar 32 (sseBinOp (· - ·))
+  | .mulss => .scalar 32 (sseBinOp (· * ·))
+  | .divss => .scalar 32 (sseBinOp (· / ·))
+  | .minss => .scalar 32 sseMin32
+  | .maxss => .scalar 32 sseMax32
   | .sqrtss => fun a b => a.replaceLow (sseUnOp Float32.sqrt (b.lane 32 0))
   | .cvtsd2ss => fun a b => a.replaceLow (FpFmt.f64.convert .f32 0 (b.lane 64 0))
   -- Scalar double precision (replaces only lane 0 of a)
-  | .addsd => fun a b => a.replaceLow (sseBinOp64 (· + ·) (a.lane 64 0) (b.lane 64 0))
-  | .subsd => fun a b => a.replaceLow (sseBinOp64 (· - ·) (a.lane 64 0) (b.lane 64 0))
-  | .mulsd => fun a b => a.replaceLow (sseBinOp64 (· * ·) (a.lane 64 0) (b.lane 64 0))
-  | .divsd => fun a b => a.replaceLow (sseBinOp64 (· / ·) (a.lane 64 0) (b.lane 64 0))
-  | .minsd => fun a b => a.replaceLow (sseMin64 (a.lane 64 0) (b.lane 64 0))
-  | .maxsd => fun a b => a.replaceLow (sseMax64 (a.lane 64 0) (b.lane 64 0))
+  | .addsd => .scalar 64 (sseBinOp64 (· + ·))
+  | .subsd => .scalar 64 (sseBinOp64 (· - ·))
+  | .mulsd => .scalar 64 (sseBinOp64 (· * ·))
+  | .divsd => .scalar 64 (sseBinOp64 (· / ·))
+  | .minsd => .scalar 64 sseMin64
+  | .maxsd => .scalar 64 sseMax64
   | .sqrtsd => fun a b => a.replaceLow (sseUnOp64 Float.sqrt (b.lane 64 0))
   | .cvtss2sd => fun a b => a.replaceLow (FpFmt.f32.convert .f64 0 (b.lane 32 0))
   -- Asymmetric / horizontal ops
