@@ -197,13 +197,6 @@ abbrev Operand.mem {w} (m : AddrExpr) : Operand w := regOrMem (.mem m)
 inductive SimdCount | imm (v : ConstExpr) | reg (src : AvxRegOrMem .W128)
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
--- TODO: We could remove this and use AvxRegOrMem directly.
-inductive AvxOperand (w : AvxWidth) | regOrMem (_ : AvxRegOrMem w)
-  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
-instance {w} : Coe (AvxRegOrMem w) (AvxOperand w) where coe := .regOrMem
-attribute [coe] AvxOperand.regOrMem
-abbrev AvxOperand.avx {w} (r : AvxReg w) : AvxOperand w := regOrMem (.avx r)
-abbrev AvxOperand.mem {w} (m : AddrExpr) : AvxOperand w := regOrMem (.mem m)
 
 inductive LoopCond | none | e | ne
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr

@@ -396,12 +396,6 @@ def MachineData.storeScalar [Labels] [AddressSize] {w : AvxWidth} (s : MachineDa
   | .imm v => ret ((v.interp p).toBitVec.truncate _) s
   -- we rely on assemblers erroring out on too-large immediates in uniform ops
 
-def AvxOperand.interp {aw} [Labels] [AddressSize]
-  (o : AvxOperand aw) (s : MachineData) (p : Std.Rco Int64)
-  (ret : aw.type → MachineData → Effects) (checkAlign : Bool := false) :=
-match o with
-  | regOrMem rm => rm.interp s p ret checkAlign
-
 @[kstep]
 def CondCode.interp (cc : CondCode) (s : StatusFlags) : Bool := match cc with
   | .o  => s.of | .no => !s.of

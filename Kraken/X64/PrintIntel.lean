@@ -105,10 +105,6 @@ def Operand.toStr {w} (op : Operand w) (addr_w : Width := .W64) : String := matc
   | .imm v => toString v
 instance {w} : ToString (Operand w) where toString op := op.toStr
 
-def AvxOperand.toStr {w} (op : AvxOperand w) (addr_w : Width := .W64) : String := match op with
-  | .regOrMem rm => rm.toStr addr_w
-instance {w} : ToString (AvxOperand w) where toString op := op.toStr
-
 def RelRegOrMem.toStr (rel : RelRegOrMem) (addr_w : Width := .W64) : String := match rel with
   | .rel (.sub e .after_current_instruction) => toString e
   | .rel c => toString c
