@@ -86,16 +86,41 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
     | .mem _ => s!"movz{suffix w'}{s} {rm aw x}, {rm aw d}"
   | .push x => one "push" (operand aw x)
   | .pop d => one "pop" (rm aw d)
+  | .leave => "leave"
+  | .pushf => "pushfq"
+  | .popf => "popfq"
   | .setcc cc d => s!"set{cc} {rm aw d}"
   | .cmovcc cc d x => s!"cmov{cc} {rm aw x}, {reg d}"
   | .xchg d x => s!"xchg{s} {reg x}, {rm aw d}"
   | .xadd d x => s!"xadd{s} {reg x}, {rm aw d}"
   | .cmpxchg d x => s!"cmpxchg{s} {reg x}, {rm aw d}"
+  | .cmpxchg8b a => s!"cmpxchg8b {addr aw a}"
+  | .cmpxchg16b a => s!"cmpxchg16b {addr aw a}"
+  | .ud2 => "ud2"
+  | .int3 => "int3"
+  | .hlt => "hlt"
   | .clc => "clc"
   | .stc => "stc"
   | .cmc => "cmc"
   | .lahf => "lahf"
   | .sahf => "sahf"
+  | .cld => "cld"
+  | .std => "std"
+  | .movs rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}movs{s}"
+  | .stos rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}stos{s}"
+  | .lods rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}lods{s}"
+  | .cmps rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}cmps{s}"
+  | .scas rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}scas{s}"
   | .lea d a => s!"lea {addr aw a}, {reg d}"
   | .add d x => two "add" (operand aw x) (rm aw d)
   | .adc d x => two "adc" (operand aw x) (rm aw d)
@@ -139,6 +164,9 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .rcl d c => two "rcl" (count c) (rm aw d)
   | .rcr d c => two "rcr" (count c) (rm aw d)
   | .bswap d => s!"bswap {reg d}"
+  | .movbe d x => two "movbe" (rm aw x) (rm aw d)
+  | .crc32 (w' := w') d x => s!"crc32{suffix w'} {rm aw x}, {reg d}"
+  | .rorx d x c => s!"rorx{s} ${const c}, {rm aw x}, {reg d}"
   | .un op d x => s!"{Mnemonic.name op} {rm aw x}, {reg d}"
   | .bin op d a b =>
     if op.src2First then s!"{Mnemonic.name op} {rm aw b}, {reg a}, {reg d}"

@@ -63,7 +63,7 @@ def summarize (s : MachineData) : StateSummary :=
              ("zmm24", z.zmm24), ("zmm25", z.zmm25), ("zmm26", z.zmm26), ("zmm27", z.zmm27),
              ("zmm28", z.zmm28), ("zmm29", z.zmm29), ("zmm30", z.zmm30), ("zmm31", z.zmm31)],
     flags := [("cf", f.cf), ("pf", f.pf), ("af", f.af),
-              ("zf", f.zf), ("sf", f.sf), ("of", f.of)] }
+              ("zf", f.zf), ("sf", f.sf), ("of", f.of), ("df", f.df)] }
 
 def _start: String := "_start"
 def _end: String := "_end"
@@ -95,7 +95,7 @@ We track which of the six status flags are currently undefined as a bitmask usin
 bit layout of `NondetSupportingType.from_hash` (cf, pf, af, zf, sf, of = bits 0..5). -/
 
 def StatusFlags.toMask (f : StatusFlags) : Nat :=
-  f.cf.toNat ||| f.pf.toNat <<< 1 ||| f.af.toNat <<< 2 ||| f.zf.toNat <<< 3 ||| f.sf.toNat <<< 4 ||| f.of.toNat <<< 5
+  f.cf.toNat ||| f.pf.toNat <<< 1 ||| f.af.toNat <<< 2 ||| f.zf.toNat <<< 3 ||| f.sf.toNat <<< 4 ||| f.of.toNat <<< 5 ||| f.df.toNat <<< 6
 
 -- Runs `Effects` to completion, resolving every `undefined` choice with `h`. Also returns
 -- whether any `undefined` choice was made.
@@ -118,12 +118,12 @@ def stepDeterministic (d : MachineData) (mask : Nat) (asmCode : String) : Option
   let mut (d, mask) := (d, mask)
   for (pc, dir, sz) in exe.withAddresses do
     let p : Std.Rco Int64 := .mk pc (pc + .ofNat sz)
-    let fixed := d.status.toMask &&& (63 ^^^ mask)
+    let fixed := d.status.toMask &&& (127 ^^^ mask)
     let run (m : Nat) (h : UInt64) : Option (MachineData × Bool) :=
       let status : StatusFlags := NondetSupportingType.from_hash (fixed ||| m).toUInt64
       evalEffects h false (dir.interp { d with status } p (fun s => .done (s, p.upper)) (fun _ _ => .unimplemented "jump"))
     let mut outs : Array MachineData := #[]
-    for m in (List.range 64).filter (fun m => m &&& mask == m) do
+    for m in (List.range 128).filter (fun m => m &&& mask == m) do
       let (s, sawUndef) ← run m 0
       outs := outs.push s
       if sawUndef then outs := outs.push (← run m (-1)).1
@@ -171,6 +171,7 @@ instance : Gen RegMm := ⟨gen_ctors% RegMm⟩
 instance : Gen Reg64 := ⟨gen_ctors% Reg64⟩
 instance : Gen CondCode := ⟨gen_ctors% CondCode⟩
 instance : Gen LoopCond := ⟨gen_ctors% LoopCond⟩
+instance : Gen RepPrefix := ⟨gen_ctors% RepPrefix⟩
 instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
 -- Opcode families: uniformly over their opcodes.
 instance {α : Type} [Mnemonic α] : Gen α := ⟨(·.1) <$> pick Mnemonic.names⟩

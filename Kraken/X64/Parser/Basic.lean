@@ -596,6 +596,22 @@ def parseXchg (op_w : Option Width) : Parser Instr := do
   | dst, .reg r => pure (toInstr addr_w (.xchg dst r))
   | .mem _, .mem _ => fail "xchg cannot have two memory operands"
 
+def parseMovbe (op_w : Option Width) : Parser Instr := do
+  let (addr_w, ⟨_w, a, b⟩) ← match op_w with
+    | some w =>
+      let (addr_w1, a) ← parseAO parseRegOrMem w
+      parseComma
+      let (addr_w2, b) ← parseAO parseRegOrMem w
+      let addr_w ← mergeAddrWidths addr_w1 addr_w2
+      pure (addr_w, ⟨w, a, b⟩)
+    | none =>
+      let a ← parseRegOrMem; parseComma
+      ascribeOrInfer a parseRegOrMem
+  match a, b with
+  | .mem a, .reg r => pure (toInstr addr_w (.movbe (.reg r) (.mem a)))
+  | .reg r, .mem a => pure (toInstr addr_w (.movbe (.mem a) (.reg r)))
+  | _, _ => fail "movbe requires one register and one memory operand"
+
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
 def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
   (Mnemonic.ofName? mn).map (·, none) <|> do
@@ -875,7 +891,7 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
 
 /-- Parse the operands of the instructions not in a family, named `mn` (lowercase `mnemonic`).
     AT&T syntax: src, dst (reversed from Intel). -/
-def parseExplicit (mnemonic mn : String) : Parser Instr := do
+def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Instr := do
   -- Match on full mnemonic name (no suffix stripping)
   match mn with
   -- Arithmetic (two-operand: src, dst) - 64-bit
@@ -1114,6 +1130,14 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     let w ← instrWidth mn
     commaSeparated w parseRegA parseRegOrMem .cmpxchg
 
+  | "cmpxchg8b" =>
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.cmpxchg8b a))
+
+  | "cmpxchg16b" =>
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.cmpxchg16b a))
+
   | "clc" => pure (toInstr .none (w := .W64) .clc)
   | "stc" => pure (toInstr .none (w := .W64) .stc)
   | "cmc" => pure (toInstr .none (w := .W64) .cmc)
@@ -1342,6 +1366,39 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     else
       pure (toInstr .none (.bswap dst))
 
+  | "movbe" =>
+    parseMovbe .none
+
+  | "movbeq" | "movbel" | "movbew" =>
+    let w ← instrWidth mn
+    parseMovbe (some w)
+
+  | "crc32" =>
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨w_dst, dst⟩ ← parseRegW
+    let src : RegOrMem w_dst ← ascribe w_dst src
+    pure (toInstr addr_w (.crc32 dst src))
+
+  | "crc32q" | "crc32l" | "crc32w" | "crc32b" =>
+    let w_src ← instrWidth mn
+    let (addr_w, src) ← parseRegOrMemAO w_src; parseComma
+    let ⟨_w_dst, dst⟩ ← parseRegW
+    pure (toInstr addr_w (.crc32 dst src))
+
+  | "rorx" =>
+    let cnt ← parseImmComma
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨w, dst⟩ ← parseRegW
+    let src ← ascribe w src
+    pure (toInstr addr_w (.rorx dst src cnt))
+
+  | "rorxq" | "rorxl" =>
+    let w ← instrWidth mn
+    let cnt ← parseImmComma
+    let (addr_w, src) ← parseRegOrMemAO w; parseComma
+    let dst ← parseRegO w
+    pure (toInstr addr_w (.rorx dst src cnt))
+
   -- Stack operations
   | "push" =>
     let ( addr_w, src ) ← parseOperand
@@ -1362,6 +1419,55 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     let w ← instrWidth mn
     let ( addr_w, dst ) ← parseRegOrMemAO w
     pure (toInstr addr_w (.pop dst))
+
+  | "leave" | "leaveq" =>
+    pure (toInstr .none (w := .W64) .leave)
+
+  | "pushf" | "pushfq" =>
+    pure (toInstr .none (w := .W64) .pushf)
+
+  | "popf" | "popfq" =>
+    pure (toInstr .none (w := .W64) .popf)
+
+  | "cld" =>
+    pure (toInstr .none (w := .W64) .cld)
+
+  | "std" =>
+    pure (toInstr .none (w := .W64) .std)
+
+  | "movsb" => pure (toInstr .none (w := .W8) (.movs rep))
+  | "movsw" => pure (toInstr .none (w := .W16) (.movs rep))
+  | "movsl" | "movsd" => pure (toInstr .none (w := .W32) (.movs rep))
+  | "movsq" => pure (toInstr .none (w := .W64) (.movs rep))
+
+  | "stosb" => pure (toInstr .none (w := .W8) (.stos rep))
+  | "stosw" => pure (toInstr .none (w := .W16) (.stos rep))
+  | "stosl" | "stosd" => pure (toInstr .none (w := .W32) (.stos rep))
+  | "stosq" => pure (toInstr .none (w := .W64) (.stos rep))
+
+  | "lodsb" => pure (toInstr .none (w := .W8) (.lods rep))
+  | "lodsw" => pure (toInstr .none (w := .W16) (.lods rep))
+  | "lodsl" | "lodsd" => pure (toInstr .none (w := .W32) (.lods rep))
+  | "lodsq" => pure (toInstr .none (w := .W64) (.lods rep))
+
+  | "cmpsb" => pure (toInstr .none (w := .W8) (.cmps rep))
+  | "cmpsw" => pure (toInstr .none (w := .W16) (.cmps rep))
+  | "cmpsl" | "cmpsd" => pure (toInstr .none (w := .W32) (.cmps rep))
+  | "cmpsq" => pure (toInstr .none (w := .W64) (.cmps rep))
+
+  | "scasb" => pure (toInstr .none (w := .W8) (.scas rep))
+  | "scasw" => pure (toInstr .none (w := .W16) (.scas rep))
+  | "scasl" | "scasd" => pure (toInstr .none (w := .W32) (.scas rep))
+  | "scasq" => pure (toInstr .none (w := .W64) (.scas rep))
+
+  | "ud2" =>
+    pure (toInstr .none (w := .W64) .ud2)
+
+  | "int3" =>
+    pure (toInstr .none (w := .W64) .int3)
+
+  | "hlt" =>
+    pure (toInstr .none (w := .W64) .hlt)
 
   | "ret" | "retq" =>
     pure (toInstr .none (w := .W64) .ret)
@@ -1446,10 +1552,21 @@ def parseInstr : Parser Instr := do
   let mut mnemonic ← parseName
   -- The `lock` prefix doesn't change single-threaded semantics.
   if mnemonic.toLower == "lock" then skipHWs; mnemonic ← parseName
+  let mut rep : RepPrefix := .none
+  let lower := mnemonic.toLower
+  if lower == "rep" then
+    rep := .rep
+    skipHWs; mnemonic ← parseName
+  else if lower == "repe" || lower == "repz" then
+    rep := .repe
+    skipHWs; mnemonic ← parseName
+  else if lower == "repne" || lower == "repnz" then
+    rep := .repne
+    skipHWs; mnemonic ← parseName
   let mn := mnemonic.toLower
   match parseFamily? mn with
-  | some p => attempt p <|> parseExplicit mnemonic mn
-  | none => parseExplicit mnemonic mn
+  | some p => attempt p <|> parseExplicit mnemonic mn rep
+  | none => parseExplicit mnemonic mn rep
 
 -- ============================================================================
 -- Label Parsing

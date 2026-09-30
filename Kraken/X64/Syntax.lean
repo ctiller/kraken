@@ -214,6 +214,9 @@ inductive ShiftCountExpr | cl | imm8 (v : ConstExpr)
 inductive RelRegOrMem | rel (_ : ConstExpr) | reg (r : Reg .W64) | mem (_ : AddrExpr)
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
+inductive RepPrefix | none | rep | repe | repne
+  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+
 inductive Operation (w : Width)
   -- Data movement
   | mov (_ : Dst w) (src : Operand w)
@@ -221,16 +224,31 @@ inductive Operation (w : Width)
   | movzx {w'} (_ : Dst w) (src : RegOrMem w') -- {_ : w'.bits < w.bits ∧ w'.bits < 32}
   | push (src : Operand w)
   | pop  (_ : Dst w)
+  | leave
+  | pushf
+  | popf
   | setcc (_ : CondCode) (_ : Dst w) -- {_ : w = .W8}
   | cmovcc (_ : CondCode) (_ : Reg w) (src : RegOrMem w)
   | xchg (dst : Dst w) (src : Reg w)
   | xadd (dst : Dst w) (src : Reg w)
   | cmpxchg (dst : Dst w) (src : Reg w)
+  | cmpxchg8b (dst : AddrExpr)
+  | cmpxchg16b (dst : AddrExpr)
+  | ud2
+  | int3
+  | hlt
   | clc
   | stc
   | cmc
   | lahf
   | sahf
+  | cld
+  | std
+  | movs (rep : RepPrefix)
+  | stos (rep : RepPrefix)
+  | lods (rep : RepPrefix)
+  | cmps (rep : RepPrefix)
+  | scas (rep : RepPrefix)
   -- Arithmetic
   | lea (_ : Reg w) (src : AddrExpr) -- {_ : 16 <= w.bits}
   | add  (_ : Dst w) (src : Operand w)
@@ -269,6 +287,9 @@ inductive Operation (w : Width)
   | rcl  (_ : Dst w) (_ : ShiftCountExpr)
   | rcr  (_ : Dst w) (_ : ShiftCountExpr)
   | bswap  (dst : Reg w) -- (_ : w = .W32 ∨ w = .W64)
+  | movbe  (dst : Dst w) (src : RegOrMem w)
+  | crc32 {w'} (dst : Reg w) (src : RegOrMem w')
+  | rorx (dst : Reg w) (src : RegOrMem w) (cnt : ConstExpr)
   -- Opcode families (see Kraken/X64/Ops)
   | un (op : GprUnOp) (dst : Reg w) (src : RegOrMem w)
   | bin (op : GprBinOp) (dst src1 : Reg w) (src2 : RegOrMem w)
