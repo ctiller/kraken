@@ -33,6 +33,10 @@ def corpus : List String := [
   "setl %al", "setle %al", "seto %al", "setno %al", "sets %al", "setns %al",
   "setp %al", "setnp %al", "setge %al", "setg %al",
   "cmovz %rax, %rbx", "cmovl (%rsp), %ecx", "cmovge %rax, %rbx", "cmovg (%rsp), %ecx",
+  "xchgb %al, %bl", "xchgw %ax, (%rsp)", "xchgl %eax, %ebx", "xchgq %rax, %rbx", "xchgq %rax, 8(%rsp)",
+  "xaddb %al, (%rsp)", "xaddw %ax, %bx", "xaddl %eax, (%rsp)", "xaddq %rax, %rbx",
+  "cmpxchgb %bl, (%rsp)", "cmpxchgw %bx, %cx", "cmpxchgl %ebx, (%rsp)", "cmpxchgq %rbx, %rcx",
+  "clc", "stc", "cmc", "lahf", "sahf",
   -- arithmetic
   "leaq 8(%rax,%rbx,4), %rcx", "leal (%eax), %ecx", "lea sym(%rip), %rax",
   "addq $1, %rax", "addb %al, (%rsp)", "adcl (%rsp), %eax", "adcx %rax, %rbx",
@@ -85,6 +89,10 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo" with
   | .ok p => toATT p == "movq %rax, -16(%rbp,%rcx,8)\nfoo:\nimull $3, 8(%eax), %ebx\njne foo"
   | .error _ => false
+
+#guard match parse "lock xaddq %rax, (%rsp)", parse "xaddq %rax, (%rsp)" with
+  | .ok p1, .ok p2 => p1 == p2
+  | _, _ => false
 
 -- Every program in the hardware test corpus round-trips.
 #eval show IO Unit from do

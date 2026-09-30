@@ -464,6 +464,56 @@ set_option maxHeartbeats 1000000
     src.interp s p (fun src s =>
     let v := if cc.interp s.status then src else s.regs.get dst
     next (s.setReg dst v))
+  | .xchg dst src =>
+    dst.interp s p (fun dval s =>
+    let sval := s.regs.get src
+    let s := s.setReg src dval
+    s.set dst sval p next)
+  | .xadd dst src =>
+    dst.interp s p (fun dval s =>
+    let sval := s.regs.get src
+    let v := dval + sval
+    let status := .from_result v {
+      cf := v.unsigned != dval.unsigned + sval.unsigned
+      af := (v.take 4).unsigned != (dval.take 4).unsigned + (sval.take 4).unsigned,
+      of := v.signed != dval.signed + sval.signed }
+    let s := { s with status }.setReg src dval
+    s.set dst v p next)
+  | .cmpxchg dst src =>
+    let acc := s.regs.get (Reg.low .rax w)
+    dst.interp s p (fun dval s =>
+    let v := acc - dval
+    let status := .from_result v {
+      cf := v.unsigned != acc.unsigned - dval.unsigned
+      af := (v.take 4).unsigned != (acc.take 4).unsigned - (dval.take 4).unsigned,
+      of := v.signed != acc.signed - dval.signed }
+    let s := { s with status }
+    if acc == dval then
+      let sval := s.regs.get src
+      s.set dst sval p next
+    else
+      next (s.setReg (Reg.low .rax w) dval))
+  | .clc => next { s with status := { s.status with cf := false } }
+  | .stc => next { s with status := { s.status with cf := true } }
+  | .cmc => next { s with status := { s.status with cf := !s.status.cf } }
+  | .lahf =>
+    let ah_val : BitVec 8 :=
+      ((BitVec.ofBool s.status.sf).zeroExtend 8 <<< 7) |||
+      ((BitVec.ofBool s.status.zf).zeroExtend 8 <<< 6) |||
+      ((BitVec.ofBool s.status.af).zeroExtend 8 <<< 4) |||
+      ((BitVec.ofBool s.status.pf).zeroExtend 8 <<< 2) |||
+      (BitVec.ofNat 8 2) |||
+      (BitVec.ofBool s.status.cf).zeroExtend 8
+    next (s.setReg Reg.ah ah_val)
+  | .sahf =>
+    let ah_val := s.regs.get Reg.ah
+    let status := { s.status with
+      sf := ah_val.getLsbD 7
+      zf := ah_val.getLsbD 6
+      af := ah_val.getLsbD 4
+      pf := ah_val.getLsbD 2
+      cf := ah_val.getLsbD 0 }
+    next { s with status }
 -- Arithmetic
   | .lea dst src => next (s.setReg dst ((src.interp s.regs p).zeroExtend _))
   | .add dst src =>
