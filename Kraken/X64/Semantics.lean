@@ -857,90 +857,59 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
     dst.interp s p (fun a s =>
     let v := ~~~a
     s.set dst v p next)
-  | .shl dst count =>
-    dst.interp s p (fun a s =>
-    let count := count.interpMasked s p w
-    -- A zero count leaves flags unchanged but still writes dst, zero-extending 32-bit registers.
-    if count == 0 then s.set dst a p next else
-    let v := a <<< count
-    undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf (a <<< (count-1)).msb else undefined setcf) (λ cf =>
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := .from_result s.status v { cf, af, of } }.set dst v p next))))
-  | .shr dst count =>
+  | .shl dst count | .shr dst count | .sar dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
     if count == 0 then s.set dst a p next else
-    let v := a.ushiftRight count
+    let v := match i with
+      | .shl _ _ => a <<< count
+      | .shr _ _ => a.ushiftRight count
+      | _ => a.sshiftRight count
+    let cfBit := match i with
+      | .shl _ _ => (a <<< (count-1)).msb
+      | _ => a.getLsbD (count-1)
+    let ofBit := match i with
+      | .shl _ _ => v.msb != a.msb
+      | .shr _ _ => a.msb
+      | _ => false
     undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
-    (λ setof => if count == 1 then setof a.msb else undefined setof) (λ of =>
+    (λ setcf => if count < w.bits then setcf cfBit else undefined setcf) (λ cf =>
+    (λ setof => if count == 1 then setof ofBit else undefined setof) (λ of =>
     { s with status := .from_result s.status v { cf, af, of } }.set dst v p next))))
-  | .sar dst count =>
-    dst.interp s p (fun a s =>
-    let count := count.interpMasked s p w
-    if count == 0 then s.set dst a p next else
-    let v := a.sshiftRight count
-    undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
-    (λ setof => if count == 1 then setof false else undefined setof) (λ of =>
-    { s with status := .from_result s.status v { cf, af, of } }.set dst v p next))))
-  | .shrd dst src count =>
+  | .shrd dst src count | .shld dst src count =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
     let count := count.interpMasked s p w
     if count == 0 then s.set dst a p next else
-    let v := (((b.append a) >>> count).take w.bits).setWidth _
+    let v := match i with
+      | .shrd _ _ _ => (((b.append a) >>> count).take w.bits).setWidth _
+      | _ => (((a.append b) <<< count).drop w.bits).setWidth _
     (λ setstatus => if count >= w.bits then s.status.update .allUndef setstatus else
-      let cf := a.getLsbD (count-1)
-      undefined (λ af =>
-      (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result s.status v { cf, af, of })))) (λ status =>
-    -- The result is undefined if the count exceeds the operand size (only possible for 16 bits).
-    (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
-    { s with status }.set dst v p next))))
-  | .shld dst src count =>
-    dst.interp s p (fun a s =>
-    src.interp s p (fun b s =>
-    let count := count.interpMasked s p w
-    if count == 0 then s.set dst a p next else
-    let v := (((a.append b) <<< count).drop w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then s.status.update .allUndef setstatus else
-      let cf := (a <<< (count-1)).msb
+      let cf := match i with
+        | .shrd _ _ _ => a.getLsbD (count-1)
+        | _ => (a <<< (count-1)).msb
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
       setstatus (.from_result s.status v { cf, af, of })))) (λ status =>
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
     { s with status }.set dst v p next))))
-  | .rol dst count =>
+  | .rol dst count | .ror dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
     if count == 0 then s.set dst a p next else
-    let v := a.rotateLeft count
-    let cf := v.getLsbD 0
+    let (v, cf) := match i with
+      | .rol _ _ => let v := a.rotateLeft count; (v, v.getLsbD 0)
+      | _ => let v := a.rotateRight count; (v, v.msb)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
     { s with status := { s.status with cf, of } }.set dst v p next))
-  | .ror dst count =>
+  | .rcr dst count | .rcl dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
     if count == 0 then s.set dst a p next else
-    let v := a.rotateRight count
-    let cf := v.msb
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := { s.status with cf, of } }.set dst v p next))
-  | .rcr dst count =>
-    dst.interp s p (fun a s =>
-    let count := count.interpMasked s p w
-    if count == 0 then s.set dst a p next else
-    let t := (BitVec.ofBool s.status.cf ++ a).rotateRight count
-    let (cf, v) := (t.msb, t.take w.bits)
-    (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := { s.status with cf, of } }.set dst v p next))
-  | .rcl dst count =>
-    dst.interp s p (fun a s =>
-    let count := count.interpMasked s p w
-    if count == 0 then s.set dst a p next else
-    let t := (BitVec.ofBool s.status.cf ++ a).rotateLeft count
+    let ext := BitVec.ofBool s.status.cf ++ a
+    let t := match i with
+      | .rcr _ _ => ext.rotateRight count
+      | _ => ext.rotateLeft count
     let (cf, v) := (t.msb, t.take w.bits)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
     { s with status := { s.status with cf, of } }.set dst v p next))
