@@ -121,6 +121,20 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
     s!"v{mn} $1, %xmm2, %ymm1, %ymm0",
     s!"v{mn} $0, (%rsp), %ymm1, %ymm0"
   ]) ++
+  failing SimdToGprOp (fun op mn =>
+    if op.memBytes?.isSome then [s!"{mn} (%rsp), %rax", s!"v{mn} %xmm1, %rax"]
+    else [s!"{mn} %xmm1, %eax", s!"v{mn} %xmm1, %rax"]) ++
+  failing SimdExtractOp (fun op mn =>
+    let imm := if op.hasImm then "$1, " else ""
+    [s!"{mn} {imm}%xmm1, (%rsp)", s!"v{mn} {imm}%xmm1, %rax"]) ++
+  failing SimdInsertOp (fun op mn =>
+    let imm := if op.hasImm then "$1, " else ""
+    let (src_s, src_v) := if op matches .movd | .movq then ("%rax", "%rax") else ("(%rsp)", "(%rsp)")
+    let sfx := if op == .cvtsi2ss || op == .cvtsi2sd then "q" else ""
+    if op.twoOperand then
+      [s!"{mn} {src_s}, %xmm1", s!"v{mn} {src_v}, %xmm1"]
+    else
+      [s!"{mn}{sfx} {imm}{src_s}, %xmm1", s!"v{mn}{sfx} {imm}{src_v}, %xmm1, %xmm2"]) ++
   failing HintOp (fun _ mn => [mn]) ++
   failing MemHintOp (fun _ mn => [s!"{mn} (%rsp)", s!"{mn} (%eax)"])
 

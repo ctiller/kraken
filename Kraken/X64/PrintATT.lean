@@ -197,6 +197,25 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vextract op dst src imm => s!"v{Mnemonic.name op} ${const imm}, {avxReg src}, {avxRm aw dst}"
   | .vinsert op dst src1 src2 imm => s!"v{Mnemonic.name op} ${const imm}, {avxRm aw src2}, {avxReg src1}, {avxReg dst}"
   | .vcvtps2ph dst src imm => s!"vcvtps2ph ${const imm}, {avxReg src}, {avxRm aw dst}"
+  | .sseToGpr op d x => s!"{Mnemonic.name op} {avxSrc aw op.memBytes? x}, {reg d}"
+  | .vexToGpr op d x => s!"v{Mnemonic.name op} {avxSrc aw op.memBytes? x}, {reg d}"
+  | .sseExtract op d x imm =>
+    let immStr := match imm with | some i => s!"${const i}, " | none => ""
+    s!"{Mnemonic.name op} {immStr}{avxReg x}, {rm aw d}"
+  | .vexExtract op d x imm =>
+    let immStr := match imm with | some i => s!"${const i}, " | none => ""
+    s!"v{Mnemonic.name op} {immStr}{avxReg x}, {rm aw d}"
+  | .sseInsert op (gw := gw) d src imm =>
+    let immStr := match imm with | some i => s!"${const i}, " | none => ""
+    let sfx := if (op == .cvtsi2ss || op == .cvtsi2sd) && src matches .mem .. then suffix gw else ""
+    s!"{Mnemonic.name op}{sfx} {immStr}{rm aw src}, {avxReg d}"
+  | .vexInsert op (gw := gw) d a src imm =>
+    if op.twoOperand then
+      s!"v{Mnemonic.name op} {rm aw src}, {avxReg d}"
+    else
+      let immStr := match imm with | some i => s!"${const i}, " | none => ""
+      let sfx := if (op == .cvtsi2ss || op == .cvtsi2sd) && src matches .mem .. then suffix gw else ""
+      s!"v{Mnemonic.name op}{sfx} {immStr}{rm aw src}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

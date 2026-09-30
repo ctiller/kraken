@@ -219,7 +219,7 @@ def assemblable (cands : Array String) : IO (Array String) := IO.FS.withTempFile
   if out.exitCode != 0 && bad.isEmpty then throw (.userError out.stderr)
   return cands.zipIdx.filterMap fun (c, i) => if bad.contains (i + 1) then none else some c
 
-set_option maxHeartbeats 1000000 in
+set_option maxHeartbeats 4000000 in
 def genPool (n : Nat) : StateM StdGen (Array String) :=
   (Array.range n).filterMapM fun _ => (Kraken.X64.ATT.instr <$> gen).run
 
