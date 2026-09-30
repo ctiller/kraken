@@ -1121,8 +1121,7 @@ def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Na
       | .W32 => ((s.regs.get (.low .rbx .W32) + (s.regs.get (.low .rax .W8)).zeroExtend 32)).zeroExtend 64
       | _ => s.regs.get64 .rbx + (s.regs.get (.low .rax .W8)).zeroExtend 64
     s.load addr .W8 (fun val s => next (s.setReg (.low .rax .W8) val))
-  | nop _ | nopalign _ _ | nopm _ | memHint _ _ => next s
-  | .hint _ => next s
+  | nop _ | nopalign _ _ | nopm _ | memHint _ _ | hint _ => next s
 
 -- AVX Operations Interpreter
 def AvxOperation.interp [Labels] [address_size : AddressSize]

@@ -89,10 +89,12 @@ def runKraken (asmCode : String)
   let initState: MachineState := (initData, prog.fakeLayout.labels.label _start)
   prog.fakeLayout.eval initState (finishCriterion prog)
 
+def numStatusFlags : Nat := 7
+
 /-! ## Determinism checking, with Semantics.lean in the loop
 
-We track which of the six status flags are currently undefined as a bitmask using the
-bit layout of `NondetSupportingType.from_hash` (cf, pf, af, zf, sf, of = bits 0..5). -/
+We track which of the seven status flags are currently undefined as a bitmask using the
+bit layout of `NondetSupportingType.from_hash` (cf, pf, af, zf, sf, of, df = bits 0..6). -/
 
 def StatusFlags.toMask (f : StatusFlags) : Nat :=
   f.cf.toNat ||| f.pf.toNat <<< 1 ||| f.af.toNat <<< 2 ||| f.zf.toNat <<< 3 ||| f.sf.toNat <<< 4 ||| f.of.toNat <<< 5 ||| f.df.toNat <<< 6
@@ -118,12 +120,12 @@ def stepDeterministic (d : MachineData) (mask : Nat) (asmCode : String) : Option
   let mut (d, mask) := (d, mask)
   for (pc, dir, sz) in exe.withAddresses do
     let p : Std.Rco Int64 := .mk pc (pc + .ofNat sz)
-    let fixed := d.status.toMask &&& (127 ^^^ mask)
+    let fixed := d.status.toMask &&& ((2^numStatusFlags - 1) ^^^ mask)
     let run (m : Nat) (h : UInt64) : Option (MachineData × Bool) :=
       let status : StatusFlags := NondetSupportingType.from_hash (fixed ||| m).toUInt64
       evalEffects h false (dir.interp { d with status } p (fun s => .done (s, p.upper)) (fun _ _ => .unimplemented "jump"))
     let mut outs : Array MachineData := #[]
-    for m in (List.range 128).filter (fun m => m &&& mask == m) do
+    for m in (List.range (2^numStatusFlags)).filter (fun m => m &&& mask == m) do
       let (s, sawUndef) ← run m 0
       outs := outs.push s
       if sawUndef then outs := outs.push (← run m (-1)).1
@@ -141,9 +143,10 @@ def predict (asmCode : String) : Json :=
 
 Candidate instructions are random `Instr`s: `gen_ctors%` derives generators from the constructors
 in Syntax.lean, so every instruction form is covered without being listed here; the hand-written
-instances only choose operand values. Each `--generate` prints 5000 of them with `ATT.instr` and keeps
-those `as` accepts (`genPool`, `assemblable`); every slot of a sequence then draws from that pool
-until Semantics.lean deems the candidate deterministic in the current state (`stepDeterministic`). -/
+instances only choose operand values. Each `--generate` draws candidates (5000 unfiltered, 200000
+with prefix filter) with `ATT.instr` and keeps those `as` accepts (`genPool`, `assemblable`); every
+slot of a sequence then draws from that pool until Semantics.lean deems the candidate deterministic
+in the current state (`stepDeterministic`). -/
 
 abbrev GenM := OptionT (StateM StdGen)
 def nextNat (n : Nat) : GenM Nat := modifyGet (randNat · 0 (n - 1))

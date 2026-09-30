@@ -206,8 +206,6 @@ abbrev AvxOperand.mem {w} (m : AddrExpr) : AvxOperand w := regOrMem (.mem m)
 
 inductive LoopCond | none | e | ne
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
-abbrev LoopCond.z := LoopCond.e
-abbrev LoopCond.nz := LoopCond.ne
 
 inductive CondCode | o | no | c | nc | z | nz | be | a | s | ns | p | np | l | ge | le | g
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
