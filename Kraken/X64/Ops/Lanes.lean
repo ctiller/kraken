@@ -20,6 +20,9 @@ def map1 {n} (k : Nat) (f : BitVec k → BitVec k) (a : BitVec n) : BitVec n :=
 def map2 {n} (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec n) : BitVec n :=
   ofLanes n k fun i => f (a.lane k i) (b.lane k i)
 
+/-- All ones (-1) if `p` is true, else 0. -/
+def mask (k : Nat) (p : Bool) : BitVec k := if p then -1#k else 0#k
+
 /-- `v` saturated to the signed range of `k` bits. -/
 def satS (k : Nat) (v : Int) : BitVec k := .ofInt k (max (-2 ^ (k - 1)) (min (2 ^ (k - 1) - 1) v))
 
@@ -60,9 +63,12 @@ def replaceLow {w n} (old : BitVec w) (new : BitVec n) : BitVec w :=
 /-- Scalar operation replacing lane 0 with `f (a.lane k 0) (b.lane k 0)`. -/
 def scalar {n} (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec n) : BitVec n :=
   a.replaceLow (f (a.lane k 0) (b.lane k 0))
+
+def toFloat (v : BitVec 64) : Float := Float.ofBits (UInt64.ofBitVec v)
 end BitVec
 
 def Float32.toBitVec (f : Float32) : BitVec 32 := UInt32.toBitVec (Float32.toBits f)
+def Float.toBitVec (f : Float) : BitVec 64 := UInt64.toBitVec (Float.toBits f)
 
 /-- An SSE single-precision operation on one lane: a NaN operand propagates (quieted, the first
 operand winning), and an invalid operation gives the default NaN ("QNaN floating-point
@@ -71,10 +77,6 @@ def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 3
   if a.toFloat32.isNaN then a ||| 0x400000#32
   else if b.toFloat32.isNaN then b ||| 0x400000#32
   else let r := op a.toFloat32 b.toFloat32; if r.isNaN then 0xffc00000#32 else r.toBitVec
-
-def BitVec.toFloat (v : BitVec 64) : Float := Float.ofBits (UInt64.ofBitVec v)
-
-def Float.toBitVec (f : Float) : BitVec 64 := UInt64.toBitVec (Float.toBits f)
 
 /-- `sseBinOp` for double precision. -/
 def sseBinOp64 (op : Float → Float → Float) (a b : BitVec 64) : BitVec 64 :=

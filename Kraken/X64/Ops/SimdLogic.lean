@@ -25,11 +25,12 @@ def SimdLogic.interp : SimdLogic → BitVec 128 → BitVec 128 → BitVec 128
   | .pandn | .andnps | .andnpd => fun a b => ~~~a &&& b
   | .por | .orps | .orpd => (· ||| ·)
   | .pxor | .xorps | .xorpd => (· ^^^ ·)
-  | .pcmpeqb => .map2 8 fun a b => if a == b then -1#8 else 0#8
-  | .pcmpeqw => .map2 16 fun a b => if a == b then -1#16 else 0#16
-  | .pcmpeqd => .map2 32 fun a b => if a == b then -1#32 else 0#32
-  | .pcmpeqq => .map2 64 fun a b => if a == b then -1#64 else 0#64
-  | .pcmpgtb => .map2 8 fun a b => if a.toInt > b.toInt then -1#8 else 0#8
-  | .pcmpgtw => .map2 16 fun a b => if a.toInt > b.toInt then -1#16 else 0#16
-  | .pcmpgtd => .map2 32 fun a b => if a.toInt > b.toInt then -1#32 else 0#32
-  | .pcmpgtq => .map2 64 fun a b => if a.toInt > b.toInt then -1#64 else 0#64
+  | .pcmpeqb => .map2 8 fun a b => .mask 8 (a == b)
+  | .pcmpeqw => .map2 16 fun a b => .mask 16 (a == b)
+  | .pcmpeqd => .map2 32 fun a b => .mask 32 (a == b)
+  | .pcmpeqq => .map2 64 fun a b => .mask 64 (a == b)
+  | .pcmpgtb => .map2 8 fun a b => .mask 8 (a.toInt > b.toInt)
+  | .pcmpgtw => .map2 16 fun a b => .mask 16 (a.toInt > b.toInt)
+  | .pcmpgtd => .map2 32 fun a b => .mask 32 (a.toInt > b.toInt)
+  | .pcmpgtq => .map2 64 fun a b => .mask 64 (a.toInt > b.toInt)
+

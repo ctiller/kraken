@@ -72,10 +72,8 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
     res19.zeroExtend n
   | .pbroadcastb => fun a => .ofLanes n 8 fun _ => a.lane 8 0
   | .pbroadcastw => fun a => .ofLanes n 16 fun _ => a.lane 16 0
-  | .pbroadcastd => fun a => .ofLanes n 32 fun _ => a.lane 32 0
-  | .pbroadcastq => fun a => .ofLanes n 64 fun _ => a.lane 64 0
-  | .broadcastss => fun a => .ofLanes n 32 fun _ => a.lane 32 0
-  | .broadcastsd => fun a => .ofLanes n 64 fun _ => a.lane 64 0
+  | .pbroadcastd | .broadcastss => fun a => .ofLanes n 32 fun _ => a.lane 32 0
+  | .pbroadcastq | .broadcastsd => fun a => .ofLanes n 64 fun _ => a.lane 64 0
   | .broadcasti128 | .broadcastf128 => fun a => .ofLanes n 128 fun _ => a.lane 128 0
   | .movq => fun a => (a.extractLsb' 0 64).zeroExtend n
   | .movd => fun a => (a.extractLsb' 0 32).zeroExtend n

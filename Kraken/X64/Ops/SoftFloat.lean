@@ -47,8 +47,8 @@ def roundShift (sign : Bool) (v s mode : Nat) : Nat :=
     | _ => false
   if inc then r + 1 else r
 
-/-- `(-1)^sign * v * 2^e` rounded with `mode`:
-0 = nearest even, 1 = down (-inf), 2 = up (+inf), 3 = toward zero (`v ≠ 0`). -/
+/-- `(-1)^sign * v * 2^e` rounded with `mode` (`v ≠ 0` precondition):
+0 = nearest even, 1 = down (-inf), 2 = up (+inf), 3 = toward zero. -/
 def round (f : FpFmt) (sign : Bool) (v : Nat) (e : Int) (mode : Nat := 0) : BitVec f.bits :=
   let emin := 1 - f.bias - f.m  -- the exponent of the smallest subnormal's unit
   let q := max (e + Nat.log2 v - f.m) emin  -- the exponent of the result's unit
