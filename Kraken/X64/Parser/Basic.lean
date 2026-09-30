@@ -620,7 +620,9 @@ def parseSimdCount : Parser (MaybeAddrWidth × SimdCount) :=
 def parseFamily? (mn : String) : Option (Parser Instr) :=
   -- The base name of a `v` form.
   let v := if mn.startsWith "v" then (mn.drop 1).copy else ""
-  if let some (op, w?) := lookupSized GprUnOp mn then some do
+  if let some op := Mnemonic.ofName? (α := HintOp) mn then
+    some (pure (toInstr .none (w := .W64) (.hint op)))
+  else if let some (op, w?) := lookupSized GprUnOp mn then some do
     let (addr_w, src) ← parseRegOrMem; parseComma
     let dst ← parseRegW
     let w ← regWidth w? dst
@@ -867,21 +869,32 @@ def parseInstr : Parser Instr := do
     let ⟨ _w_dst, dst ⟩ ← parseRegW
     pure (toInstr .none (.movzx (.reg dst) (.reg src)))
 
+  | "movslq" =>
+    let (addr_w, src) ← parseRegOrMemAO .W32; parseComma
+    let dst ← parseRegO .W64
+    pure (toInstr addr_w (.movsx (.reg dst) src))
+
+  | "movsxd" =>
+    -- Intel mnemonic movsxd: in AT&T syntax `movsxd src, dst` (src: 32-bit reg/mem, dst: 64-bit reg)
+    let (addr_w, src) ← parseRegOrMemAO .W32; parseComma
+    let dst ← parseRegO .W64
+    pure (toInstr addr_w (.movsx (.reg dst) src))
+
   | "movsbw" | "movsbl" | "movsbq" | "movswl" | "movswq" =>
     let w_dst ← instrWidth mn
     let c_src ← String.Pos.Raw.get? mn (.mk (mn.length - 2))
     let w_src ← Char.toWidth c_src
-    let src ← parseRegO w_src; parseComma
+    let (addr_w, src) ← parseRegOrMemAO w_src; parseComma
     let dst ← parseRegO w_dst
-    pure (toInstr .none (.movsx (.reg dst) (.reg src)))
+    pure (toInstr addr_w (.movsx (.reg dst) src))
 
   | "movzbw" | "movzbl" | "movzbq" | "movzwl" | "movzwq" =>
     let w_dst ← instrWidth mn
     let c_src ← String.Pos.Raw.get? mn (.mk (mn.length - 2))
     let w_src ← Char.toWidth c_src
-    let src ← parseRegO w_src; parseComma
+    let (addr_w, src) ← parseRegOrMemAO w_src; parseComma
     let dst ← parseRegO w_dst
-    pure (toInstr .none (.movzx (.reg dst) (.reg src)))
+    pure (toInstr addr_w (.movzx (.reg dst) src))
 
   | "lea" =>
     let ( addr_w, src ) ← parseMemory; parseComma
@@ -1103,6 +1116,11 @@ def parseInstr : Parser Instr := do
       let sz ← parseHexOrDec
       pure (toInstr .none (w := .W64) (.nop sz.toNat))
     ) <|> (pure (toInstr .none (w := .W64) (.nop 1)))
+
+  | "nopw" | "nopl" | "nopq" =>
+    let w ← instrWidth mn
+    let (addr_w, src) ← parseRegOrMemAO w
+    pure (toInstr addr_w (.nopm src))
 
   -- Control flow - conditional jumps
   | _ =>

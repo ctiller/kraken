@@ -10,6 +10,7 @@ public import Kraken.X64.Ops.SimdShift
 public import Kraken.X64.Ops.GprUn
 public import Kraken.X64.Ops.GprBin
 public import Kraken.X64.Ops.BitTest
+public import Kraken.X64.Ops.Hint
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -254,6 +255,8 @@ inductive Operation (w : Width)
   -- TODO: optiona third argument, with the caveat that `.align 16,,0` is valid
   -- syntax
   | nopalign (alignment : Nat) (pad : Option Nat)
+  | hint (op : HintOp)
+  | nopm (_ : RegOrMem w)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 -- The non-v* variants take SSE registers only.
