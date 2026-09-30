@@ -29,8 +29,8 @@ def satS (k : Nat) (v : Int) : BitVec k := .ofInt k (max (-2 ^ (k - 1)) (min (2 
 /-- `v` saturated to the unsigned range of `k` bits. -/
 def satU (k : Nat) (v : Int) : BitVec k := .ofInt k (max 0 (min (2 ^ k - 1) v))
 
-/-- Packs `2 * k`-bit lanes into `k`-bit lanes with saturation `sat`: the lower half of `a`
-followed by the lower half of `b`. -/
+/-- Packs `2 * k`-bit lanes into `k`-bit lanes with saturation `sat`: a's narrowed lanes
+fill the low half of each 128-bit lane and b's the high half. -/
 def pack {n} (k : Nat) (sat : Int → BitVec k) (a b : BitVec n) : BitVec n :=
   ofLanes n k fun i =>
     let half := n / (2 * k)
@@ -55,6 +55,7 @@ def hop (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec 128) : 
     else f (b.lane k (2 * (i - half))) (b.lane k (2 * (i - half) + 1))
 
 def toFloat32 (v : BitVec 32) : Float32 := Float32.ofBits (UInt32.ofBitVec v)
+def toFloat (v : BitVec 64) : Float := Float.ofBits (UInt64.ofBitVec v)
 
 /-- Replaces the low `n` bits of `old` with `new`, keeping the upper bits of `old`. -/
 def replaceLow {w n} (old : BitVec w) (new : BitVec n) : BitVec w :=
@@ -63,8 +64,6 @@ def replaceLow {w n} (old : BitVec w) (new : BitVec n) : BitVec w :=
 /-- Scalar operation replacing lane 0 with `f (a.lane k 0) (b.lane k 0)`. -/
 def scalar {n} (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec n) : BitVec n :=
   a.replaceLow (f (a.lane k 0) (b.lane k 0))
-
-def toFloat (v : BitVec 64) : Float := Float.ofBits (UInt64.ofBitVec v)
 end BitVec
 
 def Float32.toBitVec (f : Float32) : BitVec 32 := UInt32.toBitVec (Float32.toBits f)
@@ -94,8 +93,3 @@ def sseUnOp (op : Float32 → Float32) (a : BitVec 32) : BitVec 32 :=
 def sseUnOp64 (op : Float → Float) (a : BitVec 64) : BitVec 64 :=
   if a.toFloat.isNaN then a ||| 0x8000000000000#64
   else let r := op a.toFloat; if r.isNaN then 0xfff8000000000000#64 else r.toBitVec
-
-
-
-
-
