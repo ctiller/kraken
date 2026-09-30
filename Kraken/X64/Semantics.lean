@@ -422,9 +422,15 @@ def StatusFlags.update (s : StatusFlags) (f : FlagsOut) (k : StatusFlags → Eff
   f.cf.apply s.cf fun cf => f.pf.apply s.pf fun pf => f.af.apply s.af fun af =>
   f.zf.apply s.zf fun zf => f.sf.apply s.sf fun sf => f.of.apply s.of fun of => k ⟨cf, pf, af, zf, sf, of, s.df⟩
 
+@[kstep] def ConstExpr.imm8 [Labels] (imm : ConstExpr) (p : Std.Rco Int64) : BitVec 8 :=
+  (imm.interp p).toBitVec.take 8
+
+@[kstep] def Option.imm8 [Labels] (imm : Option ConstExpr) (p : Std.Rco Int64) : BitVec 8 :=
+  match imm with | some e => e.imm8 p | none => 0
+
 @[kstep] def ShiftCountExpr.interp [Labels] (c : ShiftCountExpr) (s : MachineData) (p : Std.Rco Int64) := match c with
   | .cl => s.regs.rcx.toBitVec.take 8
-  | .imm8 v => (v.interp p).toBitVec.take _
+  | .imm8 v => v.imm8 p
 @[kstep] def ShiftCountExpr.interpMasked [Labels] (c : ShiftCountExpr) (s : MachineData) (p : Std.Rco Int64) (w : Width) : Nat :=
   (c.interp s p).toNat &&& match w with | .W64 => 0x3f | _ => 0x1f -- "masked to 5 bits (or 6 bits with a 64-bit operand)"
 
@@ -460,12 +466,7 @@ def crc32cStep (crc : BitVec 32) (b : BitVec 8) : BitVec 32 :=
   ) (crc ^^^ b.zeroExtend 32)
 
 def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
-  match w with
-  | .W16 => (v.extractLsb' 0 8 ++ v.extractLsb' 8 8).setWidth _
-  | .W32 => (v.take 8 ++ v.extractLsb' 8 8 ++ v.extractLsb' 16 8 ++ v.drop 24).setWidth _
-  | .W64 => (v.take 8 ++ v.extractLsb' 8 8 ++ v.extractLsb' 16 8 ++ v.extractLsb' 24 8
-          ++ v.extractLsb' 32 8 ++ v.extractLsb' 40 8 ++ v.extractLsb' 48 8 ++ v.drop 56).setWidth _
-  | .W8 => v
+  .ofLanes w.bits 8 fun i => v.lane 8 (w.bytes - 1 - i)
 
 @[kstep] def StatusFlags.from_result {w} (old : StatusFlags) (result : BitVec w) (f : from_result.Remaining) : StatusFlags :=
   { old with
@@ -917,13 +918,7 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
   | .bswap dst =>
     let a := s.regs.get dst
     match (generalizing := false) (motive := Width → Effects) w with
-    | .W32 =>
-      let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.drop 24
-      next (s.setReg dst (v.setWidth _))
-    | .W64 =>
-      let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.extractLsb' 24 8
-            ++ a.extractLsb' 32 8 ++ a.extractLsb' 40 8 ++ a.extractLsb' 48 8 ++ a.drop 56
-      next (s.setReg dst (v.setWidth _))
+    | .W32 | .W64 => next (s.setReg dst (byteSwap a))
     | _ => undefined (fun v => next (s.setReg dst v))
   | .movbe dst src =>
     match dst, src with
@@ -1031,15 +1026,15 @@ match i with
     next (s.setAvxReg dst (op.interp a)))
   | .sseUnImm op dst src imm =>
     src.interp s p (checkAlign := true) (fun a s =>
-    next (s.setAvxLegacyReg dst (op.interp a ((imm.interp p).toBitVec.take 8))))
+    next (s.setAvxLegacyReg dst (op.interp a (imm.imm8 p))))
   | .vexUnImm op dst src imm =>
-    src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a ((imm.interp p).toBitVec.take 8))))
+    src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a (imm.imm8 p))))
   | .sseImm op dst src imm =>
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b ((imm.interp p).toBitVec.take 8) (legacy := true) (src matches .mem _))))
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b (imm.imm8 p) (legacy := true) (src matches .mem _))))
   | .vexImm op dst src1 src2 imm =>
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
-    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b ((imm.interp p).toBitVec.take 8) (legacy := false) (src2 matches .mem _))))
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b (imm.imm8 p) (legacy := false) (src2 matches .mem _))))
   | .sseShift op dst count =>
     count.interp s p (legacy := true) (fun c s =>
     next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) c)))
@@ -1098,8 +1093,7 @@ match i with
     let res256 : BitVec 256 := (BitVec.append high128 low128).setWidth _
     next (s.setAvxReg dst (res256.zeroExtend _)))
   | .vcvtps2ph dst src imm =>
-    let immVal := (imm.interp p).toBitVec.take 8
-    let mode := if immVal.getLsbD 2 then 0 else (immVal &&& 3).toNat
+    let mode := roundImmMode (imm.imm8 p)
     let sval := s.zmms.get src
     match w with
     | .W128 =>
@@ -1119,17 +1113,14 @@ match i with
     src.interpSimd op.memBytes? s p (legacy := i matches .sseToGpr ..) (fun a s =>
     next (s.setReg dst (op.interp gw.bits a)))
   | .sseExtract op (gw := gw) dst src imm | .vexExtract op (gw := gw) dst src imm =>
-    let immVal : BitVec 8 := match imm with | some e => (e.interp p).toBitVec.extractLsb' 0 8 | none => 0
-    let res := op.interp gw.bits (s.zmms.get src) immVal
+    let res := op.interp gw.bits (s.zmms.get src) (imm.imm8 p)
     s.set dst res p next
   | .sseInsert op dst (gw := gw) src imm =>
-    let immVal : BitVec 8 := match imm with | some e => (e.interp p).toBitVec.extractLsb' 0 8 | none => 0
     src.interp s p (fun v s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) gw.bits v immVal)))
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) gw.bits v (imm.imm8 p))))
   | .vexInsert op dst src1 (gw := gw) src2 imm =>
-    let immVal : BitVec 8 := match imm with | some e => (e.interp p).toBitVec.extractLsb' 0 8 | none => 0
     src2.interp s p (fun v s =>
-    next (s.setAvxReg dst (op.interp (s.zmms.get src1) gw.bits v immVal)))
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) gw.bits v (imm.imm8 p))))
 
 @[kstep]
 def Instr.interp [Labels]
