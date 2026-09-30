@@ -170,6 +170,7 @@ instance : Gen AvxWidth := ⟨gen_ctors% AvxWidth⟩
 instance : Gen RegMm := ⟨gen_ctors% RegMm⟩
 instance : Gen Reg64 := ⟨gen_ctors% Reg64⟩
 instance : Gen CondCode := ⟨gen_ctors% CondCode⟩
+instance : Gen LoopCond := ⟨gen_ctors% LoopCond⟩
 instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
 -- Opcode families: uniformly over their opcodes.
 instance {α : Type} [Mnemonic α] : Gen α := ⟨(·.1) <$> pick Mnemonic.names⟩
@@ -226,6 +227,9 @@ def genPool (n : Nat) : StateM StdGen (Array String) :=
 def genSeed : GenM String := do
   let r ← gen; guard (r != Reg64.rsp)
   let r := Kraken.X64.ATT.reg (.low r .W64)
+  if ← pick #[false, false, false, true] then
+    let off ← nextNat (stackSize - 300)
+    return s!"leaq -{off + 300}(%rsp), {r}"
   let movabs := s!"movabsq ${← nextNat (2 ^ 64)}, {r}"
   if ← pick #[true, false] then return movabs
   -- Also copy it into one of xmm0-15 via the stack; they start zeroed, so SSE ops would

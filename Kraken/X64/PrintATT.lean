@@ -145,6 +145,11 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
     else s!"{Mnemonic.name op} {reg a}, {rm aw b}, {reg d}"
   | .bt op d b => two (Mnemonic.name op) (operand aw b) (rm aw d)
   | .jcc cc l => s!"j{cc} {l}"
+  | .jrcxz l => s!"jrcxz {l}"
+  | .jecxz l => s!"jecxz {l}"
+  | .loop .none l => s!"loop {l}"
+  | .loop .e l => s!"loope {l}"
+  | .loop .ne l => s!"loopne {l}"
   | .jmp t => s!"jmp {target aw t}"
   | .call t => s!"call {target aw t}"
   | .ret => "ret"
@@ -155,6 +160,7 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .nopm x => s!"nop{s} {rm aw x}"
   | .memHint op a => s!"{Mnemonic.name op} {addr aw a}"
   | .movnti dst src => s!"movnti {reg src}, {addr aw dst}"
+  | .xlat => if aw == .W32 then "xlatb (%ebx)" else "xlatb"
 
 def simdCount (aw : Width) : SimdCount → String
   | .imm e => "$" ++ const e

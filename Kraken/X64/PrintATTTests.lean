@@ -64,6 +64,7 @@ def corpus : List String := [
   "pause", "lfence", "mfence", "sfence", "endbr64",
   "nopw (%rax)", "nopl (%rax)", "nopq (%rax)", "nopw %ax", "nopl %eax", "nopq %rax",
   "nopl 0(%rax)", "nopw 0(%rax,%rax,1)",
+  "xlatb", "jrcxz foo", "jecxz foo", "loop foo", "loope foo", "loopne foo",
   "a:\nb: ret\n\nc:",
   -- AVX
   "movups %xmm0, %xmm1", "vmovups (%rsp), %ymm2", "vmovups %zmm31, 64(%rsp)",

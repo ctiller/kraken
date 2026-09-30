@@ -1317,6 +1317,37 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     let (addr_w, src) ← parseRegOrMemAO w
     pure (toInstr addr_w (.nopm src))
 
+  | "xlat" | "xlatb" =>
+    (attempt do
+      let (addr_w, _) ← parseMemory
+      pure (toInstr (some addr_w) (w := .W8) .xlat)) <|>
+      pure (toInstr .none (w := .W8) .xlat)
+
+  | "jrcxz" =>
+    skipHWs
+    let target ← parseLabelRaw
+    pure (toInstr .none (w := .W64) (.jrcxz target))
+
+  | "jecxz" =>
+    skipHWs
+    let target ← parseLabelRaw
+    pure (toInstr .none (w := .W64) (.jecxz target))
+
+  | "loop" =>
+    skipHWs
+    let target ← parseLabelRaw
+    pure (toInstr .none (w := .W64) (.loop .none target))
+
+  | "loope" | "loopz" =>
+    skipHWs
+    let target ← parseLabelRaw
+    pure (toInstr .none (w := .W64) (.loop .e target))
+
+  | "loopne" | "loopnz" =>
+    skipHWs
+    let target ← parseLabelRaw
+    pure (toInstr .none (w := .W64) (.loop .ne target))
+
   -- Control flow - conditional jumps
   | _ =>
     if mn.startsWith "j" then

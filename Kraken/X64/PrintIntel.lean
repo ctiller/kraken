@@ -186,6 +186,11 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
     else s!"{Mnemonic.name op} {dst}, {src2.toStr addr_w}, {src1}"
   | .bt op dst bit => s!"{Mnemonic.name op} {dst.toStr addr_w}, {bit.toStr addr_w}"
   | .jcc cc l => s!"j{cc} {l}"
+  | .jrcxz l => s!"jrcxz {l}"
+  | .jecxz l => s!"jecxz {l}"
+  | .loop .none l => s!"loop {l}"
+  | .loop .e l => s!"loope {l}"
+  | .loop .ne l => s!"loopne {l}"
   | .jmp tgt => s!"jmp {tgt.toStr addr_w}"
   | .call tgt => s!"call {tgt.toStr addr_w}"
   | .ret => "ret"
@@ -196,6 +201,7 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .nopm x => s!"nop {x.toStr addr_w}"
   | .memHint op a => s!"{Mnemonic.name op} BYTE PTR {a.toStr addr_w}"
   | .movnti dst src => s!"movnti {(RegOrMem.mem (w:=w) dst).toStr addr_w}, {src}"
+  | .xlat => if addr_w == .W32 then "xlat BYTE PTR [ebx]" else "xlat BYTE PTR [rbx]"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
 def SimdCount.toStr (c : SimdCount) (addr_w : Width := .W64) : String := match c with

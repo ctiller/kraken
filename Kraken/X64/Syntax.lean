@@ -195,6 +195,11 @@ attribute [coe] AvxOperand.regOrMem
 abbrev AvxOperand.avx {w} (r : AvxReg w) : AvxOperand w := regOrMem (.avx r)
 abbrev AvxOperand.mem {w} (m : AddrExpr) : AvxOperand w := regOrMem (.mem m)
 
+inductive LoopCond | none | e | ne
+  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+abbrev LoopCond.z := LoopCond.e
+abbrev LoopCond.nz := LoopCond.ne
+
 inductive CondCode | o | no | c | nc | z | nz | be | a | s | ns | p | np | l | ge | le | g
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 abbrev CondCode.e := CondCode.z
@@ -269,6 +274,9 @@ inductive Operation (w : Width)
   | bt (op : BitTestOp) (dst : Dst w) (bit : Operand w)
   -- Control flow
   | jcc (cc : CondCode) (target : Label)
+  | jrcxz (target : Label)
+  | jecxz (target : Label)
+  | loop (cond : LoopCond) (target : Label)
   | jmp (target : RelRegOrMem)
   | call (target : RelRegOrMem)
   | ret
@@ -280,6 +288,7 @@ inductive Operation (w : Width)
   | nopm (_ : RegOrMem w)
   | memHint (op : MemHintOp) (addr : AddrExpr)
   | movnti (dst : AddrExpr) (src : Reg w)
+  | xlat
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 -- The non-v* variants take SSE registers only.
