@@ -83,6 +83,38 @@ def aesShiftRowsSubBytes :=
 def aesInvShiftRowsInvSubBytes :=
   aesPermuteSub #[0, 13, 10, 7, 4, 1, 14, 11, 8, 5, 2, 15, 12, 9, 6, 3] aesInvSbox
 
+/-- `aeskeygenassist` on one 128-bit lane. -/
+def aesKeygenAssist (rcon : BitVec 8) (x : BitVec 128) : BitVec 128 :=
+  let subWord (w : BitVec 32) : BitVec 32 := .ofLanes 32 8 fun i => aesSbox.getD (w.lane 8 i).toNat 0
+  let (x1, x3) := (subWord (x.lane 32 1), subWord (x.lane 32 3))
+  let rc : BitVec 32 := rcon.zeroExtend 32
+  (x3.rotateRight 8 ^^^ rc) ++ x3 ++ (x1.rotateRight 8 ^^^ rc) ++ x1
+
+/-- The multiplicative inverse in GF(2^8) (`x^254`; 0 for 0). -/
+def gf2p8Inv (x : BitVec 8) : BitVec 8 := (List.range 253).foldl (fun acc _ => gf2p8Mul acc x) x
+
+/-- The affine transformation `A * x + b` of GF(2^8), where row `i` of `A` is byte `7 - i` of
+`a`. -/
+def gf2p8Affine (a : BitVec 64) (x b : BitVec 8) : BitVec 8 :=
+  .ofLanes 8 1 fun i =>
+    let v := a.lane 8 (7 - i) &&& x
+    .ofBool ((List.range 8).foldl (fun p j => p != v.getLsbD j) false) ^^^ b.lane 1 i
+
+/-- `sha1rnds4` on one 128-bit lane: four SHA-1 rounds on the state `(a, b, c, d)` in `s`
+(high to low), with round function and constant selected by `imm` and message words in `w`. -/
+def sha1Rnds4 (imm : BitVec 8) (s w : BitVec 128) : BitVec 128 :=
+  let f (b c d : BitVec 32) : BitVec 32 := match imm.toNat % 4 with
+    | 0 => (b &&& c) ||| (~~~b &&& d)
+    | 2 => (b &&& c) ||| (b &&& d) ||| (c &&& d)
+    | _ => b ^^^ c ^^^ d
+  let k : BitVec 32 := #[0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xca62c1d6][imm.toNat % 4]!
+  let round (st : BitVec 32 × BitVec 32 × BitVec 32 × BitVec 32 × BitVec 32) (wi : BitVec 32) :=
+    let (a, b, c, d, e) := st
+    (f b c d + a.rotateLeft 5 + wi + e + k, a, b.rotateLeft 30, c, d)
+  let (a, b, c, d, _) := [3, 2, 1, 0].foldl (fun st i => round st (w.lane 32 i))
+    (s.lane 32 3, s.lane 32 2, s.lane 32 1, s.lane 32 0, 0)
+  a ++ b ++ c ++ d
+
 def sha256Sigma0 (x : BitVec 32) : BitVec 32 :=
   x.rotateRight 7 ^^^ x.rotateRight 18 ^^^ (x >>> 3)
 
