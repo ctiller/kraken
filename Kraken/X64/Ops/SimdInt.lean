@@ -88,6 +88,7 @@ def SimdInt.interp : SimdInt → BitVec 128 → BitVec 128 → BitVec 128
   | .phsubw => .hop 16 (· - ·)
   | .phsubd => .hop 32 (· - ·)
   | .phsubsw => .hop 16 fun a b => .satS 16 (a.toInt - b.toInt)
+  -- Bound shift count: Lean can panic on huge Nat shift exponents at runtime.
   | .psllvd => .map2 32 fun a b => a <<< min b.toNat 32
   | .psllvq => .map2 64 fun a b => a <<< min b.toNat 64
   | .psrlvd => .map2 32 fun a b => a >>> b.toNat
