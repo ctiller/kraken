@@ -624,6 +624,8 @@ def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Na
     let rsp := s.regs.get64 .rsp
     s.load rsp .W64 (fun val s =>
     if val.getLsbD 8 then .fault "#DB: trap flag set" else
+    -- NT, AC and ID are not modeled (AC would also make misaligned accesses fault).
+    if val &&& 0x244000 != 0 then .unimplemented "popf: NT/AC/ID" else
     let status := { s.status with
       cf := val.getLsbD 0
       pf := val.getLsbD 2
@@ -956,7 +958,7 @@ def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Na
     let count := count.interpMasked s p w
     if count == 0 then s.set dst a p next else
     let v := (((b.append a) >>> count).take w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then undefined setstatus else
+    (λ setstatus => if count >= w.bits then s.status.update .allUndef setstatus else
       let cf := a.getLsbD (count-1)
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
@@ -970,7 +972,7 @@ def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Na
     let count := count.interpMasked s p w
     if count == 0 then s.set dst a p next else
     let v := (((a.append b) <<< count).drop w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then undefined setstatus else
+    (λ setstatus => if count >= w.bits then s.status.update .allUndef setstatus else
       let cf := (a <<< (count-1)).msb
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>

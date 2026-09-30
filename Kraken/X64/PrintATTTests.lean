@@ -175,3 +175,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
     if f.path.extension == some "S" then
       unless roundtrips (stripDirectives (← IO.FS.readFile f.path)) do
         throw <| .userError s!"{f.path} does not round-trip"
+
+-- A trailing `$0` operand, and `crc32` sized by its register source.
+#guard roundtrips "pushq $0" && roundtrips "crc32 %al, %eax"
+-- `rep` prefixes only apply to string instructions.
+#guard (parse "rep addq %rax, %rbx") matches .error _

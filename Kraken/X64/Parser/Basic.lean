@@ -153,8 +153,7 @@ def parseHexOrDec : Parser Int := do
     let c ← peek!
     if c == '0' then do
       skip
-      let c2 ← peek!
-      if c2 == 'x' || c2 == 'X' then do
+      if (← peek?) matches some 'x' | some 'X' then do
         skip
         let digits ← many1 hexDigit
         pure (digits.foldl (fun acc d => acc * 16 + hexVal d) 0)
@@ -1306,17 +1305,12 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     let w ← instrWidth mn
     parseMovbe (some w)
 
-  | "crc32" =>
+  | "crc32" | "crc32q" | "crc32l" | "crc32w" | "crc32b" =>
+    let w? ← if mn == "crc32" then pure none else some <$> instrWidth mn
     let (addr_w, src) ← parseRegOrMem; parseComma
-    let ⟨w_dst, dst⟩ ← parseRegW
-    let src : RegOrMem w_dst ← ascribe w_dst src
-    pure (toInstr addr_w (.crc32 dst src))
-
-  | "crc32q" | "crc32l" | "crc32w" | "crc32b" =>
-    let w_src ← instrWidth mn
-    let (addr_w, src) ← parseRegOrMemAO w_src; parseComma
-    let ⟨_w_dst, dst⟩ ← parseRegW
-    pure (toInstr addr_w (.crc32 dst src))
+    let ⟨_, dst⟩ ← parseRegW
+    let some w := w? <|> src.1 | fail "crc32 with a memory source needs a size suffix"
+    pure (toInstr addr_w (.crc32 dst (← ascribe w src)))
 
   | "rorx" =>
     let cnt ← parseImmComma
@@ -1478,6 +1472,9 @@ def parseInstr : Parser Instr := do
     | _ => .none
   if rep != .none then skipHWs; mnemonic ← parseName
   let mn := mnemonic.toLower
+  if rep != .none && !(mn.length == 5 && "bwlqd".contains mn.back &&
+      ["movs", "stos", "lods", "cmps", "scas"].any (mn.startsWith ·)) then
+    fail "rep prefixes apply only to string instructions"
   if rep != .none then
     parseExplicit mnemonic mn rep
   else
