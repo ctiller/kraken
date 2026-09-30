@@ -627,20 +627,22 @@ def parseSimdCount : Parser (MaybeAddrWidth × SimdCount) :=
     let (addr_w, src) ← parseAvxRegOrMem; parseComma
     pure (addr_w, .reg (← ascribeAvx .W128 src))
 
-/-- The parser for the operands of a family opcode (see Kraken/X64/Ops) named `mn`, if any. -/
-def parseFamily? (mn : String) : Option (Parser Instr) :=
+/-- The parsers for the operands of the family opcodes (see Kraken/X64/Ops) named `mn`. A mnemonic
+may belong to several families with different operand shapes. -/
+def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
   -- The base name of a `v` form.
   let v := if mn.startsWith "v" then (mn.drop 1).copy else ""
-  if let some op := Mnemonic.ofName? (α := HintOp) mn then
-    some (pure (toInstr .none (w := .W64) (.hint op)))
-  else if let some (op, w?) := lookupSized GprUnOp mn then some do
+  let mut ps := #[]
+  if let some op := Mnemonic.ofName? (α := HintOp) mn then ps := ps.push do
+    pure (toInstr .none (w := .W64) (.hint op))
+  if let some (op, w?) := lookupSized GprUnOp mn then ps := ps.push do
     let (addr_w, src) ← parseRegOrMem; parseComma
     let dst ← parseRegW
     let w ← regWidth w? dst
     if h : dst.w = w then
       pure (toInstr addr_w (.un op (h ▸ dst.reg) (← ascribe w src)))
     else fail "impossible"
-  else if let some (op, w?) := lookupSized GprBinOp mn then some do
+  if let some (op, w?) := lookupSized GprBinOp mn then ps := ps.push do
     let (addr_w, a) ← parseRegOrMem; parseComma
     let (_, b) ← parseRegOrMem; parseComma
     let dst ← parseRegW
@@ -651,76 +653,79 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
       if h : w' = w then pure (toInstr addr_w (.bin op (h ▸ dst) src1 (← ascribe w src2)))
       else fail "impossible"
     | .mem _, _ => fail s!"{mn}: expected a register"
-  else if let some (op, w?) := lookupSized BitTestOp mn then
-    some (commaSeparated w? parseOperand parseRegOrMem (.bt op))
-  else if let some op := Mnemonic.ofName? (α := SimdMov) mn then
-    some (commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov op))
-  else if let some op := Mnemonic.ofName? (α := SimdMov) v then
-    some (commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op))
-  else if let some op := Mnemonic.ofName? (α := SimdBinOp) mn then some do
+  if let some (op, w?) := lookupSized BitTestOp mn then ps := ps.push do
+    commaSeparated w? parseOperand parseRegOrMem (.bt op)
+  if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov op)
+  if let some op := Mnemonic.ofName? (α := SimdMov) v then ps := ps.push do
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op)
+  if let some op := Mnemonic.ofName? (α := SimdBinOp) mn then ps := ps.push do
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.sse op dst src))
-  else if let some op := Mnemonic.ofName? (α := SimdBinOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdBinOp) v then ps := ps.push do
     let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
     pure (toAvxInstr addr_w (.vex op dst src1 src2))
-  else if let some op := Mnemonic.ofName? (α := SimdUnOp) mn then some do
+  if let some op := Mnemonic.ofName? (α := SimdUnOp) mn then ps := ps.push do
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
     pure (toAvxInstr addr_w (.sseUn op dst src))
-  else if let some op := Mnemonic.ofName? (α := SimdUnOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdUnOp) v then ps := ps.push do
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
     pure (toAvxInstr addr_w (.vexUn op dst src))
-  else if let some op := Mnemonic.ofName? (α := SimdUnImmOp) mn then some do
+  if let some op := Mnemonic.ofName? (α := SimdUnImmOp) mn then ps := ps.push do
     let imm ← parseImmComma
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.sseUnImm op dst src imm))
-  else if let some op := Mnemonic.ofName? (α := SimdUnImmOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdUnImmOp) v then ps := ps.push do
     let imm ← parseImmComma
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.vexUnImm op dst src imm))
-  else if let some op := Mnemonic.ofName? (α := SimdBinImmOp) mn then some do
+  if let some op := Mnemonic.ofName? (α := SimdBinImmOp) mn then ps := ps.push do
     let imm ← parseImmComma
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.sseImm op dst src imm))
-  else if let some op := Mnemonic.ofName? (α := SimdBinImmOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdBinImmOp) v then ps := ps.push do
     let imm ← parseImmComma
     let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
     pure (toAvxInstr addr_w (.vexImm op dst src1 src2 imm))
-  else if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then some do
+  if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
     let ⟨_, dst⟩ ← parseAvxRegW
     pure (toAvxInstr addr_w (.sseShift op dst count))
-  else if let some op := Mnemonic.ofName? (α := SimdShiftOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdShiftOp) v then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
     let ⟨w, src⟩ ← parseAvxRegW; parseComma
     let dst ← parseAvxRegW
     if h : dst.w = w then pure (toAvxInstr addr_w (.vexShift op (h ▸ dst.reg) src count))
     else fail "AVX operand widths differ"
-  else if let some op := Mnemonic.ofName? (α := SimdTestOp) mn then some do
+  if let some op := Mnemonic.ofName? (α := SimdTestOp) mn then ps := ps.push do
     let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.sseTest op src1 src2))
-  else if let some op := Mnemonic.ofName? (α := SimdTestOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdTestOp) v then ps := ps.push do
     let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.vexTest op src1 src2))
-  else if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then some do
+  if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then ps := ps.push do
     skipHWs; let _ ← pstring "%xmm0"; parseComma
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.sseBlendv op dst src))
-  else if let some op := Mnemonic.ofName? (α := SimdBlendvOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdBlendvOp) v then ps := ps.push do
     let ⟨w, mask⟩ ← parseAvxRegW; parseComma
     let (addr_w, ⟨w', src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
     if h : w = w' then pure (toAvxInstr addr_w (.vexBlendv op dst src1 src2 (h ▸ mask)))
     else fail "AVX operand widths differ"
-  else if let some op := Mnemonic.ofName? (α := SimdFmaOp) v then some do
+  if let some op := Mnemonic.ofName? (α := SimdFmaOp) v then ps := ps.push do
     let (addr_w, ⟨_, src3, src2, dst⟩) ← parseAvxSrc2Src1Dst
     pure (toAvxInstr addr_w (.fma op dst src2 src3))
-  else none
+  return ps
 
-/-- Parse an instruction mnemonic and its operands.
+/-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
+operand shape matches. -/
+def parseFamily? (mn : String) : Option (Parser Instr) :=
+  let ps := familyParsers mn
+  ps.back?.map fun last => ps.pop.foldr (fun p acc => attempt p <|> acc) last
+
+/-- Parse the operands of the instructions not in a family, named `mn` (lowercase `mnemonic`).
     AT&T syntax: src, dst (reversed from Intel). -/
-def parseInstr : Parser Instr := do
-  skipHWs
-  let mnemonic ← parseName
-  let mn := mnemonic.toLower
+def parseExplicit (mnemonic mn : String) : Parser Instr := do
   -- Match on full mnemonic name (no suffix stripping)
   match mn with
   -- Arithmetic (two-operand: src, dst) - 64-bit
@@ -1207,9 +1212,18 @@ def parseInstr : Parser Instr := do
       -- something inconsistent like .cmovzb %rax %rbx
       let cc ← parseCondCode (mn.drop 4)
       commaSeparated .none parseRegOrMem parseRegA (.cmovcc cc)
-    else if let some p := parseFamily? mn then p
     else
       fail s!"unsupported instruction: {mnemonic}"
+
+/-- Parse an instruction mnemonic and its operands. A mnemonic may name both an explicit
+instruction and family opcodes (e.g. `movq`); the first whose operands parse wins. -/
+def parseInstr : Parser Instr := do
+  skipHWs
+  let mnemonic ← parseName
+  let mn := mnemonic.toLower
+  match parseFamily? mn with
+  | some p => attempt (parseExplicit mnemonic mn) <|> p
+  | none => parseExplicit mnemonic mn
 
 -- ============================================================================
 -- Label Parsing
