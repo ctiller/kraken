@@ -87,6 +87,9 @@ def AddrExpr.toStr (a : AddrExpr) (addr_w : Width := .W64) : String :=
 def Width.ptrName : Width → String
   | .W8 => "BYTE" | .W16 => "WORD" | .W32 => "DWORD" | .W64 => "QWORD"
 
+def Width.strSuffix : Width → String
+  | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"
+
 def RegOrMem.toStr {w} (rm : RegOrMem w) (addr_w : Width := .W64) : String := match rm with
   | .reg r => ToString.toString r
   | .mem a => s!"{w.ptrName} PTR {a.toStr addr_w}"
@@ -146,11 +149,11 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .sahf => "sahf"
   | .cld => "cld"
   | .std => "std"
-  | .movs rep => s!"{rep.toStrPrefix}movs{let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"; s}"
-  | .stos rep => s!"{rep.toStrPrefix}stos{let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"; s}"
-  | .lods rep => s!"{rep.toStrPrefix}lods{let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"; s}"
-  | .cmps rep => s!"{rep.toStrPrefix}cmps{let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"; s}"
-  | .scas rep => s!"{rep.toStrPrefix}scas{let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"; s}"
+  | .movs rep => s!"{rep.toStrPrefix}movs{w.strSuffix}"
+  | .stos rep => s!"{rep.toStrPrefix}stos{w.strSuffix}"
+  | .lods rep => s!"{rep.toStrPrefix}lods{w.strSuffix}"
+  | .cmps rep => s!"{rep.toStrPrefix}cmps{w.strSuffix}"
+  | .scas rep => s!"{rep.toStrPrefix}scas{w.strSuffix}"
   | .lea dst src => s!"lea {dst}, {src.toStr addr_w}"
   | .add dst src => s!"add {dst.toStr addr_w}, {src.toStr addr_w}"
   | .adc dst src => s!"adc {dst.toStr addr_w}, {src.toStr addr_w}"
@@ -284,7 +287,6 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
     else
       let immStr := optImm imm
       s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}{immStr}"
-instance {w} : ToString (Operation w) where toString op := op.toStr
 
 instance : ToString Instr where
   toString i := match i with
