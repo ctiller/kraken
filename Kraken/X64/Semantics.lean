@@ -778,8 +778,9 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
     let s := if w == .W8
       then s.setReg (.low .rax .W16) (.ofInt _ vn)
       else (s.setReg (.low .rax w) v).setReg (.low .rdx w) (.ofInt _ (vn >>> w.bits))
-    undefined (λ sf => undefined (λ zf => undefined (λ af => undefined (λ pf =>
-    next { s with status := { cf := v.unsigned != vn, pf, af, zf, sf, of := v.unsigned != vn, df := s.status.df }})))))
+    let cf := v.unsigned != vn
+    s.status.update { cf, of := cf, sf := .undef, zf := .undef, af := .undef, pf := .undef } fun status =>
+    next { s with status })
   | .mulx r_hi r_lo src1 =>
     src1.interp s p (fun a s =>
     let b := s.regs.get (.low .rdx w)
@@ -800,10 +801,10 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
       let low := result.take w.bits
       let high := (result.drop w.bits).setWidth _
       (s.setReg (.low .rax w) low).setReg (.low .rdx w) high
-    undefined (λ sf => undefined (λ zf => undefined (λ af => undefined (λ pf =>
     let low := BitVec.ofInt w.bits v
     let cf := v != low.toInt
-    next { s with status := { cf := cf, pf, af, zf, sf, of := cf, df := s.status.df }})))))
+    s.status.update { cf, of := cf, sf := .undef, zf := .undef, af := .undef, pf := .undef } fun status =>
+    next { s with status })
   | .imul dst src1 src2 =>
     src1.interp s p (fun a s =>
     src2.interp s p (fun b s =>
@@ -811,8 +812,8 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
     s.set (match (generalizing := false) (motive := Option (RegOrMem w) → RegOrMem w)
              dst with | .some dst => dst | _ => src1) v p (fun s =>
     let cf := v.signed != a.signed * b.signed
-    undefined (λ sf => undefined (λ zf => undefined (λ af => undefined (λ pf =>
-    next { s with status := { cf := cf, pf, af, zf, sf, of := cf, df := s.status.df }})))))))
+    s.status.update { cf, of := cf, sf := .undef, zf := .undef, af := .undef, pf := .undef } fun status =>
+    next { s with status })))
   | .div src | .idiv src =>
     src.interp s p (fun b s =>
     let signed := i matches .idiv ..
