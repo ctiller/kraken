@@ -178,11 +178,18 @@ def SimdCount.toStr (c : SimdCount) (addr_w : Width := .W64) : String := match c
   | .imm v => toString v
   | .reg src => src.toStr addr_w
 
+def AvxRegOrMem.toStrSimd {w} (memBytes? : Option Nat) (rm : AvxRegOrMem w) (addr_w : Width := .W64) : String :=
+  match rm, memBytes? with
+  | .avx r, _ => ToString.toString r
+  | .mem a, some 4 => "DWORD PTR " ++ a.toStr addr_w
+  | .mem a, some 8 => "QWORD PTR " ++ a.toStr addr_w
+  | .mem _, _ => rm.toStr addr_w
+
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
   | .mov op dst src => s!"{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .vmov op dst src => s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}"
-  | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}"
+  | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
+  | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .sseUn op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}"
   | .vexUn op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStr addr_w}"
   | .sseUnImm op dst src imm | .sseImm op dst src imm =>

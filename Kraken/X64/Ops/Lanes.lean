@@ -45,6 +45,10 @@ def unpckh {n} (k : Nat) (a b : BitVec n) : BitVec n :=
     if i % 2 == 0 then a.lane k (half + i / 2) else b.lane k (half + i / 2)
 
 def toFloat32 (v : BitVec 32) : Float32 := Float32.ofBits (UInt32.ofBitVec v)
+
+/-- Replaces the low `n` bits of `old` with `new`, keeping the upper bits of `old`. -/
+def replaceLow {w n} (old : BitVec w) (new : BitVec n) : BitVec w :=
+  (BitVec.append (old.extractLsb' n (w - n)) new).setWidth _
 end BitVec
 
 def Float32.toBitVec (f : Float32) : BitVec 32 := UInt32.toBitVec (Float32.toBits f)
