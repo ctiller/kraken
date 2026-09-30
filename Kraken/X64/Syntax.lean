@@ -314,6 +314,7 @@ inductive AvxOperation (w : AvxWidth)
   | vexScalarStore (op : SimdScalarMov) (dst : AddrExpr) (src : AvxReg w)
   | vextract (op : SimdExtract128Op) (dst : AvxRegOrMem .W128) (src : AvxReg w) (imm : ConstExpr)
   | vinsert (op : SimdInsert128Op) (dst src1 : AvxReg w) (src2 : AvxRegOrMem .W128) (imm : ConstExpr)
+  | vcvtps2ph (dst : AvxRegOrMem .W128) (src : AvxReg w) (imm : ConstExpr)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr

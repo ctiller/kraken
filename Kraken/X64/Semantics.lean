@@ -974,6 +974,24 @@ match i with
     let high128 := if bit then b else yval.extractLsb' 128 128
     let res256 : BitVec 256 := (BitVec.append high128 low128).setWidth _
     next (s.setAvxReg dst (res256.zeroExtend _)))
+  | .vcvtps2ph dst src imm =>
+    let immVal := (imm.interp p).toBitVec.take 8
+    let mode := if immVal.getLsbD 2 then 0 else (immVal &&& 3).toNat
+    let sval := s.zmms.get src
+    match w with
+    | .W128 =>
+      let res64 : BitVec 64 := BitVec.ofLanes 64 16 fun i =>
+        f32ToF16 mode (sval.lane 32 i)
+      match dst with
+      | .avx r => next (s.setAvxReg r (res64.zeroExtend 128))
+      | .mem addr =>
+        let a := (addr.interp s.regs p).zeroExtend 64
+        s.store a res64 next
+    | .W256 =>
+      let res128 : BitVec 128 := BitVec.ofLanes 128 16 fun i =>
+        f32ToF16 mode (sval.lane 32 i)
+      s.setAvx dst res128 p next
+    | _ => .unimplemented "vcvtps2ph requires 128- or 256-bit source"
 
 @[kstep]
 def Instr.interp [Labels]

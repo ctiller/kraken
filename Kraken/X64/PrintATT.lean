@@ -188,6 +188,7 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vexScalarStore op dst src => s!"v{Mnemonic.name op} {avxReg src}, {addr aw dst}"
   | .vextract op dst src imm => s!"v{Mnemonic.name op} ${const imm}, {avxReg src}, {avxRm aw dst}"
   | .vinsert op dst src1 src2 imm => s!"v{Mnemonic.name op} ${const imm}, {avxRm aw src2}, {avxReg src1}, {avxReg dst}"
+  | .vcvtps2ph dst src imm => s!"vcvtps2ph ${const imm}, {avxReg src}, {avxRm aw dst}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

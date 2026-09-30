@@ -3,6 +3,7 @@ module
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Lanes
 public import Kraken.X64.Ops.SimdCrypto
+public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -20,6 +21,7 @@ inductive SimdUnOp
   | cvtdq2ps | cvtps2dq | cvttps2dq
   | cvtdq2pd | cvtps2pd
   | cvtpd2ps | cvtpd2dq | cvttpd2dq
+  | cvtph2ps
   | phminposuw
   | pbroadcastb | pbroadcastw | pbroadcastd | pbroadcastq
   | broadcastss | broadcastsd
@@ -69,6 +71,7 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
     let r0 := sseCvttpd2dqLane (a.lane 64 0)
     let r1 := sseCvttpd2dqLane (a.lane 64 1)
     (BitVec.append r1 r0).zeroExtend n
+  | .cvtph2ps => fun a => .ofLanes n 32 fun i => f16ToF32 (a.lane 16 i)
   | .phminposuw => fun a =>
     let words := List.range 8 |>.map fun i => (i, (a.lane 16 i).toNat)
     let (minIdx, minVal) := words.foldl (fun (bestIdx, bestVal) (idx, val) =>
@@ -95,7 +98,7 @@ def SimdUnOp.memBytes? : SimdUnOp → Nat → Option Nat
   | .pmovzxwd, bytes | .pmovsxwd, bytes => some (bytes / 2)
   | .pmovzxwq, bytes | .pmovsxwq, bytes => some (bytes / 4)
   | .pmovzxdq, bytes | .pmovsxdq, bytes => some (bytes / 2)
-  | .cvtdq2pd, bytes | .cvtps2pd, bytes => some (bytes / 2)
+  | .cvtdq2pd, bytes | .cvtps2pd, bytes | .cvtph2ps, bytes => some (bytes / 2)
   | .movddup, 16 => some 8
   | .pbroadcastb, _ => some 1
   | .pbroadcastw, _ => some 2

@@ -67,7 +67,9 @@ def corpus : List String := [
   -- AVX
   "movups %xmm0, %xmm1", "vmovups (%rsp), %ymm2", "vmovups %zmm31, 64(%rsp)",
   "movaps %xmm3, %xmm4", "addps (%rax), %xmm5", "subps %xmm6, %xmm7",
-  "vzeroupper", "vzeroall", "movq %xmm1, %xmm0", "vmovq %xmm1, %xmm0"
+  "vzeroupper", "vzeroall", "movq %xmm1, %xmm0", "vmovq %xmm1, %xmm0",
+  "vcvtps2ph $1, %xmm0, %xmm1", "vcvtps2ph $1, %ymm0, %xmm1",
+  "vcvtps2ph $1, %xmm0, (%rsp)", "vcvtps2ph $1, %ymm0, (%rsp)"
 ]
 
 /-- info: [] -/

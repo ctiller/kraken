@@ -784,6 +784,14 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         pure (toAvxInstr addr_w (.vinsert op (h2 ▸ dst.reg) (h1 ▸ src1) (← ascribeAvx .W128 src2) imm))
       else fail "vinsert destination must be ymm"
     else fail "vinsert source must be ymm"
+  if v == "cvtps2ph" then ps := ps.push do
+    let imm ← parseImmComma
+    let ⟨w, src⟩ ← parseAvxRegW; parseComma
+    let (addr_w, dst) ← parseAvxRegOrMem
+    match w with
+    | .W128 => pure (toAvxInstr addr_w (.vcvtps2ph (← ascribeAvx .W128 dst) src imm))
+    | .W256 => pure (toAvxInstr addr_w (.vcvtps2ph (← ascribeAvx .W128 dst) src imm))
+    | _ => fail "vcvtps2ph requires xmm or ymm source"
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
