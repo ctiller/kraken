@@ -79,7 +79,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #eval failing GprUnOp fun _ mn => [s!"{mn} (%rsp), %rax", s!"{mn}l %eax, %ebx"] ++
   failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
     if op.src2First then s!"{mn} 8(%rsp), %ebx, %ecx" else s!"{mn} %ebx, 8(%rsp), %ecx"]) ++
-  failing BitTestOp fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]
+  failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++
+  failing SimdMov fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"]
 
 -- Printed form is canonical AT&T.
 #guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo" with

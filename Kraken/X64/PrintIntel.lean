@@ -175,9 +175,8 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
-  | .movups dst src => s!"movups {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .vmovups dst src => s!"vmovups {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .movaps dst src => s!"movaps {dst.toStr addr_w}, {src.toStr addr_w}"
+  | .mov op dst src => s!"{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
+  | .vmov op dst src => s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}"
 instance {w} : ToString (Operation w) where toString op := op.toStr

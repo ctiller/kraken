@@ -754,11 +754,10 @@ def AvxOperation.interp [Labels] [address_size : AddressSize]
   {w} (i : AvxOperation w) (p : Std.Rco Int64) (s : MachineData)
   (next : MachineData → Effects) : Effects :=
 match i with
-  | .movups dst src => src.interp s p (fun val s => s.setAvxLegacy dst val p next)
-  | .vmovups dst src => src.interp s p (fun val s => s.setAvx dst val p next)
-  | .movaps dst src =>
-    src.interp s p (checkAlign := true)
-      (fun val s => s.setAvxLegacy dst val p (checkAlign := true) next)
+  | .mov op dst src =>
+    src.interp s p (checkAlign := op.aligned) (fun v s => s.setAvxLegacy dst v p next op.aligned)
+  | .vmov op dst src =>
+    src.interp s p (checkAlign := op.aligned) (fun v s => s.setAvx dst v p next op.aligned)
   | .sse op dst src =>
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
     next (s.setAvxLegacyReg dst (.map2 128 op.interp (s.zmms.get dst) b)))

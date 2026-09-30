@@ -3,6 +3,7 @@ module
 import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Ops.SimdBin
+public import Kraken.X64.Ops.SimdMov
 public import Kraken.X64.Ops.GprUn
 public import Kraken.X64.Ops.GprBin
 public import Kraken.X64.Ops.BitTest
@@ -251,9 +252,10 @@ inductive Operation (w : Width)
 -- The non-v* variants take SSE registers only.
 -- TODO: AVX512 extensions (write-masking, ...)
 inductive AvxOperation (w : AvxWidth)
-  | movups (_ : AvxDst w) (src : AvxRegOrMem w)
-  | vmovups (_ : AvxDst w) (src : AvxRegOrMem w)
-  | movaps (_ : AvxDst w) (src : AvxRegOrMem w)
+  -- Full-vector moves; the legacy forms preserve the upper bits of a register destination, the
+  -- `v` forms zero them.
+  | mov (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
+  | vmov (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
   -- `dst := op dst src` on xmm registers, preserving the upper bits.
   | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.

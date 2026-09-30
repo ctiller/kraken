@@ -123,9 +123,8 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
-  | .movups d x => two "movups" d x
-  | .vmovups d x => two "vmovups" d x
-  | .movaps d x => two "movaps" d x
+  | .mov op d x => two (Mnemonic.name op) d x
+  | .vmov op d x => two s!"v{Mnemonic.name op}" d x
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
 

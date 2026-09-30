@@ -805,15 +805,6 @@ def parseInstr : Parser Instr := do
     else
       pure (toInstr (some addr_w) (.lea dst src))
 
-  | "movups" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .movups
-
-  | "vmovups" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .vmovups
-
-  | "movaps" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .movaps
-
   -- Bitwise - 64-bit
   | "xor" =>
     commaSeparated .none parseOperand parseRegOrMem .xor
@@ -1059,11 +1050,15 @@ def parseInstr : Parser Instr := do
       | .mem _, _ => fail s!"{mnemonic}: expected a register"
     else if let some (op, w?) := lookupSized BitTestOp mn then
       commaSeparated w? parseOperand parseRegOrMem (.bt op)
-    else if let some op := Mnemonic.ofName? mn then
+    else if let some op := Mnemonic.ofName? (α := SimdMov) mn then
+      commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov op)
+    else if let some op := Mnemonic.ofName? (α := SimdMov) (mn.drop 1).copy then
+      commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op)
+    else if let some op := Mnemonic.ofName? (α := SimdBinOp) mn then
       let (addr_w, src) ← parseAvxRegOrMem; parseComma
       let ⟨w, dst⟩ ← parseAvxRegW
       pure (toAvxInstr addr_w (.sse op dst (← ascribeAvx w src)))
-    else if let some op := Mnemonic.ofName? (mn.drop 1).copy then
+    else if let some op := Mnemonic.ofName? (α := SimdBinOp) (mn.drop 1).copy then
       let (addr_w, src2) ← parseAvxRegOrMem; parseComma
       let ⟨w, src1⟩ ← parseAvxRegW; parseComma
       let dst ← parseAvxRegW
