@@ -215,6 +215,14 @@ inductive Operation (w : Width)
   | pop  (_ : Dst w)
   | setcc (_ : CondCode) (_ : Dst w) -- {_ : w = .W8}
   | cmovcc (_ : CondCode) (_ : Reg w) (src : RegOrMem w)
+  | xchg (dst : Dst w) (src : Reg w)
+  | xadd (dst : Dst w) (src : Reg w)
+  | cmpxchg (dst : Dst w) (src : Reg w)
+  | clc
+  | stc
+  | cmc
+  | lahf
+  | sahf
   -- Arithmetic
   | lea (_ : Reg w) (src : AddrExpr) -- {_ : 16 <= w.bits}
   | add  (_ : Dst w) (src : Operand w)

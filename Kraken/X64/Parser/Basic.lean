@@ -580,6 +580,22 @@ def Option.toParser {T} (self: Option T): Parser T :=
 
 instance {T} : Coe (Option T) (Parser T) where coe := Option.toParser
 
+def parseXchg (op_w : Option Width) : Parser Instr := do
+  let (addr_w, ⟨_w, a, b⟩) ← match op_w with
+    | some w =>
+      let (addr_w1, a) ← parseAO parseRegOrMem w
+      parseComma
+      let (addr_w2, b) ← parseAO parseRegOrMem w
+      let addr_w ← mergeAddrWidths addr_w1 addr_w2
+      pure (addr_w, ⟨w, a, b⟩)
+    | none =>
+      let a ← parseRegOrMem; parseComma
+      ascribeOrInfer a parseRegOrMem
+  match a, b with
+  | .reg r, dst => pure (toInstr addr_w (.xchg dst r))
+  | dst, .reg r => pure (toInstr addr_w (.xchg dst r))
+  | .mem _, .mem _ => fail "xchg cannot have two memory operands"
+
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
 def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
   (Mnemonic.ofName? mn).map (·, none) <|> do
@@ -929,6 +945,34 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     let w ← instrWidth mn
     commaSeparated w parseOperand parseRegOrMem .mov
 
+
+  | "xchg" =>
+    parseXchg .none
+
+  | "xchgq" | "xchgl" | "xchgw" | "xchgb" =>
+    let w ← instrWidth mn
+    parseXchg (some w)
+
+  | "xadd" =>
+    commaSeparated .none parseRegA parseRegOrMem .xadd
+
+  | "xaddq" | "xaddl" | "xaddw" | "xaddb" =>
+    let w ← instrWidth mn
+    commaSeparated w parseRegA parseRegOrMem .xadd
+
+  | "cmpxchg" =>
+    commaSeparated .none parseRegA parseRegOrMem .cmpxchg
+
+  | "cmpxchgq" | "cmpxchgl" | "cmpxchgw" | "cmpxchgb" =>
+    let w ← instrWidth mn
+    commaSeparated w parseRegA parseRegOrMem .cmpxchg
+
+  | "clc" => pure (toInstr .none (w := .W64) .clc)
+  | "stc" => pure (toInstr .none (w := .W64) .stc)
+  | "cmc" => pure (toInstr .none (w := .W64) .cmc)
+  | "lahf" => pure (toInstr .none (w := .W64) .lahf)
+  | "sahf" => pure (toInstr .none (w := .W64) .sahf)
+
   | "movsx" =>
     -- Must be a register otherwise lacking type info
     let ⟨ _w_src, src ⟩ ← parseRegW; parseComma
@@ -1219,7 +1263,9 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
 instruction and family opcodes (e.g. `movq`); the first whose operands parse wins. -/
 def parseInstr : Parser Instr := do
   skipHWs
-  let mnemonic ← parseName
+  let mut mnemonic ← parseName
+  -- The `lock` prefix doesn't change single-threaded semantics.
+  if mnemonic.toLower == "lock" then skipHWs; mnemonic ← parseName
   let mn := mnemonic.toLower
   match parseFamily? mn with
   | some p => attempt (parseExplicit mnemonic mn) <|> p
