@@ -701,6 +701,18 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
   else if let some op := Mnemonic.ofName? (α := SimdTestOp) v then some do
     let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
     pure (toAvxInstr addr_w (.vexTest op src1 src2))
+  else if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then some do
+    skipHWs; let _ ← pstring "%xmm0"; parseComma
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.sseBlendv op dst src))
+  else if let some op := Mnemonic.ofName? (α := SimdBlendvOp) v then some do
+    let ⟨w, mask⟩ ← parseAvxRegW; parseComma
+    let (addr_w, ⟨w', src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    if h : w = w' then pure (toAvxInstr addr_w (.vexBlendv op dst src1 src2 (h ▸ mask)))
+    else fail "AVX operand widths differ"
+  else if let some op := Mnemonic.ofName? (α := SimdFmaOp) v then some do
+    let (addr_w, ⟨_, src3, src2, dst⟩) ← parseAvxSrc2Src1Dst
+    pure (toAvxInstr addr_w (.fma op dst src2 src3))
   else none
 
 /-- Parse an instruction mnemonic and its operands.

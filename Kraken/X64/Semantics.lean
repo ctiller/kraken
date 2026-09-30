@@ -855,6 +855,14 @@ match i with
   | .sseTest op src1 src2 | .vexTest op src1 src2 =>
     src2.interpSimd op.memBytes? s p (legacy := i matches .sseTest ..) (fun b s =>
     s.status.update (op.interp (s.zmms.get src1) b) fun status => next { s with status })
+  | .sseBlendv op dst src =>
+    src.interp s p (checkAlign := true) (fun b s =>
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b (s.zmms.get ((AvxReg.xmm .mm0).as w)))))
+  | .vexBlendv op dst src1 src2 mask =>
+    src2.interp s p (fun b s => next (s.setAvxReg dst (op.interp (s.zmms.get src1) b (s.zmms.get mask))))
+  | .fma op dst src2 src3 =>
+    src3.interpSimd op.memBytes? s p (legacy := false) (fun c s =>
+    next (s.setAvxReg dst (op.interp (s.zmms.get dst) (s.zmms.get src2) c)))
 
 @[kstep]
 def Instr.interp [Labels]

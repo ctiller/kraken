@@ -8,6 +8,7 @@ public import Kraken.X64.Ops.SimdUn
 public import Kraken.X64.Ops.SimdImm
 public import Kraken.X64.Ops.SimdShift
 public import Kraken.X64.Ops.SimdTest
+public import Kraken.X64.Ops.SimdTer
 public import Kraken.X64.Ops.GprUn
 public import Kraken.X64.Ops.GprBin
 public import Kraken.X64.Ops.BitTest
@@ -290,6 +291,9 @@ inductive AvxOperation (w : AvxWidth)
   | vexShift (op : SimdShiftOp) (dst src : AvxReg w) (count : SimdCount)
   | sseTest (op : SimdTestOp) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
   | vexTest (op : SimdTestOp) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | sseBlendv (op : SimdBlendvOp) (dst : AvxReg w) (src : AvxRegOrMem w)
+  | vexBlendv (op : SimdBlendvOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) (mask : AvxReg w)
+  | fma (op : SimdFmaOp) (dst src2 : AvxReg w) (src3 : AvxRegOrMem w)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr

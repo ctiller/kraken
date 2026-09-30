@@ -94,6 +94,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   failing SimdBinImmOp (fun _ mn => [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $2, %ymm2, %ymm3, %ymm4"]) ++
   failing SimdShiftOp (fun _ mn => [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++
   failing SimdTestOp (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm3, %xmm4"]) ++
+  failing SimdBlendvOp (fun _ mn => [s!"{mn} %xmm0, (%rsp), %xmm1", s!"v{mn} %ymm1, %ymm2, %ymm3, %ymm4"]) ++
+  failing SimdFmaOp (fun _ mn => [s!"v{mn} (%rsp), %xmm1, %xmm2", s!"v{mn} %xmm1, %xmm2, %xmm3"]) ++
   failing HintOp (fun _ mn => [mn])
 
 -- Printed form is canonical AT&T.

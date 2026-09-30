@@ -167,6 +167,9 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vexShift op d a c => s!"v{Mnemonic.name op} {simdCount aw c}, {avxReg a}, {avxReg d}"
   | .sseTest op a x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg a}"
   | .vexTest op a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}"
+  | .sseBlendv op d x => s!"{Mnemonic.name op} %xmm0, {avxRm aw x}, {avxReg d}"
+  | .vexBlendv op d a x m => s!"v{Mnemonic.name op} {avxReg m}, {avxRm aw x}, {avxReg a}, {avxReg d}"
+  | .fma op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op
