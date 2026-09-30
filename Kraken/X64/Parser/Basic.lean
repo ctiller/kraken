@@ -592,6 +592,98 @@ def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :
 def regWidth (w? : Option Width) (r : RegW) : Parser Width :=
   if w?.all (· == r.w) then pure r.w else fail s!"register {repr r.reg} contradicts the suffix"
 
+/-- `src, %dst` with AVX operands. -/
+def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
+  let (addr_w, src) ← parseAvxRegOrMem; parseComma
+  let ⟨w, dst⟩ ← parseAvxRegW
+  pure (addr_w, ⟨w, ← ascribeAvx w src, dst⟩)
+
+/-- `src2, %src1, %dst` with AVX operands. -/
+def parseAvxSrc2Src1Dst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w × AvxReg w) := do
+  let (addr_w, src2) ← parseAvxRegOrMem; parseComma
+  let ⟨w, src1⟩ ← parseAvxRegW; parseComma
+  let dst ← parseAvxRegW
+  if h : dst.w = w then pure (addr_w, ⟨w, ← ascribeAvx w src2, src1, h ▸ dst.reg⟩)
+  else fail "AVX operand widths differ"
+
+/-- `$imm,` -/
+def parseImmComma : Parser ConstExpr := do
+  skipHWs; let i ← parseInt64; parseComma; pure i
+
+/-- `$imm,` or `src,` where `src` is an xmm register or memory. -/
+def parseSimdCount : Parser (MaybeAddrWidth × SimdCount) :=
+  (attempt do pure (none, .imm (← parseImmComma))) <|> do
+    let (addr_w, src) ← parseAvxRegOrMem; parseComma
+    pure (addr_w, .reg (← ascribeAvx .W128 src))
+
+/-- The parser for the operands of a family opcode (see Kraken/X64/Ops) named `mn`, if any. -/
+def parseFamily? (mn : String) : Option (Parser Instr) :=
+  -- The base name of a `v` form.
+  let v := if mn.startsWith "v" then (mn.drop 1).copy else ""
+  if let some (op, w?) := lookupSized GprUnOp mn then some do
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let dst ← parseRegW
+    let w ← regWidth w? dst
+    if h : dst.w = w then
+      pure (toInstr addr_w (.un op (h ▸ dst.reg) (← ascribe w src)))
+    else fail "impossible"
+  else if let some (op, w?) := lookupSized GprBinOp mn then some do
+    let (addr_w, a) ← parseRegOrMem; parseComma
+    let (_, b) ← parseRegOrMem; parseComma
+    let dst ← parseRegW
+    let w ← regWidth w? dst
+    let (src1, src2) := if op.src2First then (b, a) else (a, b)
+    match ← ascribe w src1, dst with
+    | .reg src1, ⟨w', dst⟩ =>
+      if h : w' = w then pure (toInstr addr_w (.bin op (h ▸ dst) src1 (← ascribe w src2)))
+      else fail "impossible"
+    | .mem _, _ => fail s!"{mn}: expected a register"
+  else if let some (op, w?) := lookupSized BitTestOp mn then
+    some (commaSeparated w? parseOperand parseRegOrMem (.bt op))
+  else if let some op := Mnemonic.ofName? (α := SimdMov) mn then
+    some (commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov op))
+  else if let some op := Mnemonic.ofName? (α := SimdMov) v then
+    some (commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op))
+  else if let some op := Mnemonic.ofName? (α := SimdBinOp) mn then some do
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.sse op dst src))
+  else if let some op := Mnemonic.ofName? (α := SimdBinOp) v then some do
+    let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    pure (toAvxInstr addr_w (.vex op dst src1 src2))
+  else if let some op := Mnemonic.ofName? (α := SimdUnOp) mn then some do
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.sseUn op dst src))
+  else if let some op := Mnemonic.ofName? (α := SimdUnOp) v then some do
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.vexUn op dst src))
+  else if let some op := Mnemonic.ofName? (α := SimdUnImmOp) mn then some do
+    let imm ← parseImmComma
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.sseUnImm op dst src imm))
+  else if let some op := Mnemonic.ofName? (α := SimdUnImmOp) v then some do
+    let imm ← parseImmComma
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.vexUnImm op dst src imm))
+  else if let some op := Mnemonic.ofName? (α := SimdBinImmOp) mn then some do
+    let imm ← parseImmComma
+    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.sseImm op dst src imm))
+  else if let some op := Mnemonic.ofName? (α := SimdBinImmOp) v then some do
+    let imm ← parseImmComma
+    let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    pure (toAvxInstr addr_w (.vexImm op dst src1 src2 imm))
+  else if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then some do
+    let (addr_w, count) ← parseSimdCount
+    let ⟨_, dst⟩ ← parseAvxRegW
+    pure (toAvxInstr addr_w (.sseShift op dst count))
+  else if let some op := Mnemonic.ofName? (α := SimdShiftOp) v then some do
+    let (addr_w, count) ← parseSimdCount
+    let ⟨w, src⟩ ← parseAvxRegW; parseComma
+    let dst ← parseAvxRegW
+    if h : dst.w = w then pure (toAvxInstr addr_w (.vexShift op (h ▸ dst.reg) src count))
+    else fail "AVX operand widths differ"
+  else none
+
 /-- Parse an instruction mnemonic and its operands.
     AT&T syntax: src, dst (reversed from Intel). -/
 def parseInstr : Parser Instr := do
@@ -1030,41 +1122,7 @@ def parseInstr : Parser Instr := do
       -- something inconsistent like .cmovzb %rax %rbx
       let cc ← parseCondCode (mn.drop 4)
       commaSeparated .none parseRegOrMem parseRegA (.cmovcc cc)
-    else if let some (op, w?) := lookupSized GprUnOp mn then
-      let (addr_w, src) ← parseRegOrMem; parseComma
-      let dst ← parseRegW
-      let w ← regWidth w? dst
-      if h : dst.w = w then
-        pure (toInstr addr_w (.un op (h ▸ dst.reg) (← ascribe w src)))
-      else fail "impossible"
-    else if let some (op, w?) := lookupSized GprBinOp mn then
-      let (addr_w, a) ← parseRegOrMem; parseComma
-      let (_, b) ← parseRegOrMem; parseComma
-      let dst ← parseRegW
-      let w ← regWidth w? dst
-      let (src1, src2) := if op.src2First then (b, a) else (a, b)
-      match ← ascribe w src1, dst with
-      | .reg src1, ⟨w', dst⟩ =>
-        if h : w' = w then pure (toInstr addr_w (.bin op (h ▸ dst) src1 (← ascribe w src2)))
-        else fail "impossible"
-      | .mem _, _ => fail s!"{mnemonic}: expected a register"
-    else if let some (op, w?) := lookupSized BitTestOp mn then
-      commaSeparated w? parseOperand parseRegOrMem (.bt op)
-    else if let some op := Mnemonic.ofName? (α := SimdMov) mn then
-      commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov op)
-    else if let some op := Mnemonic.ofName? (α := SimdMov) (mn.drop 1).copy then
-      commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op)
-    else if let some op := Mnemonic.ofName? (α := SimdBinOp) mn then
-      let (addr_w, src) ← parseAvxRegOrMem; parseComma
-      let ⟨w, dst⟩ ← parseAvxRegW
-      pure (toAvxInstr addr_w (.sse op dst (← ascribeAvx w src)))
-    else if let some op := Mnemonic.ofName? (α := SimdBinOp) (mn.drop 1).copy then
-      let (addr_w, src2) ← parseAvxRegOrMem; parseComma
-      let ⟨w, src1⟩ ← parseAvxRegW; parseComma
-      let dst ← parseAvxRegW
-      if h : dst.w = w then
-        pure (toAvxInstr addr_w (.vex op (h ▸ dst.reg) src1 (← ascribeAvx w src2)))
-      else fail s!"{mnemonic}: operand widths differ"
+    else if let some p := parseFamily? mn then p
     else
       fail s!"unsupported instruction: {mnemonic}"
 

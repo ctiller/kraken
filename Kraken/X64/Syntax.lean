@@ -4,6 +4,9 @@ import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
+public import Kraken.X64.Ops.SimdUn
+public import Kraken.X64.Ops.SimdImm
+public import Kraken.X64.Ops.SimdShift
 public import Kraken.X64.Ops.GprUn
 public import Kraken.X64.Ops.GprBin
 public import Kraken.X64.Ops.BitTest
@@ -170,6 +173,10 @@ attribute [coe] Operand.imm
 abbrev Operand.reg {w} (r : Reg w) : Operand w := regOrMem (.reg r)
 abbrev Operand.mem {w} (m : AddrExpr) : Operand w := regOrMem (.mem m)
 
+-- A SIMD shift count: an immediate, or the low 64 bits of an xmm register or memory.
+inductive SimdCount | imm (v : ConstExpr) | reg (src : AvxRegOrMem .W128)
+  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+
 -- TODO: We could remove this and use AvxRegOrMem directly.
 inductive AvxOperand (w : AvxWidth) | regOrMem (_ : AvxRegOrMem w)
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
@@ -260,6 +267,14 @@ inductive AvxOperation (w : AvxWidth)
   | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.
   | vex (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | sseUn (op : SimdUnOp) (dst : AvxReg w) (src : AvxRegOrMem w)
+  | vexUn (op : SimdUnOp) (dst : AvxReg w) (src : AvxRegOrMem w)
+  | sseUnImm (op : SimdUnImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | vexUnImm (op : SimdUnImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | sseImm (op : SimdBinImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | vexImm (op : SimdBinImmOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) (imm : ConstExpr)
+  | sseShift (op : SimdShiftOp) (dst : AvxReg w) (count : SimdCount)
+  | vexShift (op : SimdShiftOp) (dst src : AvxReg w) (count : SimdCount)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr

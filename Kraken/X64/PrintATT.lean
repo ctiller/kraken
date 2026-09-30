@@ -120,6 +120,10 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .nopalign a none => s!".align {a}"
   | .nopalign a (some p) => s!".align {a}, {p}"
 
+def simdCount (aw : Width) : SimdCount → String
+  | .imm e => "$" ++ const e
+  | .reg x => avxRm aw x
+
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
@@ -127,6 +131,14 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vmov op d x => two s!"v{Mnemonic.name op}" d x
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
+  | .sseUn op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
+  | .vexUn op d x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
+  | .sseUnImm op d x i | .sseImm op d x i =>
+    s!"{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
+  | .vexUnImm op d x i => s!"v{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
+  | .vexImm op d a x i => s!"v{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg a}, {avxReg d}"
+  | .sseShift op d c => s!"{Mnemonic.name op} {simdCount aw c}, {avxReg d}"
+  | .vexShift op d a c => s!"v{Mnemonic.name op} {simdCount aw c}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

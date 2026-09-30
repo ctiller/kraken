@@ -174,11 +174,24 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .nopalign a (some p) => s!".align {a}, {p}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
+def SimdCount.toStr (c : SimdCount) (addr_w : Width := .W64) : String := match c with
+  | .imm v => toString v
+  | .reg src => src.toStr addr_w
+
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
   | .mov op dst src => s!"{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .vmov op dst src => s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}"
+  | .sseUn op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}"
+  | .vexUn op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStr addr_w}"
+  | .sseUnImm op dst src imm | .sseImm op dst src imm =>
+    s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
+  | .vexUnImm op dst src imm => s!"v{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
+  | .vexImm op dst src1 src2 imm =>
+    s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}, {imm}"
+  | .sseShift op dst c => s!"{Mnemonic.name op} {dst}, {c.toStr addr_w}"
+  | .vexShift op dst src c => s!"v{Mnemonic.name op} {dst}, {src}, {c.toStr addr_w}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
 instance : ToString Instr where

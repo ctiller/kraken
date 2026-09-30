@@ -201,6 +201,7 @@ instance : Gen RelRegOrMem := ⟨gen_ctors% RelRegOrMem⟩
 instance {w} : Gen (RegOrMem w) := ⟨gen_ctors% RegOrMem⟩
 instance {w} : Gen (Operand w) := ⟨gen_ctors% Operand⟩
 instance {w} : Gen (AvxRegOrMem w) := ⟨gen_ctors% AvxRegOrMem⟩
+instance : Gen SimdCount := ⟨gen_ctors% SimdCount⟩
 instance {w} : Gen (Operation w) := ⟨gen_ctors% Operation⟩
 instance {w} : Gen (AvxOperation w) := ⟨gen_ctors% AvxOperation⟩
 instance : Gen Instr := ⟨gen_ctors% Instr⟩
@@ -217,6 +218,7 @@ def assemblable (cands : Array String) : IO (Array String) := IO.FS.withTempFile
   if out.exitCode != 0 && bad.isEmpty then throw (.userError out.stderr)
   return cands.zipIdx.filterMap fun (c, i) => if bad.contains (i + 1) then none else some c
 
+set_option maxHeartbeats 1000000 in
 def genPool (n : Nat) : StateM StdGen (Array String) :=
   (Array.range n).filterMapM fun _ => (Kraken.X64.ATT.instr <$> gen).run
 

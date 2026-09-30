@@ -340,10 +340,19 @@ vector. Legacy SSE instructions fault on unaligned whole-vector memory operands.
 def AvxRegOrMem.interpSimd {w} [Labels] [AddressSize]
   (o : AvxRegOrMem w) (bytes? : Option Nat) (s : MachineData) (p : Std.Rco Int64) (legacy : Bool)
   (ret : w.type → MachineData → Effects) : Effects :=
+  let addr (a : AddrExpr) := (a.interp s.regs p).zeroExtend 64
   match o, bytes? with
-  | .mem a, some 4 => s.load ((a.interp s.regs p).zeroExtend _) .W32 (fun v s => ret (v.zeroExtend _) s)
-  | .mem a, some 8 => s.load ((a.interp s.regs p).zeroExtend _) .W64 (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some 2 => s.load (addr a) .W16 (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some 4 => s.load (addr a) .W32 (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some 8 => s.load (addr a) .W64 (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some 16 => s.loadAvx (addr a) .W128 (fun v s => ret (v.zeroExtend _) s)
   | _, _ => o.interp s p ret (checkAlign := legacy)
+
+def SimdCount.interp [Labels] [AddressSize] (c : SimdCount) (s : MachineData) (p : Std.Rco Int64)
+  (legacy : Bool) (ret : Nat → MachineData → Effects) : Effects := match c with
+  | .imm v => ret ((v.interp p).toBitVec.take 8).toNat s
+  -- Counts of at least 64 all have the same effect; this caps them to keep shifts cheap.
+  | .reg src => src.interp s p (checkAlign := legacy) (fun v s => ret (min (v.take 64).toNat 64) s)
 
 @[kstep]
 def MachineData.setReg (s : MachineData) {w} (r : Reg w) (v : w.type) : MachineData :=
@@ -764,6 +773,28 @@ match i with
   | .vex op dst src1 src2 =>
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
     next (s.setAvxReg dst (.map2 128 op.interp (s.zmms.get src1) b)))
+  | .sseUn op dst src =>
+    src.interpSimd (op.memBytes? w.bytes) s p (legacy := true) (fun a s =>
+    next (s.setAvxLegacyReg dst (op.interp a)))
+  | .vexUn op dst src =>
+    src.interpSimd (op.memBytes? w.bytes) s p (legacy := false) (fun a s =>
+    next (s.setAvxReg dst (op.interp a)))
+  | .sseUnImm op dst src imm =>
+    src.interp s p (checkAlign := true) (fun a s =>
+    next (s.setAvxLegacyReg dst (op.interp a ((imm.interp p).toBitVec.take 8))))
+  | .vexUnImm op dst src imm =>
+    src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a ((imm.interp p).toBitVec.take 8))))
+  | .sseImm op dst src imm =>
+    src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b ((imm.interp p).toBitVec.take 8))))
+  | .vexImm op dst src1 src2 imm =>
+    src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b ((imm.interp p).toBitVec.take 8))))
+  | .sseShift op dst count =>
+    count.interp s p (legacy := true) (fun c s =>
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) c)))
+  | .vexShift op dst src count =>
+    count.interp s p (legacy := false) (fun c s => next (s.setAvxReg dst (op.interp (s.zmms.get src) c)))
 
 @[kstep]
 def Instr.interp [Labels]
