@@ -209,11 +209,13 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .sseUn op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
   | .vexUn op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
-  | .sseUnImm op dst src imm | .sseImm op dst src imm =>
+  | .sseUnImm op dst src imm =>
     s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
+  | .sseImm op dst src imm =>
+    s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}, {imm}"
   | .vexUnImm op dst src imm => s!"v{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
   | .vexImm op dst src1 src2 imm =>
-    s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}, {imm}"
+    s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}, {imm}"
   | .sseShift op dst c => s!"{Mnemonic.name op} {dst}, {c.toStr addr_w}"
   | .vexShift op dst src c => s!"v{Mnemonic.name op} {dst}, {src}, {c.toStr addr_w}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
