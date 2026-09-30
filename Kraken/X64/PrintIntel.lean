@@ -272,20 +272,11 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
   | .fma op dst src2 src3 => s!"v{Mnemonic.name op} {dst}, {src2}, {src3.toStrSimd op.memBytes? addr_w}"
   | .vzeroupper => "vzeroupper"
   | .vzeroall => "vzeroall"
-  | .sseScalar op dst src => s!"{Mnemonic.name op} {dst}, {src}"
+  | .sseMovs op dst src =>
+    s!"{Mnemonic.name op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
+  | .vexMovs op dst src =>
+    s!"v{Mnemonic.name op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
   | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2}"
-  | .sseScalarLoad op dst src =>
-    let ptr := match op with | .movss => "DWORD PTR " | .movsd => "QWORD PTR "
-    s!"{Mnemonic.name op} {dst}, {ptr}{src.toStr addr_w}"
-  | .vexScalarLoad op dst src =>
-    let ptr := match op with | .movss => "DWORD PTR " | .movsd => "QWORD PTR "
-    s!"v{Mnemonic.name op} {dst}, {ptr}{src.toStr addr_w}"
-  | .sseScalarStore op dst src =>
-    let ptr := match op with | .movss => "DWORD PTR " | .movsd => "QWORD PTR "
-    s!"{Mnemonic.name op} {ptr}{dst.toStr addr_w}, {src}"
-  | .vexScalarStore op dst src =>
-    let ptr := match op with | .movss => "DWORD PTR " | .movsd => "QWORD PTR "
-    s!"v{Mnemonic.name op} {ptr}{dst.toStr addr_w}, {src}"
   | .vextract op dst src imm =>
     s!"v{Mnemonic.name op} {dst.toStrSimd (some 16) addr_w}, {src}, {imm}"
   | .vinsert op dst src1 src2 imm =>

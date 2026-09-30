@@ -750,39 +750,24 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     let (addr_w, ⟨_, src3, src2, dst⟩) ← parseAvxSrc2Src1Dst
     pure (toAvxInstr addr_w (.fma op dst src2 src3))
   if let some op := Mnemonic.ofName? (α := SimdScalarMov) mn then ps := ps.push do
-    let (addr_w1, op1) ← parseAvxRegOrMem; parseComma
-    let rm1 ← ascribeAvx .W128 op1
-    match rm1 with
-    | .mem m =>
-      let ⟨w, dst⟩ ← parseAvxRegW
-      if h : w = .W128 then pure (toAvxInstr addr_w1 (.sseScalarLoad op (h ▸ dst) m))
-      else fail "scalar load destination must be xmm"
-    | .avx src =>
-      let (addr_w2, op2) ← parseAvxRegOrMem
-      let rm2 ← ascribeAvx .W128 op2
-      match rm2 with
-      | .mem m =>
-        pure (toAvxInstr addr_w2 (.sseScalarStore op m src))
-      | .avx dst =>
-        pure (toAvxInstr .none (.sseScalar op dst src))
+    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.sseMovs op)
   if let some op := Mnemonic.ofName? (α := SimdScalarMov) v then ps := ps.push do
-    let (addr_w1, op1) ← parseAvxRegOrMem; parseComma
-    let rm1 ← ascribeAvx .W128 op1
-    match rm1 with
-    | .mem m =>
-      let ⟨w, dst⟩ ← parseAvxRegW
-      if h : w = .W128 then pure (toAvxInstr addr_w1 (.vexScalarLoad op (h ▸ dst) m))
-      else fail "scalar load destination must be xmm"
+    let (addr_w1, op1) ← parseAvxAO parseAvxRegOrMem .W128; parseComma
+    match op1 with
+    | .mem _ =>
+      let (addr_w2, dst) ← parseAvxAO parseAvxRegOrMem .W128
+      let addr_w ← mergeAddrWidths addr_w1 addr_w2
+      pure (toAvxInstr addr_w (.vexMovs op dst op1))
     | .avx src2 =>
-      let (addr_w2, op2) ← parseAvxRegOrMem
-      let rm2 ← ascribeAvx .W128 op2
-      match rm2 with
-      | .mem m =>
-        pure (toAvxInstr addr_w2 (.vexScalarStore op m src2))
+      let (addr_w2, op2) ← parseAvxAO parseAvxRegOrMem .W128
+      match op2 with
+      | .mem _ =>
+        let addr_w ← mergeAddrWidths addr_w1 addr_w2
+        pure (toAvxInstr addr_w (.vexMovs op op2 op1))
       | .avx src1 =>
         parseComma
-        let ⟨w3, dst⟩ ← parseAvxRegW
-        if h : w3 = .W128 then pure (toAvxInstr .none (.vexScalar op (h ▸ dst) src1 src2))
+        let ⟨w, dst⟩ ← parseAvxRegW
+        if h : w = .W128 then pure (toAvxInstr .none (.vexScalar op (h ▸ dst) src1 src2))
         else fail "scalar destination must be xmm"
   if let some op := Mnemonic.ofName? (α := SimdExtract128Op) v then ps := ps.push do
     let imm ← parseImmComma

@@ -393,6 +393,12 @@ match d with
   | .avx r => ret (s.setAvxLegacyReg r v)
   | .mem a => s.storeAvx ((a.interp s.regs p).zeroExtend _) v ret checkAlign
 
+def MachineData.storeScalar [Labels] [AddressSize] {w : AvxWidth} (s : MachineData) (addr : BitVec 64) (op : SimdScalarMov)
+  (v : w.type) (next : MachineData → Effects) : Effects :=
+  match op with
+  | .movss => s.store addr (v.take 32) next
+  | .movsd => s.store addr (v.take 64) next
+
 @[kstep] def Operand.interp {w} [Labels] [AddressSize]
   (o : Operand w) (s : MachineData) (p : Std.Rco Int64)
   (ret : w.type → MachineData → Effects) :=
@@ -1209,36 +1215,32 @@ match i with
     next (s.setAvxReg dst (op.interp (s.zmms.get dst) (s.zmms.get src2) c)))
   | .vzeroupper => next { s with zmms := s.zmms.vzeroupper }
   | .vzeroall => next { s with zmms := s.zmms.vzeroall }
-  | .sseScalar op dst src =>
-    let dval := (s.zmms.get dst).take 128
-    let sval := (s.zmms.get src).take 128
-    let v := match op with
-      | .movss => dval.replaceLow (sval.take 32)
-      | .movsd => dval.replaceLow (sval.take 64)
-    next (s.setAvxLegacyReg dst (v.zeroExtend _))
+  | .sseMovs op dst src => match dst, src with
+    | .avx d, .avx s_reg =>
+      let dval := (s.zmms.get d).take 128
+      let sval := (s.zmms.get s_reg).take 128
+      let v := dval.replaceLow (sval.take (op.bytes * 8))
+      next (s.setAvxLegacyReg d (v.zeroExtend _))
+    | .avx d, .mem a =>
+      let addr := (a.interp s.regs p).zeroExtend 64
+      s.load addr (.ofBytes op.bytes) (fun v s =>
+        next (s.setAvxLegacyReg d (v.zeroExtend _)))
+    | .mem a, .avx s_reg =>
+      s.storeScalar ((a.interp s.regs p).zeroExtend 64) op (s.zmms.get s_reg) next
+    | _, _ => next s
+  | .vexMovs op dst src => match dst, src with
+    | .avx d, .mem a =>
+      let addr := (a.interp s.regs p).zeroExtend 64
+      s.load addr (.ofBytes op.bytes) (fun v s =>
+        next (s.setAvxReg d (v.zeroExtend _)))
+    | .mem a, .avx s_reg =>
+      s.storeScalar ((a.interp s.regs p).zeroExtend 64) op (s.zmms.get s_reg) next
+    | _, _ => next s
   | .vexScalar op dst src1 src2 =>
     let s1val := (s.zmms.get src1).take 128
     let s2val := (s.zmms.get src2).take 128
-    let v := match op with
-      | .movss => s1val.replaceLow (s2val.take 32)
-      | .movsd => s1val.replaceLow (s2val.take 64)
+    let v := s1val.replaceLow (s2val.take (op.bytes * 8))
     next (s.setAvxReg dst (v.zeroExtend _))
-  | .sseScalarLoad op dst src =>
-    let addr := (src.interp s.regs p).zeroExtend 64
-    let w : Width := match op with | .movss => .W32 | .movsd => .W64
-    s.load addr w (fun v s =>
-    next (s.setAvxLegacyReg dst (v.zeroExtend _)))
-  | .vexScalarLoad op dst src =>
-    let addr := (src.interp s.regs p).zeroExtend 64
-    let w : Width := match op with | .movss => .W32 | .movsd => .W64
-    s.load addr w (fun v s =>
-    next (s.setAvxReg dst (v.zeroExtend _)))
-  | .sseScalarStore op dst src | .vexScalarStore op dst src =>
-    let addr := (dst.interp s.regs p).zeroExtend 64
-    let v := s.zmms.get src
-    match op with
-    | .movss => s.store addr (v.take 32) next
-    | .movsd => s.store addr (v.take 64) next
   | .vextract _ dst src imm =>
     let bit := ((imm.interp p).toBitVec.take 1)[0]
     let yval : BitVec 256 := (s.zmms.get src).take 256
