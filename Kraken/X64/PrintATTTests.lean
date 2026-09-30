@@ -62,6 +62,13 @@ def corpus : List String := [
 #guard_msgs in
 #eval corpus.filter (!roundtrips ·)
 
+-- Every SIMD opcode round-trips in both forms, and mnemonics are unique.
+/-- info: [] -/
+#guard_msgs in
+#eval (Mnemonic.names (α := SimdBinOp)).toList.map (·.2) |>.filter fun mn =>
+  !roundtrips s!"{mn} 16(%rsp), %xmm1" || !roundtrips s!"v{mn} %ymm1, %ymm2, %ymm3"
+#guard let ns := (Mnemonic.names (α := SimdBinOp)).toList.map (·.2); ns.eraseDups == ns
+
 -- Printed form is canonical AT&T.
 #guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo" with
   | .ok p => toATT p == "movq %rax, -16(%rbp,%rcx,8)\nfoo:\nimull $3, 8(%eax), %ebx\njne foo"

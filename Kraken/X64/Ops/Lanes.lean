@@ -38,3 +38,13 @@ def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 3
   if a.toFloat32.isNaN then a ||| 0x400000#32
   else if b.toFloat32.isNaN then b ||| 0x400000#32
   else let r := op a.toFloat32 b.toFloat32; if r.isNaN then 0xffc00000#32 else r.toBitVec
+
+def BitVec.toFloat (v : BitVec 64) : Float := Float.ofBits (UInt64.ofBitVec v)
+
+def Float.toBitVec (f : Float) : BitVec 64 := UInt64.toBitVec (Float.toBits f)
+
+/-- `sseBinOp` for double precision. -/
+def sseBinOp64 (op : Float → Float → Float) (a b : BitVec 64) : BitVec 64 :=
+  if a.toFloat.isNaN then a ||| 0x8000000000000#64
+  else if b.toFloat.isNaN then b ||| 0x8000000000000#64
+  else let r := op a.toFloat b.toFloat; if r.isNaN then 0xfff8000000000000#64 else r.toBitVec

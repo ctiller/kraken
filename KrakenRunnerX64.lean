@@ -6,7 +6,8 @@ KrakenRunnerX64 - Run assembly instructions through Kraken Semantics and obtain 
 At this point this expects a file only containing a list of assembly instructions, no data block or similar.
 
 Usage: krakenrunner_x64 <assembly.S>
-       krakenrunner_x64 --generate <seed> <count> <length>  (random sequences that Kraken deems deterministic)
+       krakenrunner_x64 --generate <seed> <count> <length> [prefix...]  (random sequences that Kraken deems
+        deterministic, optionally drawing only instructions starting with one of the prefixes)
        krakenrunner_x64 --batch < sequences.json              (predict final states for a JSON array of sequences)
 
 Arguments:
@@ -244,9 +245,10 @@ def genSequence (pool : Array String) (length : Nat) : StateM StdGen String := d
 
 public def main (args : List String) : IO UInt32 := do
   match args with
-  | ["--generate", seed, count, length] =>
-    let (pool, g) := (genPool 5000).run (mkStdGen seed.toNat!)
-    let pool ← assemblable pool
+  | "--generate" :: seed :: count :: length :: only =>
+    -- Draw more candidates when only instructions starting with one of `only` are wanted.
+    let (pool, g) := (genPool (if only.isEmpty then 5000 else 200000)).run (mkStdGen seed.toNat!)
+    let pool ← assemblable (pool.filter fun l => only.isEmpty || only.any fun o => l.startsWith o)
     let gen := (List.range count.toNat!).mapM fun _ => genSequence pool length.toNat!
     IO.println (toJson (gen.run' g).run).compress
     return 0
