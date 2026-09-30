@@ -580,6 +580,18 @@ def Option.toParser {T} (self: Option T): Parser T :=
 
 instance {T} : Coe (Option T) (Parser T) where coe := Option.toParser
 
+/-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
+def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
+  (Mnemonic.ofName? mn).map (·, none) <|> do
+    let w ← match mn.back? with
+      | some 'b' => some Width.W8 | some 'w' => some .W16 | some 'l' => some .W32
+      | some 'q' => some .W64 | _ => none
+    return (← Mnemonic.ofName? (mn.dropEnd 1).copy, some w)
+
+/-- The width of a register operand, checked against a mnemonic's width suffix. -/
+def regWidth (w? : Option Width) (r : RegW) : Parser Width :=
+  if w?.all (· == r.w) then pure r.w else fail s!"register {repr r.reg} contradicts the suffix"
+
 /-- Parse an instruction mnemonic and its operands.
     AT&T syntax: src, dst (reversed from Intel). -/
 def parseInstr : Parser Instr := do
@@ -1027,6 +1039,26 @@ def parseInstr : Parser Instr := do
       -- something inconsistent like .cmovzb %rax %rbx
       let cc ← parseCondCode (mn.drop 4)
       commaSeparated .none parseRegOrMem parseRegA (.cmovcc cc)
+    else if let some (op, w?) := lookupSized GprUnOp mn then
+      let (addr_w, src) ← parseRegOrMem; parseComma
+      let dst ← parseRegW
+      let w ← regWidth w? dst
+      if h : dst.w = w then
+        pure (toInstr addr_w (.un op (h ▸ dst.reg) (← ascribe w src)))
+      else fail "impossible"
+    else if let some (op, w?) := lookupSized GprBinOp mn then
+      let (addr_w, a) ← parseRegOrMem; parseComma
+      let (_, b) ← parseRegOrMem; parseComma
+      let dst ← parseRegW
+      let w ← regWidth w? dst
+      let (src1, src2) := if op.src2First then (b, a) else (a, b)
+      match ← ascribe w src1, dst with
+      | .reg src1, ⟨w', dst⟩ =>
+        if h : w' = w then pure (toInstr addr_w (.bin op (h ▸ dst) src1 (← ascribe w src2)))
+        else fail "impossible"
+      | .mem _, _ => fail s!"{mnemonic}: expected a register"
+    else if let some (op, w?) := lookupSized BitTestOp mn then
+      commaSeparated w? parseOperand parseRegOrMem (.bt op)
     else if let some op := Mnemonic.ofName? mn then
       let (addr_w, src) ← parseAvxRegOrMem; parseComma
       let ⟨w, dst⟩ ← parseAvxRegW

@@ -160,6 +160,11 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .rcl dst cnt => s!"rcl {dst.toStr addr_w}, {cnt}"
   | .rcr dst cnt => s!"rcr {dst.toStr addr_w}, {cnt}"
   | .bswap dst => s!"bswap {dst}"
+  | .un op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}"
+  | .bin op dst src1 src2 =>
+    if op.src2First then s!"{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}"
+    else s!"{Mnemonic.name op} {dst}, {src2.toStr addr_w}, {src1}"
+  | .bt op dst bit => s!"{Mnemonic.name op} {dst.toStr addr_w}, {bit.toStr addr_w}"
   | .jcc cc l => s!"j{cc} {l}"
   | .jmp tgt => s!"jmp {tgt.toStr addr_w}"
   | .call tgt => s!"call {tgt.toStr addr_w}"

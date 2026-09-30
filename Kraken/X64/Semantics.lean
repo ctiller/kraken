@@ -396,6 +396,13 @@ def CondCode.interp (cc : CondCode) (s : StatusFlags) : Bool := match cc with
   | .l  => s.sf != s.of | .ge => s.sf == s.of
   | .le => (s.sf != s.of) || s.zf | .g  => !s.zf && (s.sf == s.of)
 
+def FlagOut.apply (f : FlagOut) (old : Bool) (k : Bool → Effects) : Effects := match f with
+  | .keep => k old | .set b => k b | .undef => undefined k
+
+def StatusFlags.update (s : StatusFlags) (f : FlagsOut) (k : StatusFlags → Effects) : Effects :=
+  f.cf.apply s.cf fun cf => f.pf.apply s.pf fun pf => f.af.apply s.af fun af =>
+  f.zf.apply s.zf fun zf => f.sf.apply s.sf fun sf => f.of.apply s.of fun of => k ⟨cf, pf, af, zf, sf, of⟩
+
 @[kstep] def ShiftCountExpr.interp [Labels] (c : ShiftCountExpr) (s : MachineData) (p : Std.Rco Int64) := match c with
   | .cl => s.regs.rcx.toBitVec.take 8
   | .imm8 v => (v.interp p).toBitVec.take _
@@ -702,6 +709,29 @@ set_option maxHeartbeats 1000000
             ++ a.extractLsb' 32 8 ++ a.extractLsb' 40 8 ++ a.extractLsb' 48 8 ++ a.drop 56
       next (s.setReg dst (v.setWidth _))
     | _ => undefined (fun v => next (s.setReg dst v))
+  | .un op dst src =>
+    src.interp s p (fun a s =>
+    let (r, f) := op.interp a
+    s.status.update f fun status =>
+    (fun k => match r with | some r => k r | none => undefined k) fun r =>
+    next { s.setReg dst r with status })
+  | .bin op dst src1 src2 =>
+    src2.interp s p (fun b s =>
+    let (r, f) := op.interp (s.regs.get src1) b
+    s.status.update f fun status => next { s.setReg dst r with status })
+  | .bt op dst bit =>
+    bit.interp s p (fun off s =>
+    -- A register bit offset into memory is signed and may select a bit outside the operand.
+    let (dst, i) : Dst w × Nat := match dst, bit with
+      | .mem a, .regOrMem _ => (.mem { a with disp := .add a.disp (.int64 (.ofInt
+          (off.toInt.ediv w.bits * w.bytes))) }, off.toInt.emod w.bits |>.toNat)
+      | dst, _ => (dst, off.toNat % w.bits)
+    dst.interp s p (fun v s =>
+    s.status.update { cf := v.getLsbD i, pf := .undef, af := .undef, sf := .undef, of := .undef }
+      fun status => let s := { s with status }
+    match op.update (v.getLsbD i) with
+    | none => next s
+    | some b => s.set dst (if b then v ||| BitVec.twoPow _ i else v &&& ~~~BitVec.twoPow _ i) p next))
   | .jcc cc l =>
     if cc.interp s.status
     then jmp (label l) s

@@ -3,6 +3,9 @@ module
 import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Ops.SimdBin
+public import Kraken.X64.Ops.GprUn
+public import Kraken.X64.Ops.GprBin
+public import Kraken.X64.Ops.BitTest
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -230,6 +233,10 @@ inductive Operation (w : Width)
   | rcl  (_ : Dst w) (_ : ShiftCountExpr)
   | rcr  (_ : Dst w) (_ : ShiftCountExpr)
   | bswap  (dst : Reg w) -- (_ : w = .W32 ∨ w = .W64)
+  -- Opcode families (see Kraken/X64/Ops)
+  | un (op : GprUnOp) (dst : Reg w) (src : RegOrMem w)
+  | bin (op : GprBinOp) (dst src1 : Reg w) (src2 : RegOrMem w)
+  | bt (op : BitTestOp) (dst : Dst w) (bit : Operand w)
   -- Control flow
   | jcc (cc : CondCode) (target : Label)
   | jmp (target : RelRegOrMem)

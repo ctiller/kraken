@@ -69,6 +69,18 @@ def corpus : List String := [
   !roundtrips s!"{mn} 16(%rsp), %xmm1" || !roundtrips s!"v{mn} %ymm1, %ymm2, %ymm3"
 #guard let ns := (Mnemonic.names (α := SimdBinOp)).toList.map (·.2); ns.eraseDups == ns
 
+/-- The mnemonics of family `α` for which one of `forms` doesn't round-trip. -/
+def failing (α) [Mnemonic α] (forms : α → String → List String) : List String :=
+  (Mnemonic.names (α := α)).toList.filterMap fun (op, mn) =>
+    if (forms op mn).all roundtrips then none else some mn
+
+/-- info: [] -/
+#guard_msgs in
+#eval failing GprUnOp fun _ mn => [s!"{mn} (%rsp), %rax", s!"{mn}l %eax, %ebx"] ++
+  failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
+    if op.src2First then s!"{mn} 8(%rsp), %ebx, %ecx" else s!"{mn} %ebx, 8(%rsp), %ecx"]) ++
+  failing BitTestOp fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]
+
 -- Printed form is canonical AT&T.
 #guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo" with
   | .ok p => toATT p == "movq %rax, -16(%rbp,%rcx,8)\nfoo:\nimull $3, 8(%eax), %ebx\njne foo"

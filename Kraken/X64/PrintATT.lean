@@ -107,6 +107,11 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .rcl d c => two "rcl" (count c) (rm aw d)
   | .rcr d c => two "rcr" (count c) (rm aw d)
   | .bswap d => s!"bswap {reg d}"
+  | .un op d x => s!"{Mnemonic.name op} {rm aw x}, {reg d}"
+  | .bin op d a b =>
+    if op.src2First then s!"{Mnemonic.name op} {rm aw b}, {reg a}, {reg d}"
+    else s!"{Mnemonic.name op} {reg a}, {rm aw b}, {reg d}"
+  | .bt op d b => two (Mnemonic.name op) (operand aw b) (rm aw d)
   | .jcc cc l => s!"j{cc} {l}"
   | .jmp t => s!"jmp {target aw t}"
   | .call t => s!"call {target aw t}"
