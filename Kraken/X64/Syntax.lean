@@ -278,6 +278,7 @@ inductive Operation (w : Width)
   | nopalign (alignment : Nat) (pad : Option Nat)
   | hint (op : HintOp)
   | nopm (_ : RegOrMem w)
+  | memHint (op : MemHintOp) (addr : AddrExpr)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 -- The non-v* variants take SSE registers only.

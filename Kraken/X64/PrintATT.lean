@@ -153,6 +153,7 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .nopalign a (some p) => s!".align {a}, {p}"
   | .hint op => Mnemonic.name op
   | .nopm x => s!"nop{s} {rm aw x}"
+  | .memHint op a => s!"{Mnemonic.name op} {addr aw a}"
 
 def simdCount (aw : Width) : SimdCount → String
   | .imm e => "$" ++ const e

@@ -878,7 +878,7 @@ set_option maxHeartbeats 1000000
     let rsp := s.regs.get64 .rsp
     s.load rsp .W64 (fun ra s =>
     jmp (.ofBitVec ra) { s with regs := s.regs.set64 .rsp (rsp + 8) })
-  | nop _ | nopalign _ _ | nopm _ => next s
+  | nop _ | nopalign _ _ | nopm _ | memHint _ _ => next s
   | .hint _ => next s
 
 -- AVX Operations Interpreter

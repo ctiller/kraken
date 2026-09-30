@@ -13,3 +13,9 @@ inductive HintOp
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic HintOp := ⟨mnemonics% HintOp⟩
+
+inductive MemHintOp
+  | prefetcht0 | prefetcht1 | prefetcht2 | prefetchnta | prefetchw
+  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
+
+instance : Mnemonic MemHintOp := ⟨mnemonics% MemHintOp⟩

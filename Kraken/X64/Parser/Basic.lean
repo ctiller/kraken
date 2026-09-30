@@ -651,6 +651,9 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
   let mut ps := #[]
   if let some op := Mnemonic.ofName? (α := HintOp) mn then ps := ps.push do
     pure (toInstr .none (w := .W64) (.hint op))
+  if let some op := Mnemonic.ofName? (α := MemHintOp) mn then ps := ps.push do
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.memHint op a))
   if let some (op, w?) := lookupSized GprUnOp mn then ps := ps.push do
     let (addr_w, src) ← parseRegOrMem; parseComma
     let dst ← parseRegW

@@ -119,7 +119,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
     s!"v{mn} $1, %xmm2, %ymm1, %ymm0",
     s!"v{mn} $0, (%rsp), %ymm1, %ymm0"
   ]) ++
-  failing HintOp (fun _ mn => [mn])
+  failing HintOp (fun _ mn => [mn]) ++
+  failing MemHintOp (fun _ mn => [s!"{mn} (%rsp)", s!"{mn} (%eax)"])
 
 -- The address size of a memory operand in any position is kept.
 #guard match parse "bextr %rbx, -8(%esp), %r15" with
