@@ -68,6 +68,10 @@ def ConstExpr.toStr : ConstExpr → String
   | .sub e1 e2 => s!"({e1.toStr} - {e2.toStr})"
 instance : ToString ConstExpr where toString := ConstExpr.toStr
 
+def optImm : Option ConstExpr → String
+  | some i => s!", {i}"
+  | none => ""
+
 def AddrExpr.toStr (a : AddrExpr) (addr_w : Width := .W64) : String :=
   let dispStr := match a.base, a.disp with
     -- Unwrap RIP-relative displacements back to just the label for printing
@@ -285,19 +289,19 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
   | .sseToGpr op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vexToGpr op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .sseExtract op dst src imm =>
-    let immStr := match imm with | some i => s!", {i}" | none => ""
+    let immStr := optImm imm
     s!"{Mnemonic.name op} {dst.toStr addr_w}, {src}{immStr}"
   | .vexExtract op dst src imm =>
-    let immStr := match imm with | some i => s!", {i}" | none => ""
+    let immStr := optImm imm
     s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src}{immStr}"
   | .sseInsert op dst src imm =>
-    let immStr := match imm with | some i => s!", {i}" | none => ""
+    let immStr := optImm imm
     s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}{immStr}"
   | .vexInsert op dst src1 src2 imm =>
     if op.twoOperand then
       s!"v{Mnemonic.name op} {dst}, {src2.toStr addr_w}"
     else
-      let immStr := match imm with | some i => s!", {i}" | none => ""
+      let immStr := optImm imm
       s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}{immStr}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
