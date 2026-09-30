@@ -699,20 +699,15 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
   if let some op := Mnemonic.ofName? (α := SimdBinOp) v then ps := ps.push do
     let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
     pure (toAvxInstr addr_w (.vex op dst src1 src2))
-  if let some op := Mnemonic.ofName? (α := SimdUnOp) mn then ps := ps.push do
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
-    pure (toAvxInstr addr_w (.sseUn op dst src))
-  if let some op := Mnemonic.ofName? (α := SimdUnOp) v then ps := ps.push do
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
-    pure (toAvxInstr addr_w (.vexUn op dst src))
-  if let some op := Mnemonic.ofName? (α := SimdUnImmOp) mn then ps := ps.push do
-    let imm ← parseImmComma
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
-    pure (toAvxInstr addr_w (.sseUnImm op dst src imm))
-  if let some op := Mnemonic.ofName? (α := SimdUnImmOp) v then ps := ps.push do
-    let imm ← parseImmComma
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
-    pure (toAvxInstr addr_w (.vexUnImm op dst src imm))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdUnOp) name then ps := ps.push do
+      let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
+      pure (toAvxInstr addr_w (if vex then .vexUn op dst src else .sseUn op dst src))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdUnImmOp) name then ps := ps.push do
+      let imm ← parseImmComma
+      let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+      pure (toAvxInstr addr_w (if vex then .vexUnImm op dst src imm else .sseUnImm op dst src imm))
   if let some op := Mnemonic.ofName? (α := SimdBinImmOp) mn then ps := ps.push do
     let imm ← parseImmComma
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
@@ -731,12 +726,10 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     let dst ← parseAvxRegW
     if h : dst.w = w then pure (toAvxInstr addr_w (.vexShift op (h ▸ dst.reg) src count))
     else fail "AVX operand widths differ"
-  if let some op := Mnemonic.ofName? (α := SimdTestOp) mn then ps := ps.push do
-    let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
-    pure (toAvxInstr addr_w (.sseTest op src1 src2))
-  if let some op := Mnemonic.ofName? (α := SimdTestOp) v then ps := ps.push do
-    let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
-    pure (toAvxInstr addr_w (.vexTest op src1 src2))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdTestOp) name then ps := ps.push do
+      let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
+      pure (toAvxInstr addr_w (if vex then .vexTest op src1 src2 else .sseTest op src1 src2))
   if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then ps := ps.push do
     skipHWs; let _ ← pstring "%xmm0"; parseComma
     let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
@@ -794,54 +787,46 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     | .W128 => pure (toAvxInstr addr_w (.vcvtps2ph (← ascribeAvx .W128 dst) src imm))
     | .W256 => pure (toAvxInstr addr_w (.vcvtps2ph (← ascribeAvx .W128 dst) src imm))
     | _ => fail "vcvtps2ph requires xmm or ymm source"
-  if let some (op, w?) := lookupSized SimdToGprOp mn then ps := ps.push do
-    let (addr_w, src) ← parseAvxRegOrMem; parseComma
-    let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
-    let vsrc ← ascribeAvx .W128 src
-    pure (toAvxInstr addr_w (.sseToGpr op dst vsrc))
-  if let some (op, w?) := lookupSized SimdToGprOp v then ps := ps.push do
-    let (addr_w, src) ← parseAvxRegOrMem; parseComma
-    let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
-    let vsrc ← ascribeAvx (if op.memBytes?.isSome then .W128 else src.1.getD .W128) src
-    pure (toAvxInstr addr_w (.vexToGpr op dst vsrc))
-  if let some op := Mnemonic.ofName? (α := SimdExtractOp) mn then ps := ps.push do
-    let imm ← parseOptImmComma op.hasImm
-    let ⟨_, src⟩ ← parseAvxRegW; parseComma
-    let (addr_w, dst) ← parseRegOrMem
-    let w := dst.1.getD (.ofBits op.memBits)
-    pure (toAvxInstr addr_w (.sseExtract op (← ascribe w dst) src imm))
-  if let some op := Mnemonic.ofName? (α := SimdExtractOp) v then ps := ps.push do
-    let imm ← parseOptImmComma op.hasImm
-    let ⟨_, src⟩ ← parseAvxRegW; parseComma
-    let (addr_w, dst) ← parseRegOrMem
-    let w := dst.1.getD (.ofBits op.memBits)
-    pure (toAvxInstr addr_w (.vexExtract op (← ascribe w dst) src imm))
-  if let some (op, w?) := lookupSized SimdInsertOp mn then ps := ps.push do
-    let imm ← parseOptImmComma op.hasImm
-    let (addr_w, src) ← parseRegOrMem
-    if op matches .movd | .movq then
-      if src.1.isNone then fail "movd/movq memory loads handled by SimdUnOp"
-    parseComma
-    let ⟨_, dst⟩ ← parseAvxRegW
-    let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
-    pure (toAvxInstr addr_w (.sseInsert op dst (← ascribe srcW src) imm))
-  if let some (op, w?) := lookupSized SimdInsertOp v then ps := ps.push do
-    if op.twoOperand then
-      let (addr_w, src) ← parseRegOrMem
-      if src.1.isNone then fail "vmovd/vmovq memory loads handled by SimdUnOp"
-      parseComma
-      let ⟨_, dst⟩ ← parseAvxRegW
-      let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
-      pure (toAvxInstr addr_w (.vexInsert op dst dst (← ascribe srcW src) none))
-    else
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some (op, w?) := lookupSized SimdToGprOp name then ps := ps.push do
+      let (addr_w, src) ← parseAvxRegOrMem; parseComma
+      let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
+      let srcW := if !vex || op.memBytes?.isSome then .W128 else src.1.getD .W128
+      let vsrc ← ascribeAvx srcW src
+      pure (toAvxInstr addr_w (if vex then .vexToGpr op dst vsrc else .sseToGpr op dst vsrc))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdExtractOp) name then ps := ps.push do
       let imm ← parseOptImmComma op.hasImm
-      let (addr_w, src2) ← parseRegOrMem; parseComma
-      let ⟨w, src1⟩ ← parseAvxRegW; parseComma
-      let dst ← parseAvxRegW
-      if h : dst.w = w then
-        let srcW := (w? <|> src2.1).getD (.ofBits op.memBits)
-        pure (toAvxInstr addr_w (.vexInsert op (h ▸ dst.reg) src1 (← ascribe srcW src2) imm))
-      else fail "AVX operand widths differ"
+      let ⟨_, src⟩ ← parseAvxRegW; parseComma
+      let (addr_w, dst) ← parseRegOrMem
+      let w := dst.1.getD (.ofBits op.memBits)
+      let d ← ascribe w dst
+      pure (toAvxInstr addr_w (if vex then .vexExtract op d src imm else .sseExtract op d src imm))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some (op, w?) := lookupSized SimdInsertOp name then ps := ps.push do
+      if op.twoOperand then
+        let (addr_w, src) ← parseRegOrMem
+        if src.1.isNone then fail s!"{name} memory loads handled by SimdUnOp"
+        parseComma
+        let ⟨_, dst⟩ ← parseAvxRegW
+        let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
+        let ascribed ← ascribe srcW src
+        pure (toAvxInstr addr_w (if vex then .vexInsert op dst dst ascribed none else .sseInsert op dst ascribed none))
+      else if vex then
+        let imm ← parseOptImmComma op.hasImm
+        let (addr_w, src2) ← parseRegOrMem; parseComma
+        let ⟨w, src1⟩ ← parseAvxRegW; parseComma
+        let dst ← parseAvxRegW
+        if h : dst.w = w then
+          let srcW := (w? <|> src2.1).getD (.ofBits op.memBits)
+          pure (toAvxInstr addr_w (.vexInsert op (h ▸ dst.reg) src1 (← ascribe srcW src2) imm))
+        else fail "AVX operand widths differ"
+      else
+        let imm ← parseOptImmComma op.hasImm
+        let (addr_w, src) ← parseRegOrMem; parseComma
+        let ⟨_, dst⟩ ← parseAvxRegW
+        let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
+        pure (toAvxInstr addr_w (.sseInsert op dst (← ascribe srcW src) imm))
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
