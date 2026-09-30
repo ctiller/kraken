@@ -180,19 +180,10 @@ def RegZmms.setLegacy (s : RegZmms) {w} (r : AvxReg w) (v : w.type) : RegZmms :=
   | .xmm r => s.set512 r ((s.get512 r).replaceLow v)
 
 def RegZmms.vzeroupper (s : RegZmms) : RegZmms :=
-  let zeroUpper (v : ZmmValue) : ZmmValue := (v.take 128).zeroExtend 512
-  { s with
-    zmm0 := zeroUpper s.zmm0, zmm1 := zeroUpper s.zmm1, zmm2 := zeroUpper s.zmm2, zmm3 := zeroUpper s.zmm3,
-    zmm4 := zeroUpper s.zmm4, zmm5 := zeroUpper s.zmm5, zmm6 := zeroUpper s.zmm6, zmm7 := zeroUpper s.zmm7,
-    zmm8 := zeroUpper s.zmm8, zmm9 := zeroUpper s.zmm9, zmm10 := zeroUpper s.zmm10, zmm11 := zeroUpper s.zmm11,
-    zmm12 := zeroUpper s.zmm12, zmm13 := zeroUpper s.zmm13, zmm14 := zeroUpper s.zmm14, zmm15 := zeroUpper s.zmm15 }
+  RegMm.low16.foldl (fun s r => s.set (.xmm r) (s.get (.xmm r))) s
 
 def RegZmms.vzeroall (s : RegZmms) : RegZmms :=
-  { s with
-    zmm0 := zmmZero, zmm1 := zmmZero, zmm2 := zmmZero, zmm3 := zmmZero,
-    zmm4 := zmmZero, zmm5 := zmmZero, zmm6 := zmmZero, zmm7 := zmmZero,
-    zmm8 := zmmZero, zmm9 := zmmZero, zmm10 := zmmZero, zmm11 := zmmZero,
-    zmm12 := zmmZero, zmm13 := zmmZero, zmm14 := zmmZero, zmm15 := zmmZero }
+  RegMm.low16.foldl (fun s r => s.set512 r zmmZero) s
 
 @[kstep]
 def BitVec.toAddressSize [address_size: AddressSize] (w: BitVec 64): BitVec address_size.address_size.bits :=

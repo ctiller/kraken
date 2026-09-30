@@ -83,6 +83,10 @@ inductive RegMm
   | mm28 | mm29 | mm30 | mm31
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
+def RegMm.low16 : List RegMm :=
+  [.mm0, .mm1, .mm2, .mm3, .mm4, .mm5, .mm6, .mm7,
+   .mm8, .mm9, .mm10, .mm11, .mm12, .mm13, .mm14, .mm15]
+
 inductive Reg64
   | rax | rbx | rcx | rdx
   | rsi | rdi | rsp | rbp
