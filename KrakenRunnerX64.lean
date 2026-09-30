@@ -230,11 +230,12 @@ def genSeed : GenM String := do
   if ← pick #[false, false, false, true] then
     let off ← nextNat (stackSize - 300)
     return s!"leaq -{off + 300}(%rsp), {r}"
-  let movabs := s!"movabsq ${← nextNat (2 ^ 64)}, {r}"
-  if ← pick #[true, false] then return movabs
-  -- Also copy it into one of xmm0-15 via the stack; they start zeroed, so SSE ops would
-  -- otherwise see only zeros.
-  return s!"{movabs}\nmovq {r}, -16(%rsp)\nmovq {r}, -8(%rsp)\nmovups -16(%rsp), %xmm{← nextNat 16}"
+  let movabs : GenM String := do return s!"movabsq ${← nextNat (2 ^ 64)}, {r}"
+  if ← pick #[true, false] then return ← movabs
+  -- Also fill one of ymm0-15 with four distinct random qwords via the stack; they start zeroed,
+  -- so vector ops would otherwise see only zeros (or identical lanes).
+  let qs ← [32, 24, 16, 8].mapM fun o => do return s!"{← movabs}\nmovq {r}, -{o}(%rsp)"
+  return "\n".intercalate qs ++ s!"\nvmovdqu -32(%rsp), %ymm{← nextNat 16}"
 
 -- Four random register initializations (`genSeed`) followed by `length` instructions from `pool`, each drawn
 -- until `stepDeterministic` accepts one. A final `add` makes all flags defined.
