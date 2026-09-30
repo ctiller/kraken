@@ -26,6 +26,24 @@ def satS (k : Nat) (v : Int) : BitVec k := .ofInt k (max (-2 ^ (k - 1)) (min (2 
 /-- `v` saturated to the unsigned range of `k` bits. -/
 def satU (k : Nat) (v : Int) : BitVec k := .ofInt k (max 0 (min (2 ^ k - 1) v))
 
+/-- Packs `2 * k`-bit lanes into `k`-bit lanes with saturation `sat`: the lower half of `a`
+followed by the lower half of `b`. -/
+def pack {n} (k : Nat) (sat : Int → BitVec k) (a b : BitVec n) : BitVec n :=
+  ofLanes n k fun i =>
+    let half := n / (2 * k)
+    if i < half then sat (a.lane (2 * k) i).toInt
+    else sat (b.lane (2 * k) (i - half)).toInt
+
+/-- Unpacks and interleaves the low `k`-bit lanes of `a` and `b`. -/
+def unpckl {n} (k : Nat) (a b : BitVec n) : BitVec n :=
+  ofLanes n k fun i => if i % 2 == 0 then a.lane k (i / 2) else b.lane k (i / 2)
+
+/-- Unpacks and interleaves the high `k`-bit lanes of `a` and `b`. -/
+def unpckh {n} (k : Nat) (a b : BitVec n) : BitVec n :=
+  ofLanes n k fun i =>
+    let half := n / (2 * k)
+    if i % 2 == 0 then a.lane k (half + i / 2) else b.lane k (half + i / 2)
+
 def toFloat32 (v : BitVec 32) : Float32 := Float32.ofBits (UInt32.ofBitVec v)
 end BitVec
 

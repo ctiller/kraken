@@ -3,6 +3,7 @@ module
 public import Kraken.X64.Ops.SimdInt
 public import Kraken.X64.Ops.SimdFp
 public import Kraken.X64.Ops.SimdLogic
+public import Kraken.X64.Ops.SimdShuf
 
 /-! SSE/AVX operations of shape `dst := op(src1, src2)`, as a sum of opcode families (one file each).
 In `AvxOperation.sse` the destination is also the first source; in `AvxOperation.vex` (the
@@ -14,6 +15,7 @@ inductive SimdBinOp
   | int (op : SimdInt)
   | fp (op : SimdFp)
   | logic (op : SimdLogic)
+  | shuf (op : SimdShuf)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic SimdBinOp := ⟨mnemonics% SimdBinOp⟩
@@ -23,9 +25,11 @@ def SimdBinOp.interp : SimdBinOp → BitVec 128 → BitVec 128 → BitVec 128
   | .int op => op.interp
   | .fp op => op.interp
   | .logic op => op.interp
+  | .shuf op => op.interp
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdBinOp.memBytes? : SimdBinOp → Option Nat
   | .int _ => none
   | .fp op => op.memBytes?
   | .logic _ => none
+  | .shuf _ => none
