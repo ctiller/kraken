@@ -984,6 +984,14 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     let w ← instrWidth mn
     commaSeparated w parseRegA parseRegOrMem .cmpxchg
 
+  | "cmpxchg8b" =>
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.cmpxchg8b a))
+
+  | "cmpxchg16b" =>
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.cmpxchg16b a))
+
   | "clc" => pure (toInstr .none (w := .W64) .clc)
   | "stc" => pure (toInstr .none (w := .W64) .stc)
   | "cmc" => pure (toInstr .none (w := .W64) .cmc)

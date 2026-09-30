@@ -135,6 +135,8 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .xchg dst src => s!"xchg {dst.toStr addr_w}, {src}"
   | .xadd dst src => s!"xadd {dst.toStr addr_w}, {src}"
   | .cmpxchg dst src => s!"cmpxchg {dst.toStr addr_w}, {src}"
+  | .cmpxchg8b a => s!"cmpxchg8b {a.toStr addr_w}"
+  | .cmpxchg16b a => s!"cmpxchg16b {a.toStr addr_w}"
   | .clc => "clc"
   | .stc => "stc"
   | .cmc => "cmc"

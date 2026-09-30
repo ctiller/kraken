@@ -38,6 +38,7 @@ def corpus : List String := [
   "xchgb %al, %bl", "xchgw %ax, (%rsp)", "xchgl %eax, %ebx", "xchgq %rax, %rbx", "xchgq %rax, 8(%rsp)",
   "xaddb %al, (%rsp)", "xaddw %ax, %bx", "xaddl %eax, (%rsp)", "xaddq %rax, %rbx",
   "cmpxchgb %bl, (%rsp)", "cmpxchgw %bx, %cx", "cmpxchgl %ebx, (%rsp)", "cmpxchgq %rbx, %rcx",
+  "cmpxchg8b (%rsp)", "cmpxchg16b (%rsp)",
   "clc", "stc", "cmc", "lahf", "sahf",
   "leave", "pushfq", "popfq",
   -- arithmetic

@@ -546,6 +546,46 @@ set_option maxHeartbeats 1000000
       s.set dst sval p next
     else
       next (s.setReg (Reg.low .rax w) dval))
+  | .cmpxchg8b a =>
+    let addr := (a.interp s.regs p).zeroExtend 64
+    s.load addr .W64 (fun mem_val s =>
+    let edx := s.regs.get (.low .rdx .W32)
+    let eax := s.regs.get (.low .rax .W32)
+    let edx_eax := (edx ++ eax).setWidth 64
+    if mem_val == edx_eax then
+      let ecx := s.regs.get (.low .rcx .W32)
+      let ebx := s.regs.get (.low .rbx .W32)
+      let ecx_ebx := (ecx ++ ebx).setWidth 64
+      let status := { s.status with zf := true }
+      { s with status }.store addr ecx_ebx next
+    else
+      let status := { s.status with zf := false }
+      let s := { s with status }
+      let low := (mem_val.take 32).setWidth 32
+      let high := (mem_val.drop 32).setWidth 32
+      let s := (s.setReg (.low .rax .W32) low).setReg (.low .rdx .W32) high
+      next s)
+  | .cmpxchg16b a =>
+    let addr := (a.interp s.regs p).zeroExtend 64
+    if !isAligned 16 addr then
+      .gp_unaligned addr 16
+    else
+      s.load addr .W64 (fun mem_low s =>
+      s.load (addr + 8) .W64 (fun mem_high s =>
+      let rdx := s.regs.get64 .rdx
+      let rax := s.regs.get64 .rax
+      if mem_low == rax && mem_high == rdx then
+        let rcx := s.regs.get64 .rcx
+        let rbx := s.regs.get64 .rbx
+        let status := { s.status with zf := true }
+        let s := { s with status }
+        s.store addr rbx (fun s =>
+        s.store (addr + 8) rcx next)
+      else
+        let status := { s.status with zf := false }
+        let s := { s with status }
+        let s := (s.setReg (.low .rax .W64) mem_low).setReg (.low .rdx .W64) mem_high
+        next s))
   | .clc => next { s with status := { s.status with cf := false } }
   | .stc => next { s with status := { s.status with cf := true } }
   | .cmc => next { s with status := { s.status with cf := !s.status.cf } }
