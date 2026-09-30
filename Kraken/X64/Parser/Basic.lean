@@ -835,13 +835,13 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     let imm ← parseOptImmComma op.hasImm
     let ⟨_, src⟩ ← parseAvxRegW; parseComma
     let (addr_w, dst) ← parseRegOrMem
-    let w := match dst.1 with | some w => w | none => match op.memBits with | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
+    let w := dst.1.getD (.ofBits op.memBits)
     pure (toAvxInstr addr_w (.sseExtract op (← ascribe w dst) src imm))
   if let some op := Mnemonic.ofName? (α := SimdExtractOp) v then ps := ps.push do
     let imm ← parseOptImmComma op.hasImm
     let ⟨_, src⟩ ← parseAvxRegW; parseComma
     let (addr_w, dst) ← parseRegOrMem
-    let w := match dst.1 with | some w => w | none => match op.memBits with | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
+    let w := dst.1.getD (.ofBits op.memBits)
     pure (toAvxInstr addr_w (.vexExtract op (← ascribe w dst) src imm))
   if let some (op, w?) := lookupSized SimdInsertOp mn then ps := ps.push do
     let imm ← parseOptImmComma op.hasImm
@@ -850,11 +850,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       if src.1.isNone then fail "movd/movq memory loads handled by SimdUnOp"
     parseComma
     let ⟨_, dst⟩ ← parseAvxRegW
-    let srcW := match w? with
-      | some sw => sw
-      | none => match src.1 with
-        | some sw => sw
-        | none => match op.memBits with | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
+    let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
     pure (toAvxInstr addr_w (.sseInsert op dst (← ascribe srcW src) imm))
   if let some (op, w?) := lookupSized SimdInsertOp v then ps := ps.push do
     if op.twoOperand then
@@ -862,11 +858,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       if src.1.isNone then fail "vmovd/vmovq memory loads handled by SimdUnOp"
       parseComma
       let ⟨_, dst⟩ ← parseAvxRegW
-      let srcW := match w? with
-        | some sw => sw
-        | none => match src.1 with
-          | some sw => sw
-          | none => match op.memBits with | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
+      let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
       pure (toAvxInstr addr_w (.vexInsert op dst dst (← ascribe srcW src) none))
     else
       let imm ← parseOptImmComma op.hasImm
@@ -874,11 +866,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       let ⟨w, src1⟩ ← parseAvxRegW; parseComma
       let dst ← parseAvxRegW
       if h : dst.w = w then
-        let srcW := match w? with
-          | some sw => sw
-          | none => match src2.1 with
-            | some sw => sw
-            | none => match op.memBits with | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
+        let srcW := (w? <|> src2.1).getD (.ofBits op.memBits)
         pure (toAvxInstr addr_w (.vexInsert op (h ▸ dst.reg) src1 (← ascribe srcW src2) imm))
       else fail "AVX operand widths differ"
   return ps

@@ -80,13 +80,12 @@ def AddrExpr.toStr (a : AddrExpr) (addr_w : Width := .W64) : String :=
     ++ [dispStr]
   ) ++ "]"
 
+def Width.ptrName : Width → String
+  | .W8 => "BYTE" | .W16 => "WORD" | .W32 => "DWORD" | .W64 => "QWORD"
+
 def RegOrMem.toStr {w} (rm : RegOrMem w) (addr_w : Width := .W64) : String := match rm with
   | .reg r => ToString.toString r
-  | .mem a => match w with
-    | .W64 => "QWORD PTR " ++ a.toStr addr_w
-    | .W32 => "DWORD PTR " ++ a.toStr addr_w
-    | .W16 => "WORD PTR " ++ a.toStr addr_w
-    | .W8 => "BYTE PTR " ++ a.toStr addr_w
+  | .mem a => s!"{w.ptrName} PTR {a.toStr addr_w}"
 instance {w} : ToString (RegOrMem w) where toString rm := rm.toStr
 
 def AvxRegOrMem.toStr {w} (rm : AvxRegOrMem w) (addr_w : Width := .W64) : String := match rm with
@@ -245,11 +244,8 @@ def AvxRegOrMem.toStrSimd {w} (memBytes? : Option Nat) (rm : AvxRegOrMem w) (add
   match rm, memBytes? with
   | .avx r, some _ => ToString.toString (r.as .W128)
   | .avx r, none => ToString.toString r
-  | .mem a, some 1 => "BYTE PTR " ++ a.toStr addr_w
-  | .mem a, some 2 => "WORD PTR " ++ a.toStr addr_w
-  | .mem a, some 4 => "DWORD PTR " ++ a.toStr addr_w
-  | .mem a, some 8 => "QWORD PTR " ++ a.toStr addr_w
   | .mem a, some 16 => "XMMWORD PTR " ++ a.toStr addr_w
+  | .mem a, some n => s!"{(Width.ofBytes n).ptrName} PTR {a.toStr addr_w}"
   | .mem _, _ => rm.toStr addr_w
 
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
