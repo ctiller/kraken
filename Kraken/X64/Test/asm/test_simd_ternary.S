@@ -31,6 +31,8 @@ blendvpd %xmm0, %xmm2, %xmm8
 vpblendvb %ymm5, %ymm4, %ymm5, %ymm9
 vblendvps %xmm1, %xmm2, %xmm3, %xmm10
 vblendvpd %ymm4, (%rsp), %ymm5, %ymm11
+sha256rnds2 %xmm0, %xmm3, %xmm6
+sha256rnds2 %xmm0, 0(%rsp), %xmm7
 # fma: products that need the single rounding
 vmovaps %xmm2, %xmm12
 vfmadd231ps %xmm2, %xmm2, %xmm12
