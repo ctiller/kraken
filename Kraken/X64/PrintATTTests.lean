@@ -102,6 +102,11 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   failing SimdFmaOp (fun _ mn => [s!"v{mn} (%rsp), %xmm1, %xmm2", s!"v{mn} %xmm1, %xmm2, %xmm3"]) ++
   failing HintOp (fun _ mn => [mn])
 
+-- The address size of a memory operand in any position is kept.
+#guard match parse "bextr %rbx, -8(%esp), %r15" with
+  | .ok p => toATT p == "bextr %rbx, -8(%esp), %r15"
+  | .error _ => false
+
 -- Printed form is canonical AT&T.
 #guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo" with
   | .ok p => toATT p == "movq %rax, -16(%rbp,%rcx,8)\nfoo:\nimull $3, 8(%eax), %ebx\njne foo"

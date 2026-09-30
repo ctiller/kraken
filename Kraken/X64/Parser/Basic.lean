@@ -659,8 +659,9 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       pure (toInstr addr_w (.un op (h ▸ dst.reg) (← ascribe w src)))
     else fail "impossible"
   if let some (op, w?) := lookupSized GprBinOp mn then ps := ps.push do
-    let (addr_w, a) ← parseRegOrMem; parseComma
-    let (_, b) ← parseRegOrMem; parseComma
+    let (addr_w1, a) ← parseRegOrMem; parseComma
+    let (addr_w2, b) ← parseRegOrMem; parseComma
+    let addr_w ← mergeAddrWidths addr_w1 addr_w2
     let dst ← parseRegW
     let w ← regWidth w? dst
     let (src1, src2) := if op.src2First then (b, a) else (a, b)
