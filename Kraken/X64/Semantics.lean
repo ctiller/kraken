@@ -440,7 +440,6 @@ structure StatusFlags.from_result.Remaining where
   cf : Bool
   af : Bool
   of : Bool
-  df : Bool := false
   deriving Repr, BEq, DecidableEq
 
 -- TEMPORARY: definitions stolen from Lean 4.28's standard library, but with a
@@ -468,26 +467,68 @@ def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
           ++ v.extractLsb' 32 8 ++ v.extractLsb' 40 8 ++ v.extractLsb' 48 8 ++ v.drop 56).setWidth _
   | .W8 => v
 
-@[kstep] def StatusFlags.from_result {w} (result : BitVec w) (f : from_result.Remaining) : StatusFlags :=
-  { pf := (result.take 8).cpop_ % 2 == BitVec.zero _
+@[kstep] def StatusFlags.from_result {w} (old : StatusFlags) (result : BitVec w) (f : from_result.Remaining) : StatusFlags :=
+  { old with
+    pf := (result.take 8).cpop_ % 2 == BitVec.zero _
     zf := result == BitVec.zero _
-    sf := result.msb, cf := f.cf, af := f.af, of := f.of, df := f.df }
+    sf := result.msb, cf := f.cf, af := f.af, of := f.of }
 
-def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineData → Effects)
+@[kstep] def addFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
+  let cin : BitVec w := if c then 1 else 0
+  let v := a + b + cin
+  let cnat : Nat := if c then 1 else 0
+  let cint : Int := if c then 1 else 0
+  (v, StatusFlags.from_result old v {
+    cf := v.unsigned != a.unsigned + b.unsigned + cnat
+    af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + cnat
+    of := v.signed != a.signed + b.signed + cint })
+
+@[kstep] def subFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
+  let cin : BitVec w := if c then 1 else 0
+  let v := a - b - cin
+  let cnat : Nat := if c then 1 else 0
+  let cint : Int := if c then 1 else 0
+  (v, StatusFlags.from_result old v {
+    cf := v.unsigned != a.unsigned - b.unsigned - cnat
+    af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned - cnat
+    of := v.signed != a.signed - b.signed - cint })
+
+@[kstep] def incFlags {w} (old : StatusFlags) (a : BitVec w) : BitVec w × StatusFlags :=
+  let v := a + 1
+  (v, StatusFlags.from_result old v {
+    cf := old.cf
+    af := (v.take 4).unsigned != (a.take 4).unsigned + 1
+    of := v.signed != a.signed + 1 })
+
+@[kstep] def decFlags {w} (old : StatusFlags) (a : BitVec w) : BitVec w × StatusFlags :=
+  let v := a - 1
+  (v, StatusFlags.from_result old v {
+    cf := old.cf
+    af := (v.take 4).unsigned != (a.take 4).unsigned - 1
+    of := v.signed != a.signed - 1 })
+
+@[kstep] def negFlags {w} (old : StatusFlags) (b : BitVec w) : BitVec w × StatusFlags :=
+  let v := -b
+  (v, StatusFlags.from_result old v {
+    cf := b != 0
+    af := (b.take 4) != 0
+    of := v.signed != - b.signed })
+
+def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineData → Effects)
     (body : MachineData → (MachineData → Effects) → Effects) : Effects :=
   let rec loop (fuel : Nat) (s : MachineData) : Effects :=
     match fuel with
     | 0 => .unimplemented "rep count exceeded limit"
     | fuel + 1 =>
       body s fun s =>
-        match rep with
+        match rp with
         | .none => next s
         | _ =>
           let rcx := s.regs.get64 .rcx - 1
           let s := { s with regs := s.regs.set64 .rcx rcx }
-          if rcx == 0 || (cmp && s.status.zf == (rep == .repne)) then next s
+          if rcx == 0 || (cmp && s.status.zf == (rp == .repne)) then next s
           else loop fuel s
-  match rep with
+  match rp with
   | .none => loop 1 s
   | _ => if s.regs.get64 .rcx == 0 then next s else loop 1000000 s
 
@@ -560,23 +601,13 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
   | .xadd dst src =>
     dst.interp s p (fun dval s =>
     let sval := s.regs.get src
-    let v := dval + sval
-    let status := .from_result v {
-      cf := v.unsigned != dval.unsigned + sval.unsigned
-      af := (v.take 4).unsigned != (dval.take 4).unsigned + (sval.take 4).unsigned,
-      of := v.signed != dval.signed + sval.signed
-      df := s.status.df }
+    let (v, status) := addFlags s.status dval sval
     let s := { s with status }.setReg src dval
     s.set dst v p next)
   | .cmpxchg dst src =>
     let acc := s.regs.get (Reg.low .rax w)
     dst.interp s p (fun dval s =>
-    let v := acc - dval
-    let status := .from_result v {
-      cf := v.unsigned != acc.unsigned - dval.unsigned
-      af := (v.take 4).unsigned != (acc.take 4).unsigned - (dval.take 4).unsigned,
-      of := v.signed != acc.signed - dval.signed
-      df := s.status.df }
+    let (_, status) := subFlags s.status acc dval
     let s := { s with status }
     if acc == dval then
       let sval := s.regs.get src
@@ -649,77 +680,56 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
     next { s with status }
   | .cld => next { s with status := { s.status with df := false } }
   | .std => next { s with status := { s.status with df := true } }
-  | .movs rep =>
+  | .movs rp =>
     let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rep false s next fun s k =>
+    stringLoop rp false s next fun s k =>
       let rsi := s.regs.get64 .rsi
       let rdi := s.regs.get64 .rdi
       s.load rsi w fun val s =>
       s.store rdi val fun s =>
       k { s with regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
-  | .stos rep =>
+  | .stos rp =>
     let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rep false s next fun s k =>
+    stringLoop rp false s next fun s k =>
       let rdi := s.regs.get64 .rdi
       let val := s.regs.get (Reg.low .rax w)
       s.store rdi val fun s =>
       k { s with regs := s.regs.set64 .rdi (rdi + delta) }
-  | .lods rep =>
+  | .lods rp =>
     let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rep false s next fun s k =>
+    stringLoop rp false s next fun s k =>
       let rsi := s.regs.get64 .rsi
       s.load rsi w fun val s =>
       let s := s.setReg (Reg.low .rax w) val
       k { s with regs := s.regs.set64 .rsi (rsi + delta) }
-  | .cmps rep =>
+  | .cmps rp =>
     let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rep true s next fun s k =>
+    stringLoop rp true s next fun s k =>
       let rsi := s.regs.get64 .rsi
       let rdi := s.regs.get64 .rdi
       s.load rsi w fun a s =>
       s.load rdi w fun b s =>
-      let v := a - b
-      let status := StatusFlags.from_result v {
-        cf := v.unsigned != a.unsigned - b.unsigned
-        af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-        of := v.signed != a.signed - b.signed }
-      let status := { status with df := s.status.df }
+      let (_, status) := subFlags s.status a b
       k { s with status, regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
-  | .scas rep =>
+  | .scas rp =>
     let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rep true s next fun s k =>
+    stringLoop rp true s next fun s k =>
       let rdi := s.regs.get64 .rdi
       let a := s.regs.get (Reg.low .rax w)
       s.load rdi w fun b s =>
-      let v := a - b
-      let status := StatusFlags.from_result v {
-        cf := v.unsigned != a.unsigned - b.unsigned
-        af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-        of := v.signed != a.signed - b.signed }
-      let status := { status with df := s.status.df }
+      let (_, status) := subFlags s.status a b
       k { s with status, regs := s.regs.set64 .rdi (rdi + delta) }
 -- Arithmetic
   | .lea dst src => next (s.setReg dst ((src.interp s.regs p).zeroExtend _))
   | .add dst src =>
     src.interp s p (fun a s =>
     dst.interp s p (fun b s =>
-    let v := a + b
-    let status := .from_result v {
-      cf := v.unsigned != a.unsigned + b.unsigned
-      af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned,
-      of := v.signed != a.signed + b.signed
-      df := s.status.df }
+    let (v, status) := addFlags s.status a b
     { s with status }.set dst v p next))
   | .adc dst src =>
     src.interp s p (fun a s =>
     dst.interp s p (fun b s =>
-    let c := s.status.cf
-    let v := a + b + c
-    let status := .from_result v {
-      cf := v.unsigned != a.unsigned + b.unsigned + c
-      af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + c,
-      of := v.signed != a.signed + b.signed + c
-      df := s.status.df }
+    let (v, status) := addFlags s.status a b s.status.cf
     { s with status }.set dst v p next))
   | .adcx dst src =>
     src.interp s p (fun a s =>
@@ -735,61 +745,30 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
     next { s with regs := s.regs.set dst v, status := { s.status with of := of }}))
   | .inc dst =>
     dst.interp s p (fun a s =>
-    let v := a + 1
-    let status := .from_result v {
-      cf := s.status.cf
-      af := (v.take 4).unsigned != (a.take 4).unsigned + 1,
-      of := v.signed != a.signed + 1
-      df := s.status.df }
+    let (v, status) := incFlags s.status a
     { s with status }.set dst v p next)
   | .dec dst =>
     dst.interp s p (fun a s =>
-    let v := a - 1
-    let status := .from_result v {
-      cf := s.status.cf
-      af := (v.take 4).unsigned != (a.take 4).unsigned - 1,
-      of := v.signed != a.signed - 1
-      df := s.status.df }
+    let (v, status) := decFlags s.status a
     { s with status }.set dst v p next)
   | .neg dst =>
     dst.interp s p (fun b s =>
-    let v := -b
-    let status := .from_result v {
-      cf := b != 0
-      af := (b.take 4) != 0,
-      of := v.signed != - b.signed
-      df := s.status.df }
+    let (v, status) := negFlags s.status b
     { s with status }.set dst v p next)
   | .sub dst src =>
     src.interp s p (fun a s =>
     dst.interp s p (fun b s =>
-    let v := b - a
-    let status := .from_result v {
-      cf := v.unsigned != b.unsigned - a.unsigned
-      af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned,
-      of := v.signed != b.signed - a.signed
-      df := s.status.df }
+    let (v, status) := subFlags s.status b a
     { s with status }.set dst v p next))
   | .sbb dst src =>
     src.interp s p (fun a s =>
     dst.interp s p (fun b s =>
-    let c := s.status.cf
-    let v := b - a - c
-    let status := .from_result v {
-      cf := v.unsigned != b.unsigned - a.unsigned - c
-      af := (v.take 4).unsigned != (b.take 4).unsigned - (a.take 4).unsigned - c,
-      of := v.signed != b.signed - a.signed - c
-      df := s.status.df }
+    let (v, status) := subFlags s.status b a s.status.cf
     { s with status }.set dst v p next))
   | .cmp a b =>
     a.interp s p (fun a s =>
     b.interp s p (fun b s =>
-    let v := a - b
-    let status := .from_result v {
-      cf := v.unsigned != a.unsigned - b.unsigned
-      af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned,
-      of := v.signed != a.signed - b.signed
-      df := s.status.df }
+    let (_, status) := subFlags s.status a b
     next { s with status }))
   | .mul src =>
     let a := s.regs.get (Reg.low .rax w)
@@ -865,14 +844,14 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
     b.interp s p (fun b s =>
     let v := a &&& b
     undefined (fun af =>
-    let status := .from_result v { cf := false, af, of := false, df := s.status.df }
+    let status := .from_result s.status v { cf := false, af, of := false }
     next { s with status})))
   | .and dst src | .or dst src | .xor dst src =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
     let v := match i with | .and _ _ => a &&& b | .or _ _ => a ||| b | _ => a ^^^ b
     undefined (fun af =>
-    let status := .from_result v { cf := false, of := false, af, df := s.status.df }
+    let status := .from_result s.status v { cf := false, of := false, af }
     { s with status }.set dst v p next)))
   | .not dst =>
     dst.interp s p (fun a s =>
@@ -887,7 +866,7 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
     undefined (λ af =>
     (λ setcf => if count < w.bits then setcf (a <<< (count-1)).msb else undefined setcf) (λ cf =>
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-    { s with status := .from_result v { s.status with cf, af, of } }.set dst v p next))))
+    { s with status := .from_result s.status v { cf, af, of } }.set dst v p next))))
   | .shr dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
@@ -896,7 +875,7 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
     undefined (λ af =>
     (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
     (λ setof => if count == 1 then setof a.msb else undefined setof) (λ of =>
-    { s with status := .from_result v { s.status with cf, af, of } }.set dst v p next))))
+    { s with status := .from_result s.status v { cf, af, of } }.set dst v p next))))
   | .sar dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
@@ -905,7 +884,7 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
     undefined (λ af =>
     (λ setcf => if count < w.bits then setcf (a.getLsbD (count-1)) else undefined setcf) (λ cf =>
     (λ setof => if count == 1 then setof false else undefined setof) (λ of =>
-    { s with status := .from_result v { s.status with cf, af, of } }.set dst v p next))))
+    { s with status := .from_result s.status v { cf, af, of } }.set dst v p next))))
   | .shrd dst src count =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
@@ -916,7 +895,7 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
       let cf := a.getLsbD (count-1)
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { cf, af, of, df := s.status.df })))) (λ status =>
+      setstatus (.from_result s.status v { cf, af, of })))) (λ status =>
     -- The result is undefined if the count exceeds the operand size (only possible for 16 bits).
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
     { s with status }.set dst v p next))))
@@ -930,7 +909,7 @@ def stringLoop (rep : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineD
       let cf := (a <<< (count-1)).msb
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { cf, af, of, df := s.status.df })))) (λ status =>
+      setstatus (.from_result s.status v { cf, af, of })))) (λ status =>
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
     { s with status }.set dst v p next))))
   | .rol dst count =>
