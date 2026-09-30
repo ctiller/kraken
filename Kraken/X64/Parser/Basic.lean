@@ -1264,6 +1264,15 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
     let ( addr_w, dst ) ← parseRegOrMemAO w
     pure (toInstr addr_w (.pop dst))
 
+  | "leave" | "leaveq" =>
+    pure (toInstr .none (w := .W64) .leave)
+
+  | "pushf" | "pushfq" =>
+    pure (toInstr .none (w := .W64) .pushf)
+
+  | "popf" | "popfq" =>
+    pure (toInstr .none (w := .W64) .popf)
+
   | "ret" | "retq" =>
     pure (toInstr .none (w := .W64) .ret)
 

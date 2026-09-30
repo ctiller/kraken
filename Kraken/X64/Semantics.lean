@@ -481,6 +481,36 @@ set_option maxHeartbeats 1000000
     s.load rsp w (fun val s =>
     let s := { s with regs := s.regs.set64 .rsp (rsp + w.bytesv) }
     s.set dst val p next)
+  | .leave =>
+    let rbp := s.regs.get64 .rbp
+    s.load rbp .W64 (fun val s =>
+    let s := { s with regs := (s.regs.set64 .rsp (rbp + 8)).set64 .rbp val }
+    next s)
+  | .pushf =>
+    let rflags_val : BitVec 64 :=
+      ((BitVec.ofNat 64 2)) |||
+      ((BitVec.ofNat 64 0x200)) |||
+      ((BitVec.ofBool s.status.cf).zeroExtend 64) |||
+      ((BitVec.ofBool s.status.pf).zeroExtend 64 <<< 2) |||
+      ((BitVec.ofBool s.status.af).zeroExtend 64 <<< 4) |||
+      ((BitVec.ofBool s.status.zf).zeroExtend 64 <<< 6) |||
+      ((BitVec.ofBool s.status.sf).zeroExtend 64 <<< 7) |||
+      ((BitVec.ofBool s.status.of).zeroExtend 64 <<< 11)
+    let rsp := s.regs.get64 .rsp - 8
+    { s with regs := s.regs.set64 .rsp rsp }.store rsp rflags_val next
+  | .popf =>
+    let rsp := s.regs.get64 .rsp
+    s.load rsp .W64 (fun val s =>
+    if val.getLsbD 8 then .fault "#DB: trap flag set" else
+    let status := { s.status with
+      cf := val.getLsbD 0
+      pf := val.getLsbD 2
+      af := val.getLsbD 4
+      zf := val.getLsbD 6
+      sf := val.getLsbD 7
+      of := val.getLsbD 11 }
+    let s := { s with regs := s.regs.set64 .rsp (rsp + 8), status }
+    next s)
   | .setcc cc dst =>
     s.set dst (cc.interp s.status) p next
   | .cmovcc cc dst src =>
