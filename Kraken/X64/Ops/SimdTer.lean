@@ -36,22 +36,19 @@ inductive FmaKind | fmadd | fmsub | fnmadd | fnmsub | fmaddsub | fmsubadd
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 inductive FmaOrder | «132» | «213» | «231»
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
-inductive FmaType | ps | pd | ss | sd
-  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 instance : Mnemonic FmaKind := ⟨mnemonics% FmaKind⟩
 instance : Mnemonic FmaOrder := ⟨mnemonics% FmaOrder⟩
-instance : Mnemonic FmaType := ⟨mnemonics% FmaType⟩
 
 /-- FMA opcodes `v<kind><order><type>`, e.g. `vfmadd231ps`. -/
 structure SimdFmaOp where
   kind : FmaKind
   order : FmaOrder
-  type : FmaType
+  type : FpType
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 namespace SimdFmaOp
-def scalar (op : SimdFmaOp) : Bool := op.type matches .ss | .sd
-def elemBits (op : SimdFmaOp) : Nat := if op.type matches .ps | .ss then 32 else 64
+def scalar (op : SimdFmaOp) : Bool := op.type.scalar
+def elemBits (op : SimdFmaOp) : Nat := op.type.elemBits
 
 instance : Mnemonic SimdFmaOp where
   names := Id.run do
@@ -82,5 +79,6 @@ def interp {n} (op : SimdFmaOp) (a b c : BitVec n) : BitVec n :=
   if op.scalar then a.replaceLow (elem 0) else .ofLanes n k elem
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar types). -/
-def memBytes? (op : SimdFmaOp) : Option Nat := if op.scalar then some (op.elemBits / 8) else none
+def memBytes? (op : SimdFmaOp) : Option Nat := op.type.memBytes?
 end SimdFmaOp
+

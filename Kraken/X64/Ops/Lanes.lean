@@ -1,5 +1,9 @@
 module
 
+public import Kraken.X64.Mnemonic
+public import Lean.ToExpr
+meta import Lean.Elab.Deriving.ToExpr
+
 /-! Pure helpers for SIMD opcode semantics: lanes of bit vectors, saturation, and SSE floats. -/
 
 @[expose] public section
@@ -93,3 +97,16 @@ def sseUnOp (op : Float32 → Float32) (a : BitVec 32) : BitVec 32 :=
 def sseUnOp64 (op : Float → Float) (a : BitVec 64) : BitVec 64 :=
   if a.toFloat.isNaN then a ||| 0x8000000000000#64
   else let r := op a.toFloat; if r.isNaN then 0xfff8000000000000#64 else r.toBitVec
+
+/-- Floating-point element type and lane/scalar configuration. -/
+inductive FpType | ps | pd | ss | sd
+  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
+
+instance : Mnemonic FpType := ⟨mnemonics% FpType⟩
+
+namespace FpType
+def scalar : FpType → Bool | .ss | .sd => true | _ => false
+def elemBits : FpType → Nat | .ps | .ss => 32 | .pd | .sd => 64
+/-- The size in bytes of a memory operand, if smaller than the vector (scalar types). -/
+def memBytes? (t : FpType) : Option Nat := if t.scalar then some (t.elemBits / 8) else none
+end FpType
