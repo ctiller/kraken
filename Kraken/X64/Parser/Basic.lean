@@ -471,14 +471,22 @@ def parseShiftExpr: Parser ShiftCountExpr := do
 /-- Parse a condition code from a conditional jump mnemonic suffix. -/
 def parseCondCode (suffix : String.Slice) : Parser CondCode :=
   match suffix.copy.toLower with
-  | "z" | "e" => .pure .z
-  | "nz" | "ne" => .pure .nz
+  | "o" => .pure .o
+  | "no" => .pure .no
   | "b" | "c" | "nae" => .pure .b
   | "ae" | "nc" | "nb" => .pure .ae
-  | "a" | "nbe" => .pure .a
+  | "z" | "e" => .pure .z
+  | "nz" | "ne" => .pure .nz
   | "be" | "na" => .pure .be
+  | "a" | "nbe" => .pure .a
+  | "s" => .pure .s
+  | "ns" => .pure .ns
+  | "p" | "pe" => .pure .p
+  | "np" | "po" => .pure .np
   | "l" | "nge" => .pure .l
+  | "ge" | "nl" => .pure .ge
   | "le" | "ng" => .pure .le
+  | "g" | "nle" => .pure .g
   | _ => .fail s!"unknown condition code: {suffix}"
 
 -- ============================================================================
