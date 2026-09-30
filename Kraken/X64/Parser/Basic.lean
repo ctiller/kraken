@@ -758,7 +758,7 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
 
 /-- Parse the operands of the instructions not in a family, named `mn` (lowercase `mnemonic`).
     AT&T syntax: src, dst (reversed from Intel). -/
-def parseExplicit (mnemonic mn : String) : Parser Instr := do
+def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Instr := do
   -- Match on full mnemonic name (no suffix stripping)
   match mn with
   -- Arithmetic (two-operand: src, dst) - 64-bit
@@ -1281,6 +1281,37 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
   | "popf" | "popfq" =>
     pure (toInstr .none (w := .W64) .popf)
 
+  | "cld" =>
+    pure (toInstr .none (w := .W64) .cld)
+
+  | "std" =>
+    pure (toInstr .none (w := .W64) .std)
+
+  | "movsb" => pure (toInstr .none (w := .W8) (.movs rep))
+  | "movsw" => pure (toInstr .none (w := .W16) (.movs rep))
+  | "movsl" | "movsd" => pure (toInstr .none (w := .W32) (.movs rep))
+  | "movsq" => pure (toInstr .none (w := .W64) (.movs rep))
+
+  | "stosb" => pure (toInstr .none (w := .W8) (.stos rep))
+  | "stosw" => pure (toInstr .none (w := .W16) (.stos rep))
+  | "stosl" | "stosd" => pure (toInstr .none (w := .W32) (.stos rep))
+  | "stosq" => pure (toInstr .none (w := .W64) (.stos rep))
+
+  | "lodsb" => pure (toInstr .none (w := .W8) (.lods rep))
+  | "lodsw" => pure (toInstr .none (w := .W16) (.lods rep))
+  | "lodsl" | "lodsd" => pure (toInstr .none (w := .W32) (.lods rep))
+  | "lodsq" => pure (toInstr .none (w := .W64) (.lods rep))
+
+  | "cmpsb" => pure (toInstr .none (w := .W8) (.cmps rep))
+  | "cmpsw" => pure (toInstr .none (w := .W16) (.cmps rep))
+  | "cmpsl" | "cmpsd" => pure (toInstr .none (w := .W32) (.cmps rep))
+  | "cmpsq" => pure (toInstr .none (w := .W64) (.cmps rep))
+
+  | "scasb" => pure (toInstr .none (w := .W8) (.scas rep))
+  | "scasw" => pure (toInstr .none (w := .W16) (.scas rep))
+  | "scasl" | "scasd" => pure (toInstr .none (w := .W32) (.scas rep))
+  | "scasq" => pure (toInstr .none (w := .W64) (.scas rep))
+
   | "ud2" =>
     pure (toInstr .none (w := .W64) .ud2)
 
@@ -1342,10 +1373,21 @@ def parseInstr : Parser Instr := do
   let mut mnemonic ← parseName
   -- The `lock` prefix doesn't change single-threaded semantics.
   if mnemonic.toLower == "lock" then skipHWs; mnemonic ← parseName
+  let mut rep : RepPrefix := .none
+  let lower := mnemonic.toLower
+  if lower == "rep" then
+    rep := .rep
+    skipHWs; mnemonic ← parseName
+  else if lower == "repe" || lower == "repz" then
+    rep := .repe
+    skipHWs; mnemonic ← parseName
+  else if lower == "repne" || lower == "repnz" then
+    rep := .repne
+    skipHWs; mnemonic ← parseName
   let mn := mnemonic.toLower
   match parseFamily? mn with
-  | some p => attempt (parseExplicit mnemonic mn) <|> p
-  | none => parseExplicit mnemonic mn
+  | some p => attempt (parseExplicit mnemonic mn rep) <|> p
+  | none => parseExplicit mnemonic mn rep
 
 -- ============================================================================
 -- Label Parsing

@@ -104,6 +104,23 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .cmc => "cmc"
   | .lahf => "lahf"
   | .sahf => "sahf"
+  | .cld => "cld"
+  | .std => "std"
+  | .movs rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}movs{s}"
+  | .stos rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}stos{s}"
+  | .lods rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}lods{s}"
+  | .cmps rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}cmps{s}"
+  | .scas rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    s!"{pfx}scas{s}"
   | .lea d a => s!"lea {addr aw a}, {reg d}"
   | .add d x => two "add" (operand aw x) (rm aw d)
   | .adc d x => two "adc" (operand aw x) (rm aw d)

@@ -206,6 +206,9 @@ inductive ShiftCountExpr | cl | imm8 (v : ConstExpr)
 inductive RelRegOrMem | rel (_ : ConstExpr) | reg (r : Reg .W64) | mem (_ : AddrExpr)
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
+inductive RepPrefix | none | rep | repe | repne
+  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+
 inductive Operation (w : Width)
   -- Data movement
   | mov (_ : Dst w) (src : Operand w)
@@ -231,6 +234,13 @@ inductive Operation (w : Width)
   | cmc
   | lahf
   | sahf
+  | cld
+  | std
+  | movs (rep : RepPrefix)
+  | stos (rep : RepPrefix)
+  | lods (rep : RepPrefix)
+  | cmps (rep : RepPrefix)
+  | scas (rep : RepPrefix)
   -- Arithmetic
   | lea (_ : Reg w) (src : AddrExpr) -- {_ : 16 <= w.bits}
   | add  (_ : Dst w) (src : Operand w)

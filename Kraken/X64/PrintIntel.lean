@@ -145,6 +145,28 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .cmc => "cmc"
   | .lahf => "lahf"
   | .sahf => "sahf"
+  | .cld => "cld"
+  | .std => "std"
+  | .movs rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"
+    s!"{pfx}movs{s}"
+  | .stos rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"
+    s!"{pfx}stos{s}"
+  | .lods rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"
+    s!"{pfx}lods{s}"
+  | .cmps rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"
+    s!"{pfx}cmps{s}"
+  | .scas rep =>
+    let pfx := match rep with | .none => "" | .rep => "rep " | .repe => "repe " | .repne => "repne "
+    let s := match w with | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"
+    s!"{pfx}scas{s}"
   | .lea dst src => s!"lea {dst}, {src.toStr addr_w}"
   | .add dst src => s!"add {dst.toStr addr_w}, {src.toStr addr_w}"
   | .adc dst src => s!"adc {dst.toStr addr_w}, {src.toStr addr_w}"
