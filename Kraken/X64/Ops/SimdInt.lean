@@ -24,6 +24,7 @@ inductive SimdInt
   | psignb | psignw | psignd
   | phaddw | phaddd | phaddsw
   | phsubw | phsubd | phsubsw
+  | psllvd | psllvq | psrlvd | psrlvq | psravd
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic SimdInt := ⟨mnemonics% SimdInt⟩
@@ -103,3 +104,8 @@ def SimdInt.interp : SimdInt → BitVec 128 → BitVec 128 → BitVec 128
         then ((a.lane 16 (2 * i)).toInt, (a.lane 16 (2 * i + 1)).toInt)
         else ((b.lane 16 (2 * (i - 4))).toInt, (b.lane 16 (2 * (i - 4) + 1)).toInt)
       .satS 16 (v1 - v2)
+  | .psllvd => .map2 32 fun a b => if b.toNat ≥ 32 then 0#32 else a <<< b.toNat
+  | .psllvq => .map2 64 fun a b => if b.toNat ≥ 64 then 0#64 else a <<< b.toNat
+  | .psrlvd => .map2 32 fun a b => if b.toNat ≥ 32 then 0#32 else a >>> b.toNat
+  | .psrlvq => .map2 64 fun a b => if b.toNat ≥ 64 then 0#64 else a >>> b.toNat
+  | .psravd => .map2 32 fun a b => a.sshiftRight (min b.toNat 32)
