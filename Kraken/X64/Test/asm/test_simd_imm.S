@@ -203,4 +203,17 @@ vperm2i128 $0x02, %ymm1, %ymm0, %ymm3
 vperm2i128 $0x20, 0(%rsp), %ymm0, %ymm4
 vperm2i128 $0x88, %ymm1, %ymm0, %ymm5
 
+# dpps / dppd
+dpps $0xf1, %xmm1, %xmm0
+dpps $0xf5, 32(%rsp), %xmm0
+vdpps $0xf1, %xmm1, %xmm0, %xmm3
+vdpps $0xf5, 32(%rsp), %xmm0, %xmm4
+vdpps $0xf1, %ymm1, %ymm0, %ymm5
+vdpps $0xf5, 32(%rsp), %ymm0, %ymm6
+
+dppd $0x31, %xmm2, %xmm0
+dppd $0x33, 64(%rsp), %xmm0
+vdppd $0x31, %xmm2, %xmm0, %xmm3
+vdppd $0x33, 64(%rsp), %xmm0, %xmm4
+
 addq $0x80, %rsp

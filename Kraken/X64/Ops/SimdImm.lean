@@ -97,6 +97,7 @@ inductive SimdBinImmOp
   | pblendw | blendps | blendpd | pblendd
   | pclmulqdq
   | mpsadbw
+  | dpps | dppd
   | insertps
   | roundss | roundsd
   | cmpps | cmppd | cmpss | cmpsd
@@ -181,6 +182,22 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
         let diff : Int := (b1 : Int) - (b2 : Int)
         acc + diff.natAbs) 0
       BitVec.ofNat 16 sum
+  | .dpps => .ofLanes n 128 fun laneIdx =>
+    let p0 := if (imm >>> 4).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 0)) (b.lane 32 (laneIdx * 4 + 0)) else 0#32
+    let p1 := if (imm >>> 5).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 1)) (b.lane 32 (laneIdx * 4 + 1)) else 0#32
+    let p2 := if (imm >>> 6).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 2)) (b.lane 32 (laneIdx * 4 + 2)) else 0#32
+    let p3 := if (imm >>> 7).getLsbD 0 then sseBinOp (· * ·) (a.lane 32 (laneIdx * 4 + 3)) (b.lane 32 (laneIdx * 4 + 3)) else 0#32
+    let s0 := sseBinOp (· + ·) p0 p1
+    let s1 := sseBinOp (· + ·) p2 p3
+    let sum := sseBinOp (· + ·) s0 s1
+    .ofLanes 128 32 fun i =>
+      if (imm >>> i).getLsbD 0 then sum else 0#32
+  | .dppd => .ofLanes n 128 fun laneIdx =>
+    let p0 := if (imm >>> 4).getLsbD 0 then sseBinOp64 (· * ·) (a.lane 64 (laneIdx * 2 + 0)) (b.lane 64 (laneIdx * 2 + 0)) else 0#64
+    let p1 := if (imm >>> 5).getLsbD 0 then sseBinOp64 (· * ·) (a.lane 64 (laneIdx * 2 + 1)) (b.lane 64 (laneIdx * 2 + 1)) else 0#64
+    let sum := sseBinOp64 (· + ·) p0 p1
+    .ofLanes 128 64 fun i =>
+      if (imm >>> i).getLsbD 0 then sum else 0#64
   | .insertps =>
     let src_idx := (imm.toNat >>> 6) &&& 3
     let dst_idx := (imm.toNat >>> 4) &&& 3
