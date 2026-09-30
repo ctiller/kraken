@@ -1281,6 +1281,15 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
   | "popf" | "popfq" =>
     pure (toInstr .none (w := .W64) .popf)
 
+  | "ud2" =>
+    pure (toInstr .none (w := .W64) .ud2)
+
+  | "int3" =>
+    pure (toInstr .none (w := .W64) .int3)
+
+  | "hlt" =>
+    pure (toInstr .none (w := .W64) .hlt)
+
   | "ret" | "retq" =>
     pure (toInstr .none (w := .W64) .ret)
 

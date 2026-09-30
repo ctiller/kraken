@@ -223,6 +223,9 @@ inductive Operation (w : Width)
   | cmpxchg (dst : Dst w) (src : Reg w)
   | cmpxchg8b (dst : AddrExpr)
   | cmpxchg16b (dst : AddrExpr)
+  | ud2
+  | int3
+  | hlt
   | clc
   | stc
   | cmc

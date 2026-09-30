@@ -586,6 +586,9 @@ set_option maxHeartbeats 1000000
         let s := { s with status }
         let s := (s.setReg (.low .rax .W64) mem_low).setReg (.low .rdx .W64) mem_high
         next s))
+  | .ud2 => Effects.fault "#UD: undefined instruction"
+  | .int3 => Effects.fault "#BP: breakpoint trap"
+  | .hlt => Effects.fault "HLT: halt instruction"
   | .clc => next { s with status := { s.status with cf := false } }
   | .stc => next { s with status := { s.status with cf := true } }
   | .cmc => next { s with status := { s.status with cf := !s.status.cf } }
