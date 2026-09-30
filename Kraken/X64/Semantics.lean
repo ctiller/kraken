@@ -852,6 +852,9 @@ match i with
     next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) c)))
   | .vexShift op dst src count =>
     count.interp s p (legacy := false) (fun c s => next (s.setAvxReg dst (op.interp (s.zmms.get src) c)))
+  | .sseTest op src1 src2 | .vexTest op src1 src2 =>
+    src2.interpSimd op.memBytes? s p (legacy := i matches .sseTest ..) (fun b s =>
+    s.status.update (op.interp (s.zmms.get src1) b) fun status => next { s with status })
 
 @[kstep]
 def Instr.interp [Labels]

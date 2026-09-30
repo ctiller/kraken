@@ -216,6 +216,8 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
     s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}, {imm}"
   | .sseShift op dst c => s!"{Mnemonic.name op} {dst}, {c.toStr addr_w}"
   | .vexShift op dst src c => s!"v{Mnemonic.name op} {dst}, {src}, {c.toStr addr_w}"
+  | .sseTest op src1 src2 => s!"{Mnemonic.name op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
+  | .vexTest op src1 src2 => s!"v{Mnemonic.name op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
 instance : ToString Instr where

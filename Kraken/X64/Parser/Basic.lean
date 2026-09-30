@@ -695,6 +695,12 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
     let dst ← parseAvxRegW
     if h : dst.w = w then pure (toAvxInstr addr_w (.vexShift op (h ▸ dst.reg) src count))
     else fail "AVX operand widths differ"
+  else if let some op := Mnemonic.ofName? (α := SimdTestOp) mn then some do
+    let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.sseTest op src1 src2))
+  else if let some op := Mnemonic.ofName? (α := SimdTestOp) v then some do
+    let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
+    pure (toAvxInstr addr_w (.vexTest op src1 src2))
   else none
 
 /-- Parse an instruction mnemonic and its operands.
