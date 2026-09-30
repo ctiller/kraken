@@ -913,6 +913,21 @@ match i with
   | .fma op dst src2 src3 =>
     src3.interpSimd op.memBytes? s p (legacy := false) (fun c s =>
     next (s.setAvxReg dst (op.interp (s.zmms.get dst) (s.zmms.get src2) c)))
+  | .sseToGpr op (gw := gw) dst src | .vexToGpr op (gw := gw) dst src =>
+    src.interpSimd op.memBytes? s p (legacy := i matches .sseToGpr ..) (fun a s =>
+    next (s.setReg dst (op.interp gw.bits a)))
+  | .sseExtract op (gw := gw) dst src imm | .vexExtract op (gw := gw) dst src imm =>
+    let immVal : BitVec 8 := match imm with | some e => (e.interp p).toBitVec.extractLsb' 0 8 | none => 0
+    let res := op.interp gw.bits (s.zmms.get src) immVal
+    s.set dst res p next
+  | .sseInsert op dst (gw := gw) src imm =>
+    let immVal : BitVec 8 := match imm with | some e => (e.interp p).toBitVec.extractLsb' 0 8 | none => 0
+    src.interp s p (fun v s =>
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) gw.bits v immVal)))
+  | .vexInsert op dst src1 (gw := gw) src2 imm =>
+    let immVal : BitVec 8 := match imm with | some e => (e.interp p).toBitVec.extractLsb' 0 8 | none => 0
+    src2.interp s p (fun v s =>
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) gw.bits v immVal)))
 
 @[kstep]
 def Instr.interp [Labels]

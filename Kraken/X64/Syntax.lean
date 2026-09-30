@@ -13,6 +13,7 @@ public import Kraken.X64.Ops.GprUn
 public import Kraken.X64.Ops.GprBin
 public import Kraken.X64.Ops.BitTest
 public import Kraken.X64.Ops.Hint
+public import Kraken.X64.Ops.SimdGpr
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -302,6 +303,12 @@ inductive AvxOperation (w : AvxWidth)
   | sseBlendv (op : SimdBlendvOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   | vexBlendv (op : SimdBlendvOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) (mask : AvxReg w)
   | fma (op : SimdFmaOp) (dst src2 : AvxReg w) (src3 : AvxRegOrMem w)
+  | sseToGpr (op : SimdToGprOp) {gw : Width} (dst : Reg gw) (src : AvxRegOrMem w)
+  | vexToGpr (op : SimdToGprOp) {gw : Width} (dst : Reg gw) (src : AvxRegOrMem w)
+  | sseExtract (op : SimdExtractOp) {gw : Width} (dst : RegOrMem gw) (src : AvxReg w) (imm : Option ConstExpr)
+  | vexExtract (op : SimdExtractOp) {gw : Width} (dst : RegOrMem gw) (src : AvxReg w) (imm : Option ConstExpr)
+  | sseInsert (op : SimdInsertOp) (dst : AvxReg w) {gw : Width} (src : RegOrMem gw) (imm : Option ConstExpr)
+  | vexInsert (op : SimdInsertOp) (dst src1 : AvxReg w) {gw : Width} (src2 : RegOrMem gw) (imm : Option ConstExpr)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr
