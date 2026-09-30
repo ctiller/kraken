@@ -620,9 +620,9 @@ def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :
       | some 'q' => some .W64 | _ => none
     return (← Mnemonic.ofName? (mn.dropEnd 1).copy, some w)
 
-/-- The width of a register operand, checked against a mnemonic's width suffix. -/
-def regWidth (w? : Option Width) (r : RegW) : Parser Width :=
-  if w?.all (· == r.w) then pure r.w else fail s!"register {repr r.reg} contradicts the suffix"
+/-- Checks an operand's width against a mnemonic's width suffix. -/
+def checkSuffix (w? : Option Width) (w : Width) : Parser Unit :=
+  if w?.all (· == w) then pure () else fail "operand width contradicts suffix"
 
 /-- `src, %dst` with AVX operands. -/
 def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
@@ -676,23 +676,17 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     pure (toInstr (some addr_w) (w := .W64) (.memHint op a))
   if let some (op, w?) := lookupSized GprUnOp mn then ps := ps.push do
     let (addr_w, src) ← parseRegOrMem; parseComma
-    let dst ← parseRegW
-    let w ← regWidth w? dst
-    if h : dst.w = w then
-      pure (toInstr addr_w (.un op (h ▸ dst.reg) (← ascribe w src)))
-    else fail "impossible"
+    let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
+    pure (toInstr addr_w (.un op dst (← ascribe w src)))
   if let some (op, w?) := lookupSized GprBinOp mn then ps := ps.push do
     let (addr_w1, a) ← parseRegOrMem; parseComma
     let (addr_w2, b) ← parseRegOrMem; parseComma
     let addr_w ← mergeAddrWidths addr_w1 addr_w2
-    let dst ← parseRegW
-    let w ← regWidth w? dst
+    let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
     let (src1, src2) := if op.src2First then (b, a) else (a, b)
-    match ← ascribe w src1, dst with
-    | .reg src1, ⟨w', dst⟩ =>
-      if h : w' = w then pure (toInstr addr_w (.bin op (h ▸ dst) src1 (← ascribe w src2)))
-      else fail "impossible"
-    | .mem _, _ => fail s!"{mn}: expected a register"
+    match ← ascribe w src1 with
+    | .reg src1 => pure (toInstr addr_w (.bin op dst src1 (← ascribe w src2)))
+    | .mem _ => fail s!"{mn}: expected a register"
   if let some (op, w?) := lookupSized BitTestOp mn then ps := ps.push do
     commaSeparated w? parseOperand parseRegOrMem (.bt op)
   if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
@@ -817,20 +811,14 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     | _ => fail "vcvtps2ph requires xmm or ymm source"
   if let some (op, w?) := lookupSized SimdToGprOp mn then ps := ps.push do
     let (addr_w, src) ← parseAvxRegOrMem; parseComma
-    let dst ← parseRegW
-    let w ← regWidth w? dst
+    let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
     let vsrc ← ascribeAvx .W128 src
-    if h : dst.w = w then
-      pure (toAvxInstr addr_w (.sseToGpr op (h ▸ dst.reg) vsrc))
-    else fail "impossible"
+    pure (toAvxInstr addr_w (.sseToGpr op dst vsrc))
   if let some (op, w?) := lookupSized SimdToGprOp v then ps := ps.push do
     let (addr_w, src) ← parseAvxRegOrMem; parseComma
-    let dst ← parseRegW
-    let w ← regWidth w? dst
+    let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
     let vsrc ← ascribeAvx (if op.memBytes?.isSome then .W128 else src.1.getD .W128) src
-    if h : dst.w = w then
-      pure (toAvxInstr addr_w (.vexToGpr op (h ▸ dst.reg) vsrc))
-    else fail "impossible"
+    pure (toAvxInstr addr_w (.vexToGpr op dst vsrc))
   if let some op := Mnemonic.ofName? (α := SimdExtractOp) mn then ps := ps.push do
     let imm ← parseOptImmComma op.hasImm
     let ⟨_, src⟩ ← parseAvxRegW; parseComma
@@ -1088,13 +1076,10 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
       | "movntil" => some .W32
       | "movntiq" => some .W64
       | _ => none
-    let src ← parseRegW; parseComma
-    let w ← regWidth w? src
+    let ⟨w, src⟩ ← parseRegW; checkSuffix w? w; parseComma
     if w != .W32 && w != .W64 then fail "movnti requires 32-bit or 64-bit operand"
     let (addr_w, dst) ← parseMemory
-    if h : src.w = w then
-      pure (toInstr (some addr_w) (w := w) (.movnti dst (h ▸ src.reg)))
-    else fail "impossible"
+    pure (toInstr (some addr_w) (w := w) (.movnti dst src))
 
 
   | "xchg" =>
