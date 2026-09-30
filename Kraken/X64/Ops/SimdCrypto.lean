@@ -65,47 +65,23 @@ def gf2p8Mul (a b : BitVec 8) : BitVec 8 :=
     (p', ca', cb >>> 1)
   ((List.range 8).foldl step (0#8, a, b)).1
 
-/-- Forward MixColumns on a column of 4 bytes. -/
-def aesMixCol (c0 c1 c2 c3 : BitVec 8) : BitVec 8 × BitVec 8 × BitVec 8 × BitVec 8 :=
-  let d0 := gf2p8Mul 2#8 c0 ^^^ gf2p8Mul 3#8 c1 ^^^ c2 ^^^ c3
-  let d1 := c0 ^^^ gf2p8Mul 2#8 c1 ^^^ gf2p8Mul 3#8 c2 ^^^ c3
-  let d2 := c0 ^^^ c1 ^^^ gf2p8Mul 2#8 c2 ^^^ gf2p8Mul 3#8 c3
-  let d3 := gf2p8Mul 3#8 c0 ^^^ c1 ^^^ c2 ^^^ gf2p8Mul 2#8 c3
-  (d0, d1, d2, d3)
-
-/-- Inverse MixColumns on a column of 4 bytes. -/
-def aesInvMixCol (c0 c1 c2 c3 : BitVec 8) : BitVec 8 × BitVec 8 × BitVec 8 × BitVec 8 :=
-  let d0 := gf2p8Mul 0x0e#8 c0 ^^^ gf2p8Mul 0x0b#8 c1 ^^^ gf2p8Mul 0x0d#8 c2 ^^^ gf2p8Mul 0x09#8 c3
-  let d1 := gf2p8Mul 0x09#8 c0 ^^^ gf2p8Mul 0x0e#8 c1 ^^^ gf2p8Mul 0x0b#8 c2 ^^^ gf2p8Mul 0x0d#8 c3
-  let d2 := gf2p8Mul 0x0d#8 c0 ^^^ gf2p8Mul 0x09#8 c1 ^^^ gf2p8Mul 0x0e#8 c2 ^^^ gf2p8Mul 0x0b#8 c3
-  let d3 := gf2p8Mul 0x0b#8 c0 ^^^ gf2p8Mul 0x0d#8 c1 ^^^ gf2p8Mul 0x09#8 c2 ^^^ gf2p8Mul 0x0e#8 c3
-  (d0, d1, d2, d3)
-
-/-- Inverse MixColumns on a 128-bit state. -/
-def aesInvMixColumns (v : BitVec 128) : BitVec 128 :=
+/-- Applies `m` (a matrix over GF(2^8), row by row) to each 4-byte column of an AES state. -/
+def aesMix (m : Array (Array (BitVec 8))) (v : BitVec 128) : BitVec 128 :=
   .ofLanes 128 8 fun i =>
-    let col := i / 4
-    let (d0, d1, d2, d3) := aesInvMixCol (v.lane 8 (col * 4)) (v.lane 8 (col * 4 + 1))
-                                         (v.lane 8 (col * 4 + 2)) (v.lane 8 (col * 4 + 3))
-    match i % 4 with
-    | 0 => d0 | 1 => d1 | 2 => d2 | _ => d3
+    (List.range 4).foldl (fun acc j => acc ^^^ gf2p8Mul (m[i % 4]!)[j]! (v.lane 8 (i / 4 * 4 + j))) 0
 
-def shiftRowsIdx : Array Nat := #[0, 5, 10, 15, 4, 9, 14, 3, 8, 13, 2, 7, 12, 1, 6, 11]
-def invShiftRowsIdx : Array Nat := #[0, 13, 10, 7, 4, 1, 14, 11, 8, 5, 2, 15, 12, 9, 6, 3]
+def aesMixColumns := aesMix #[#[2, 3, 1, 1], #[1, 2, 3, 1], #[1, 1, 2, 3], #[3, 1, 1, 2]]
+def aesInvMixColumns :=
+  aesMix #[#[14, 11, 13, 9], #[9, 14, 11, 13], #[13, 9, 14, 11], #[11, 13, 9, 14]]
 
-def aesShiftRowsSubBytes (v : BitVec 128) : BitVec 128 :=
-  .ofLanes 128 8 fun i => aesSbox.getD (v.lane 8 shiftRowsIdx[i]!).toNat 0#8
+/-- ShiftRows then (Inv)SubBytes: byte `i` of the result is `sbox[v[idx[i]]]`. -/
+def aesPermuteSub (idx : Array Nat) (sbox : Array (BitVec 8)) (v : BitVec 128) : BitVec 128 :=
+  .ofLanes 128 8 fun i => sbox.getD (v.lane 8 idx[i]!).toNat 0
 
-def aesInvShiftRowsInvSubBytes (v : BitVec 128) : BitVec 128 :=
-  .ofLanes 128 8 fun i => aesInvSbox.getD (v.lane 8 invShiftRowsIdx[i]!).toNat 0#8
-
-def aesMixColumns (v : BitVec 128) : BitVec 128 :=
-  .ofLanes 128 8 fun i =>
-    let col := i / 4
-    let (d0, d1, d2, d3) := aesMixCol (v.lane 8 (col * 4)) (v.lane 8 (col * 4 + 1))
-                                      (v.lane 8 (col * 4 + 2)) (v.lane 8 (col * 4 + 3))
-    match i % 4 with
-    | 0 => d0 | 1 => d1 | 2 => d2 | _ => d3
+def aesShiftRowsSubBytes :=
+  aesPermuteSub #[0, 5, 10, 15, 4, 9, 14, 3, 8, 13, 2, 7, 12, 1, 6, 11] aesSbox
+def aesInvShiftRowsInvSubBytes :=
+  aesPermuteSub #[0, 13, 10, 7, 4, 1, 14, 11, 8, 5, 2, 15, 12, 9, 6, 3] aesInvSbox
 
 def sha256Sigma0 (x : BitVec 32) : BitVec 32 :=
   x.rotateRight 7 ^^^ x.rotateRight 18 ^^^ (x >>> 3)
