@@ -178,6 +178,16 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .sseBlendv op d x => s!"{Mnemonic.name op} %xmm0, {avxRm aw x}, {avxReg d}"
   | .vexBlendv op d a x m => s!"v{Mnemonic.name op} {avxReg m}, {avxRm aw x}, {avxReg a}, {avxReg d}"
   | .fma op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
+  | .vzeroupper => "vzeroupper"
+  | .vzeroall => "vzeroall"
+  | .sseScalar op dst src => s!"{Mnemonic.name op} {avxReg src}, {avxReg dst}"
+  | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {avxReg src2}, {avxReg src1}, {avxReg dst}"
+  | .sseScalarLoad op dst src => s!"{Mnemonic.name op} {addr aw src}, {avxReg dst}"
+  | .vexScalarLoad op dst src => s!"v{Mnemonic.name op} {addr aw src}, {avxReg dst}"
+  | .sseScalarStore op dst src => s!"{Mnemonic.name op} {avxReg src}, {addr aw dst}"
+  | .vexScalarStore op dst src => s!"v{Mnemonic.name op} {avxReg src}, {addr aw dst}"
+  | .vextract op dst src imm => s!"v{Mnemonic.name op} ${const imm}, {avxReg src}, {avxRm aw dst}"
+  | .vinsert op dst src1 src2 imm => s!"v{Mnemonic.name op} ${const imm}, {avxRm aw src2}, {avxReg src1}, {avxReg dst}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

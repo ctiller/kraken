@@ -25,6 +25,7 @@ inductive SimdUnOp
   | broadcastss | broadcastsd
   | broadcasti128 | broadcastf128
   | aesimc
+  | movq | movd
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic SimdUnOp := ⟨mnemonics% SimdUnOp⟩
@@ -82,6 +83,8 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .broadcastss => fun a => .ofLanes n 32 fun _ => a.lane 32 0
   | .broadcastsd => fun a => .ofLanes n 64 fun _ => a.lane 64 0
   | .broadcasti128 | .broadcastf128 => fun a => .ofLanes n 128 fun _ => a.lane 128 0
+  | .movq => fun a => (a.extractLsb' 0 64).zeroExtend n
+  | .movd => fun a => (a.extractLsb' 0 32).zeroExtend n
 
 /-- The size in bytes of a memory operand for a vector of `bytes` bytes, if smaller (e.g. for
 widening conversions). -/
@@ -99,4 +102,6 @@ def SimdUnOp.memBytes? : SimdUnOp → Nat → Option Nat
   | .pbroadcastd, _ | .broadcastss, _ => some 4
   | .pbroadcastq, _ | .broadcastsd, _ => some 8
   | .broadcasti128, _ | .broadcastf128, _ => some 16
+  | .movq, _ => some 8
+  | .movd, _ => some 4
   | _, _ => none

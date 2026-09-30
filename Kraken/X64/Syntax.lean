@@ -9,6 +9,8 @@ public import Kraken.X64.Ops.SimdImm
 public import Kraken.X64.Ops.SimdShift
 public import Kraken.X64.Ops.SimdTest
 public import Kraken.X64.Ops.SimdTer
+public import Kraken.X64.Ops.SimdScalarMov
+public import Kraken.X64.Ops.SimdExtractInsert
 public import Kraken.X64.Ops.GprUn
 public import Kraken.X64.Ops.GprBin
 public import Kraken.X64.Ops.BitTest
@@ -302,6 +304,16 @@ inductive AvxOperation (w : AvxWidth)
   | sseBlendv (op : SimdBlendvOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   | vexBlendv (op : SimdBlendvOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) (mask : AvxReg w)
   | fma (op : SimdFmaOp) (dst src2 : AvxReg w) (src3 : AvxRegOrMem w)
+  | vzeroupper
+  | vzeroall
+  | sseScalar (op : SimdScalarMov) (dst : AvxReg w) (src : AvxReg w)
+  | vexScalar (op : SimdScalarMov) (dst src1 src2 : AvxReg w)
+  | sseScalarLoad (op : SimdScalarMov) (dst : AvxReg w) (src : AddrExpr)
+  | vexScalarLoad (op : SimdScalarMov) (dst : AvxReg w) (src : AddrExpr)
+  | sseScalarStore (op : SimdScalarMov) (dst : AddrExpr) (src : AvxReg w)
+  | vexScalarStore (op : SimdScalarMov) (dst : AddrExpr) (src : AvxReg w)
+  | vextract (op : SimdExtract128Op) (dst : AvxRegOrMem .W128) (src : AvxReg w) (imm : ConstExpr)
+  | vinsert (op : SimdInsert128Op) (dst src1 : AvxReg w) (src2 : AvxRegOrMem .W128) (imm : ConstExpr)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr
