@@ -15,20 +15,17 @@ inductive SimdToGprOp
 
 instance : Mnemonic SimdToGprOp := ⟨mnemonics% SimdToGprOp⟩
 
+/-- Forms a mask from the MSB of each `k`-bit lane of `src`. -/
+def msbMask {n} (k : Nat) (src : BitVec n) (bits : Nat) : BitVec bits :=
+  let mask : Nat := (List.range (n / k)).foldl (fun acc i =>
+    if (src.lane k i).msb then acc ||| (1 <<< i) else acc) 0
+  BitVec.ofNat bits mask
+
 def SimdToGprOp.interp {n} (op : SimdToGprOp) (bits : Nat) (src : BitVec n) : BitVec bits :=
   match op with
-  | .pmovmskb =>
-    let mask : Nat := (List.range (n / 8)).foldl (fun acc i =>
-      if (src.lane 8 i).msb then acc ||| (1 <<< i) else acc) 0
-    BitVec.ofNat bits mask
-  | .movmskps =>
-    let mask : Nat := (List.range (n / 32)).foldl (fun acc i =>
-      if (src.lane 32 i).msb then acc ||| (1 <<< i) else acc) 0
-    BitVec.ofNat bits mask
-  | .movmskpd =>
-    let mask : Nat := (List.range (n / 64)).foldl (fun acc i =>
-      if (src.lane 64 i).msb then acc ||| (1 <<< i) else acc) 0
-    BitVec.ofNat bits mask
+  | .pmovmskb => msbMask 8 src bits
+  | .movmskps => msbMask 32 src bits
+  | .movmskpd => msbMask 64 src bits
   | .cvtss2si => FpFmt.f32.toInt bits 0 (src.lane 32 0)
   | .cvttss2si => FpFmt.f32.toInt bits 3 (src.lane 32 0)
   | .cvtsd2si => FpFmt.f64.toInt bits 0 (src.lane 64 0)
@@ -60,23 +57,10 @@ def SimdExtractOp.memBits (op : SimdExtractOp) : Nat :=
   | .pextrq | .movq | .movlps | .movhps | .movlpd | .movhpd => 64
 
 def SimdExtractOp.interp {n} (op : SimdExtractOp) (bits : Nat) (src : BitVec n) (imm : BitVec 8) : BitVec bits :=
-  let immNat := imm.toNat
   match op with
-  | .pextrb =>
-    let idx := immNat % (n / 8)
-    (src.lane 8 idx).zeroExtend bits
-  | .pextrw =>
-    let idx := immNat % (n / 16)
-    (src.lane 16 idx).zeroExtend bits
-  | .pextrd =>
-    let idx := immNat % (n / 32)
-    (src.lane 32 idx).zeroExtend bits
-  | .pextrq =>
-    let idx := immNat % (n / 64)
-    (src.lane 64 idx).zeroExtend bits
-  | .extractps =>
-    let idx := immNat % (n / 32)
-    (src.lane 32 idx).zeroExtend bits
+  | .pextrb | .pextrw | .pextrd | .pextrq | .extractps =>
+    let k := op.memBits
+    (src.lane k (imm.toNat % (n / k))).zeroExtend bits
   | .movd | .movq =>
     let extractBits := min bits 64
     (src.extractLsb' 0 extractBits).zeroExtend bits
@@ -108,20 +92,11 @@ def SimdInsertOp.twoOperand : SimdInsertOp → Bool
   | _ => false
 
 def SimdInsertOp.interp {n} (op : SimdInsertOp) (old : BitVec n) (bits : Nat) (src : BitVec bits) (imm : BitVec 8) : BitVec n :=
-  let immNat := imm.toNat
   match op with
-  | .pinsrb =>
-    let idx := immNat % (n / 8)
-    .ofLanes n 8 fun i => if i == idx then (src.extractLsb' 0 8) else old.lane 8 i
-  | .pinsrw =>
-    let idx := immNat % (n / 16)
-    .ofLanes n 16 fun i => if i == idx then (src.extractLsb' 0 16) else old.lane 16 i
-  | .pinsrd =>
-    let idx := immNat % (n / 32)
-    .ofLanes n 32 fun i => if i == idx then (src.extractLsb' 0 32) else old.lane 32 i
-  | .pinsrq =>
-    let idx := immNat % (n / 64)
-    .ofLanes n 64 fun i => if i == idx then (src.extractLsb' 0 64) else old.lane 64 i
+  | .pinsrb | .pinsrw | .pinsrd | .pinsrq =>
+    let k := op.memBits
+    let idx := imm.toNat % (n / k)
+    .ofLanes n k fun i => if i == idx then src.extractLsb' 0 k else old.lane k i
   | .cvtsi2ss =>
     let fp := FpFmt.f32.ofInt (BitVec.toInt src)
     old.replaceLow fp
