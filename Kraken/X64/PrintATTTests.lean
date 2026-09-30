@@ -28,7 +28,9 @@ def corpus : List String := [
   "movq sym, %rax", "movq 8(%rsp), %rax", "movq %rax, -16(%rbp,%rcx,8)",
   "movb $1, (%eax)", "movl %eax, 4(%r8d,%r9d,2)", "movq (%rax,%rbx), %rcx",
   "movq 8(%rip), %rax", "movsx %al, %ecx", "movzx %bx, %rdx", "movsbq %al, %rax",
-  "movzwl %cx, %edx", "pushq %rbx", "pushq $7", "pushw (%rsp)", "popq %rax", "popq 8(%rsp)",
+  "movzwl %cx, %edx", "movslq %eax, %rbx", "movslq (%rsp), %rax", "movsbl (%rsp), %ecx",
+  "movswq (%rsp), %rdx", "movzbl (%rsp), %ecx", "movzwq (%rsp), %rax",
+  "pushq %rbx", "pushq $7", "pushw (%rsp)", "popq %rax", "popq 8(%rsp)",
   "sete %al", "setnz 3(%rsp)", "setb %dh", "setae %bl", "seta %cl", "setbe %al",
   "setl %al", "setle %al", "seto %al", "setno %al", "sets %al", "setns %al",
   "setp %al", "setnp %al", "setge %al", "setg %al",
@@ -52,6 +54,9 @@ def corpus : List String := [
   "foo:\n  jmp foo", "je foo", "jne .L1", "jb foo", "jae foo", "ja foo", "jbe foo",
   "jl foo", "jle foo", "call foo", "call %rax", "jmp %rax",
   "jmp 8(%rax)", "call (%rsp)", "ret", "nop", "nop 5", ".align 16", ".align 16, 0x90",
+  "pause", "lfence", "mfence", "sfence", "endbr64",
+  "nopw (%rax)", "nopl (%rax)", "nopq (%rax)", "nopw %ax", "nopl %eax", "nopq %rax",
+  "nopl 0(%rax)", "nopw 0(%rax,%rax,1)",
   "a:\nb: ret\n\nc:",
   -- AVX
   "movups %xmm0, %xmm1", "vmovups (%rsp), %ymm2", "vmovups %zmm31, 64(%rsp)",
@@ -79,7 +84,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #eval failing GprUnOp fun _ mn => [s!"{mn} (%rsp), %rax", s!"{mn}l %eax, %ebx"] ++
   failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
     if op.src2First then s!"{mn} 8(%rsp), %ebx, %ecx" else s!"{mn} %ebx, 8(%rsp), %ecx"]) ++
-  failing BitTestOp fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]
+  failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++
+  failing HintOp (fun _ mn => [mn])
 
 -- Printed form is canonical AT&T.
 #guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo" with

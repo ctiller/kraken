@@ -172,6 +172,8 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .nop n => s!".nops {n}"
   | .nopalign a none => s!".align {a}"
   | .nopalign a (some p) => s!".align {a}, {p}"
+  | .hint op => Mnemonic.name op
+  | .nopm x => s!"nop {x.toStr addr_w}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
