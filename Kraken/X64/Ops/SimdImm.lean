@@ -70,7 +70,8 @@ def dpp {k : Nat} (mulOp addOp : BitVec k → BitVec k → BitVec k) (count : Na
     (imm : BitVec 8) (a b : BitVec 128) : BitVec 128 :=
   let p (i : Nat) : BitVec k :=
     if imm.getLsbD (4 + i) then mulOp (a.lane k i) (b.lane k i) else 0#k
-  let sum := (List.range count).foldl (fun acc i => addOp acc (p i)) 0#k
+  -- Summed pairwise, as the SDM specifies (this matters for rounding and the sign of zero).
+  let sum := if count = 2 then addOp (p 0) (p 1) else addOp (addOp (p 0) (p 1)) (addOp (p 2) (p 3))
   .ofLanes 128 k fun i => if imm.getLsbD i then sum else 0#k
 
 def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) (legacy : Bool := false)
