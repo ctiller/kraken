@@ -3,8 +3,8 @@ module
 public import Kraken.X64.Ops.Lanes
 
 /-! Exact IEEE-754 binary arithmetic on bit patterns, for operations Lean's `Float` can't express
-with a single rounding (fused multiply-add, wide integer conversions). Rounding is to nearest
-even (the default MXCSR mode). -/
+with a single rounding (fused multiply-add, wide integer conversions, roundInt, and f16).
+Rounding modes: 0 = nearest-even, 1 = down (-inf), 2 = up (+inf), 3 = toward zero. -/
 
 @[expose] public section
 
@@ -27,9 +27,11 @@ def isInf (f : FpFmt) (x : BitVec f.bits) : Bool :=
 def quiet (f : FpFmt) (x : BitVec f.bits) : BitVec f.bits := x ||| .twoPow _ (f.m - 1)
 /-- The default NaN ("QNaN floating-point indefinite"). -/
 def defaultNaN (f : FpFmt) : BitVec f.bits := .ofInt _ (-(2 ^ (f.m - 1) : Int))
-def inf (f : FpFmt) (sign : Bool) : BitVec f.bits :=
-  .ofNat _ ((if sign then 2 ^ (f.bits - 1) else 0) + (2 ^ f.e - 1) * 2 ^ f.m)
-def zero (f : FpFmt) (sign : Bool) : BitVec f.bits := if sign then .twoPow _ (f.bits - 1) else 0
+/-- Packs sign, exponent field, and mantissa field into a float BitVec. -/
+def pack (f : FpFmt) (sign : Bool) (exp mant : Nat) : BitVec f.bits :=
+  .ofNat _ ((if sign then 2 ^ (f.bits - 1) else 0) + exp * 2 ^ f.m + mant)
+def inf (f : FpFmt) (sign : Bool) : BitVec f.bits := f.pack sign (2 ^ f.e - 1) 0
+def zero (f : FpFmt) (sign : Bool) : BitVec f.bits := f.pack sign 0 0
 
 /-- A finite `x` as `(sign, v, e)` with value `(-1)^sign * v * 2^e`. -/
 def decode (f : FpFmt) (x : BitVec f.bits) : Bool × Nat × Int :=
@@ -59,13 +61,13 @@ def round (f : FpFmt) (sign : Bool) (v : Nat) (e : Int) (mode : Nat := 0) : BitV
   let biased := if r ≥ 2 ^ f.m then q - emin + 1 else 0
   if biased ≥ 2 ^ f.e - 1 then
     if mode == 3 || (mode == 1 && !sign) || (mode == 2 && sign) then
-      .ofNat _ ((if sign then 2 ^ (f.bits - 1) else 0) + (2 ^ f.e - 2) * 2 ^ f.m + (2 ^ f.m - 1))
+      f.pack sign (2 ^ f.e - 2) (2 ^ f.m - 1)
     else f.inf sign
-  else .ofNat _ ((if sign then 2 ^ (f.bits - 1) else 0) + biased.toNat * 2 ^ f.m + r % 2 ^ f.m)
+  else f.pack sign biased.toNat (r % 2 ^ f.m)
 
 /-- Converts `x` to a signed integer of `w` bits with `mode`. NaN, Inf, or out-of-range -> `1 <<< (w - 1)`. -/
 def toInt (f : FpFmt) (w : Nat) (mode : Nat) (x : BitVec f.bits) : BitVec w :=
-  let indefinite : BitVec w := .ofInt w (-(2 ^ (w - 1) : Int))
+  let indefinite : BitVec w := .twoPow w (w - 1)
   if f.isNaN x || f.isInf x then indefinite
   else
     let (sign, v, e) := f.decode x
@@ -73,9 +75,7 @@ def toInt (f : FpFmt) (w : Nat) (mode : Nat) (x : BitVec f.bits) : BitVec w :=
     else
       let q := if e ≥ 0 then v * 2 ^ e.toNat else roundShift sign v (-e).toNat mode
       let res : Int := if sign then -(q : Int) else q
-      let minVal : Int := -(2 ^ (w - 1) : Int)
-      let maxVal : Int := (2 ^ (w - 1) : Int) - 1
-      if res < minVal || res > maxVal then indefinite
+      if res < -(2 ^ (w - 1) : Int) || res ≥ 2 ^ (w - 1) then indefinite
       else .ofInt w res
 
 /-- Rounds `x` to an integer value in the same format with `mode`.
