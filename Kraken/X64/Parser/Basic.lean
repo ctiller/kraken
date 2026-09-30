@@ -794,12 +794,6 @@ def parseInstr : Parser Instr := do
   | "movaps" =>
     commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .movaps
 
-  | "addps" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .addps
-
-  | "subps" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .subps
-
   -- Bitwise - 64-bit
   | "xor" =>
     commaSeparated .none parseOperand parseRegOrMem .xor
@@ -1025,6 +1019,17 @@ def parseInstr : Parser Instr := do
       -- something inconsistent like .cmovzb %rax %rbx
       let cc ← parseCondCode (mn.drop 4)
       commaSeparated .none parseRegOrMem parseRegA (.cmovcc cc)
+    else if let some op := Mnemonic.ofName? mn then
+      let (addr_w, src) ← parseAvxRegOrMem; parseComma
+      let ⟨w, dst⟩ ← parseAvxRegW
+      pure (toAvxInstr addr_w (.sse op dst (← ascribeAvx w src)))
+    else if let some op := Mnemonic.ofName? (mn.drop 1).copy then
+      let (addr_w, src2) ← parseAvxRegOrMem; parseComma
+      let ⟨w, src1⟩ ← parseAvxRegW; parseComma
+      let dst ← parseAvxRegW
+      if h : dst.w = w then
+        pure (toAvxInstr addr_w (.vex op (h ▸ dst.reg) src1 (← ascribeAvx w src2)))
+      else fail s!"{mnemonic}: operand widths differ"
     else
       fail s!"unsupported instruction: {mnemonic}"
 

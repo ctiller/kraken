@@ -170,6 +170,8 @@ instance : Gen RegMm := ⟨gen_ctors% RegMm⟩
 instance : Gen Reg64 := ⟨gen_ctors% Reg64⟩
 instance : Gen CondCode := ⟨gen_ctors% CondCode⟩
 instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
+-- Opcode families: uniformly over their opcodes.
+instance {α : Type} [Mnemonic α] : Gen α := ⟨(·.1) <$> pick Mnemonic.names⟩
 
 -- No labels (for `jcc`), nop lengths or alignments; other control flow is rejected by
 -- `stepDeterministic`.

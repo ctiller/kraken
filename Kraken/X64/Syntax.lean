@@ -2,6 +2,7 @@ module
 
 import Kraken.Attribute
 public import Kraken.Layout
+public import Kraken.X64.Ops.SimdBin
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -246,8 +247,10 @@ inductive AvxOperation (w : AvxWidth)
   | movups (_ : AvxDst w) (src : AvxRegOrMem w)
   | vmovups (_ : AvxDst w) (src : AvxRegOrMem w)
   | movaps (_ : AvxDst w) (src : AvxRegOrMem w)
-  | subps (_ : AvxDst w) (src : AvxRegOrMem w)
-  | addps (_ : AvxDst w) (src : AvxRegOrMem w)
+  -- `dst := op dst src` on xmm registers, preserving the upper bits.
+  | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
+  -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.
+  | vex (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr

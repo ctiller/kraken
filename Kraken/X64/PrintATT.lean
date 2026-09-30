@@ -121,8 +121,8 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .movups d x => two "movups" d x
   | .vmovups d x => two "vmovups" d x
   | .movaps d x => two "movaps" d x
-  | .subps d x => two "subps" d x
-  | .addps d x => two "addps" d x
+  | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
+  | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op
