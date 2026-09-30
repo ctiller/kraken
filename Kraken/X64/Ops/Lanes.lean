@@ -82,30 +82,7 @@ def sseUnOp64 (op : Float → Float) (a : BitVec 64) : BitVec 64 :=
   if a.toFloat.isNaN then a ||| 0x8000000000000#64
   else let r := op a.toFloat; if r.isNaN then 0xfff8000000000000#64 else r.toBitVec
 
-/-- cvtss2sd: converts single to double, quieting SNaN. -/
-def sseCvtss2sd (a : BitVec 32) : BitVec 64 :=
-  let exp := (a.extractLsb' 23 8).toNat
-  let frac := (a.extractLsb' 0 23).toNat
-  if exp == 255 then
-    if frac == 0 then
-      BitVec.append (a.extractLsb' 31 1) 0x7ff000000000000#63
-    else
-      BitVec.append (a.extractLsb' 31 1) (BitVec.append 0x7ff#11 (BitVec.append (a.extractLsb' 22 1 ||| 1#1) (BitVec.append (a.extractLsb' 0 22) 0#29)))
-  else
-    a.toFloat32.toFloat.toBitVec
 
-/-- cvtsd2ss: converts double to single, quieting SNaN. -/
-def sseCvtsd2ss (a : BitVec 64) : BitVec 32 :=
-  let exp := (a.extractLsb' 52 11).toNat
-  let frac := (a.extractLsb' 0 52).toNat
-  if exp == 2047 then
-    if frac == 0 then
-      BitVec.append (a.extractLsb' 63 1) 0x7f800000#31
-    else
-      let frac22 := a.extractLsb' 29 22
-      BitVec.append (a.extractLsb' 63 1) (BitVec.append 0xff#8 (BitVec.append (a.extractLsb' 51 1 ||| 1#1) frac22))
-  else
-    a.toFloat.toFloat32.toBitVec
 
 
 

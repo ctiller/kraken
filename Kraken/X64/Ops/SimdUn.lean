@@ -54,12 +54,12 @@ def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .movddup => fun a => .ofLanes n 64 fun i => a.lane 64 (i - i % 2)
   | .sqrtps => .map1 32 (sseUnOp Float32.sqrt)
   | .sqrtpd => .map1 64 (sseUnOp64 Float.sqrt)
-  | .cvtdq2ps => .map1 32 fun x => (Float32.ofInt x.toInt).toBitVec
+  | .cvtdq2ps => .map1 32 fun x => FpFmt.f32.ofInt x.toInt
   | .cvtps2dq => .map1 32 (FpFmt.f32.toInt 32 0)
   | .cvttps2dq => .map1 32 (FpFmt.f32.toInt 32 3)
-  | .cvtdq2pd => fun a => .ofLanes n 64 fun i => (Float.ofInt (a.lane 32 i).toInt).toBitVec
-  | .cvtps2pd => fun a => .ofLanes n 64 fun i => sseCvtss2sd (a.lane 32 i)
-  | .cvtpd2ps => fun a => .ofLanes n 32 fun i => if i < n / 64 then sseCvtsd2ss (a.lane 64 i) else 0
+  | .cvtdq2pd => fun a => .ofLanes n 64 fun i => FpFmt.f64.ofInt (a.lane 32 i).toInt
+  | .cvtps2pd => fun a => .ofLanes n 64 fun i => FpFmt.f32.convert .f64 0 (a.lane 32 i)
+  | .cvtpd2ps => fun a => .ofLanes n 32 fun i => if i < n / 64 then FpFmt.f64.convert .f32 0 (a.lane 64 i) else 0
   | .cvtpd2dq => fun a => .ofLanes n 32 fun i => if i < n / 64 then FpFmt.f64.toInt 32 0 (a.lane 64 i) else 0
   | .cvttpd2dq => fun a => .ofLanes n 32 fun i => if i < n / 64 then FpFmt.f64.toInt 32 3 (a.lane 64 i) else 0
   | .cvtph2ps => fun a => .ofLanes n 32 fun i => f16ToF32 (a.lane 16 i)

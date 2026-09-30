@@ -2,6 +2,7 @@ module
 
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Lanes
+public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -64,7 +65,7 @@ def SimdFp.interp : SimdFp → BitVec 128 → BitVec 128 → BitVec 128
   | .minss => fun a b => a.replaceLow (sseMin32 (a.lane 32 0) (b.lane 32 0))
   | .maxss => fun a b => a.replaceLow (sseMax32 (a.lane 32 0) (b.lane 32 0))
   | .sqrtss => fun a b => a.replaceLow (sseUnOp Float32.sqrt (b.lane 32 0))
-  | .cvtsd2ss => fun a b => a.replaceLow (sseCvtsd2ss (b.lane 64 0))
+  | .cvtsd2ss => fun a b => a.replaceLow (FpFmt.f64.convert .f32 0 (b.lane 64 0))
   -- Scalar double precision (replaces only lane 0 of a)
   | .addsd => fun a b => a.replaceLow (sseBinOp64 (· + ·) (a.lane 64 0) (b.lane 64 0))
   | .subsd => fun a b => a.replaceLow (sseBinOp64 (· - ·) (a.lane 64 0) (b.lane 64 0))
@@ -73,7 +74,7 @@ def SimdFp.interp : SimdFp → BitVec 128 → BitVec 128 → BitVec 128
   | .minsd => fun a b => a.replaceLow (sseMin64 (a.lane 64 0) (b.lane 64 0))
   | .maxsd => fun a b => a.replaceLow (sseMax64 (a.lane 64 0) (b.lane 64 0))
   | .sqrtsd => fun a b => a.replaceLow (sseUnOp64 Float.sqrt (b.lane 64 0))
-  | .cvtss2sd => fun a b => a.replaceLow (sseCvtss2sd (b.lane 32 0))
+  | .cvtss2sd => fun a b => a.replaceLow (FpFmt.f32.convert .f64 0 (b.lane 32 0))
   -- Asymmetric / horizontal ops
   | .addsubps => fun a b => .ofLanes 128 32 fun
     | 0 => sseBinOp (· - ·) (a.lane 32 0) (b.lane 32 0)

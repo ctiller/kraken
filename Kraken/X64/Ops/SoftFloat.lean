@@ -115,39 +115,24 @@ def fma (f : FpFmt) (negP negC : Bool) (a b c : BitVec f.bits) : BitVec f.bits :
       let r := (if sp then -p else p) + (if sc then -1 else 1) * (vc * 2 ^ (ec - e).toNat : Nat)
       if r = 0 then f.zero (if p = 0 && vc = 0 then sp && sc else false)
       else f.round (r < 0) r.natAbs e
+/-- Converts `x` from format `f` to format `g` with rounding `mode`. -/
+def convert (f g : FpFmt) (mode : Nat) (x : BitVec f.bits) : BitVec g.bits :=
+  let sign := x.msb
+  if f.isNaN x then
+    let payload := x.extractLsb' 0 f.m
+    let gPayload :=
+      if g.m ≥ f.m then (payload.zeroExtend g.m) <<< (g.m - f.m)
+      else (payload >>> (f.m - g.m)).truncate g.m
+    g.quiet ((g.inf sign ||| gPayload.zeroExtend g.bits))
+  else if f.isInf x then g.inf sign
+  else
+    let (s, v, e) := f.decode x
+    if v == 0 then g.zero sign
+    else g.round s v e mode
 end FpFmt
 
 /-- Half precision (binary16) to single precision (binary32) conversion. -/
-def f16ToF32 (h : BitVec 16) : BitVec 32 :=
-  let sign := if h.msb then 0x80000000#32 else 0#32
-  let exp := (h.extractLsb' 10 5).toNat
-  let frac := (h.extractLsb' 0 10).toNat
-  if exp == 31 then
-    if frac == 0 then sign ||| 0x7f800000#32
-    else sign ||| 0x7fc00000#32 ||| (BitVec.ofNat 32 frac <<< 13)
-  else if exp == 0 then
-    if frac == 0 then sign
-    else
-      let k := frac.log2
-      let singleExp := BitVec.ofNat 32 (103 + k) <<< 23
-      let singleFrac := BitVec.ofNat 32 (frac ^^^ (1 <<< k)) <<< (23 - k)
-      sign ||| singleExp ||| singleFrac
-  else
-    let singleExp := BitVec.ofNat 32 (exp + 112) <<< 23
-    let singleFrac := BitVec.ofNat 32 frac <<< 13
-    sign ||| singleExp ||| singleFrac
+def f16ToF32 (h : BitVec 16) : BitVec 32 := FpFmt.f16.convert .f32 0 h
 
 /-- Single precision (binary32) to half precision (binary16) conversion. -/
-def f32ToF16 (mode : Nat) (x : BitVec 32) : BitVec 16 :=
-  let sign := x.msb
-  let exp := FpFmt.f32.expField x
-  let frac := (x.extractLsb' 0 23).toNat
-  if exp == 255 then
-    let s := if sign then 0x8000#16 else 0#16
-    if frac == 0 then s ||| 0x7c00#16
-    else s ||| 0x7e00#16 ||| (x.extractLsb' 13 9).zeroExtend 16
-  else if exp == 0 && frac == 0 then
-    if sign then 0x8000#16 else 0#16
-  else
-    let (v, e) := if exp == 0 then (frac, 1 - 127 - 23) else (frac + 2 ^ 23, (exp : Int) - 127 - 23)
-    FpFmt.f16.round sign v e mode
+def f32ToF16 (mode : Nat) (x : BitVec 32) : BitVec 16 := FpFmt.f32.convert .f16 mode x
