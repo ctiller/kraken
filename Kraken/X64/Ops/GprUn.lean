@@ -1,9 +1,9 @@
 module
 
 public import Kraken.X64.Mnemonic
+public import Kraken.X64.Ops.Flags
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
-public import Kraken.X64.Ops.Flags
 
 /-! General-purpose unary operations `op src, %dst` (`AT&T`), `dst := op(src)` on `n`-bit values. -/
 
