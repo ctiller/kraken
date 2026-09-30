@@ -907,63 +907,31 @@ def scasLoop (w : Width) (rep : RepPrefix) (next : MachineData → Effects) : Na
     let cf := v.signed != a.signed * b.signed
     undefined (λ sf => undefined (λ zf => undefined (λ af => undefined (λ pf =>
     next { s with status := { cf := cf, pf, af, zf, sf, of := cf, df := s.status.df }})))))))
-  | .div src =>
+  | .div src | .idiv src =>
     src.interp s p (fun b s =>
-    let bn := b.unsigned
-    if bn == 0 then .fault "#DE: divide by zero" else
-    let an := if w == .W8 then (s.regs.get (.low .rax .W16)).unsigned
-      else (s.regs.get (Reg.low .rax w)).unsigned + ((s.regs.get (Reg.low .rdx w)).unsigned <<< w.bits)
-    let q := an / bn
-    let r := an % bn
-    if q >= 2 ^ w.bits then .fault "#DE: divide overflow" else
+    let signed := i matches .idiv ..
+    let bVal : Int := if signed then b.signed else b.unsigned
+    if bVal == 0 then .fault "#DE: divide by zero" else
+    let aVal : Int := if w == .W8
+      then (if signed then (s.regs.get (.low .rax .W16)).signed else (s.regs.get (.low .rax .W16)).unsigned)
+      else (s.regs.get (Reg.low .rax w)).unsigned + ((if signed then (s.regs.get (.low .rdx w)).signed else (s.regs.get (.low .rdx w)).unsigned) <<< w.bits)
+    let q := aVal.tdiv bVal
+    let r := aVal.tmod bVal
+    let (lo, hi) : Int × Int := if signed then (-(2 ^ (w.bits - 1)), 2 ^ (w.bits - 1) - 1) else (0, 2 ^ w.bits - 1)
+    if q < lo || q > hi then .fault "#DE: divide overflow" else
     let s := if w == .W8
       then s.setReg (.low .rax .W16) (BitVec.ofInt 8 r ++ BitVec.ofInt 8 q)
       else (s.setReg (.low .rax w) (.ofInt _ q)).setReg (.low .rdx w) (.ofInt _ r)
-    s.status.update { cf := .undef, pf := .undef, af := .undef, zf := .undef, sf := .undef, of := .undef }
-      fun status => next { s with status })
-  | .idiv src =>
-    src.interp s p (fun b s =>
-    let bInt := b.signed
-    if bInt == 0 then .fault "#DE: divide by zero" else
-    let aInt := if w == .W8 then (s.regs.get (.low .rax .W16)).signed
-      else (s.regs.get (Reg.low .rax w)).unsigned + ((s.regs.get (Reg.low .rdx w)).signed <<< w.bits)
-    let q := aInt.tdiv bInt
-    let r := aInt.tmod bInt
-    let minVal := -(2 ^ (w.bits - 1))
-    let maxVal := 2 ^ (w.bits - 1) - 1
-    if q < minVal || q > maxVal then .fault "#DE: divide overflow" else
-    let s := if w == .W8
-      then s.setReg (.low .rax .W16) (BitVec.ofInt 8 r ++ BitVec.ofInt 8 q)
-      else (s.setReg (.low .rax w) (.ofInt _ q)).setReg (.low .rdx w) (.ofInt _ r)
-    s.status.update { cf := .undef, pf := .undef, af := .undef, zf := .undef, sf := .undef, of := .undef }
-      fun status => next { s with status })
+    s.status.update .allUndef fun status => next { s with status })
   | .cbw =>
-    match (generalizing := false) (motive := Width → Effects) w with
-    | .W16 =>
-      let al := s.regs.get (.low .rax .W8)
-      next (s.setReg (.low .rax .W16) (al.signExtend 16))
-    | .W32 =>
-      let ax := s.regs.get (.low .rax .W16)
-      next (s.setReg (.low .rax .W32) (ax.signExtend 32))
-    | .W64 =>
-      let eax := s.regs.get (.low .rax .W32)
-      next (s.setReg (.low .rax .W64) (eax.signExtend 64))
-    | .W8 => .unimplemented "cbw w8"
+    if w == .W8 then .unimplemented "cbw w8" else
+    let low := (s.regs.get (Reg.low .rax w)).take (w.bits / 2)
+    next (s.setReg (.low .rax w) (low.signExtend w.bits))
   | .cwd =>
-    match (generalizing := false) (motive := Width → Effects) w with
-    | .W16 =>
-      let ax := s.regs.get (.low .rax .W16)
-      let dx : BitVec 16 := if ax.msb then -1#16 else 0#16
-      next (s.setReg (.low .rdx .W16) dx)
-    | .W32 =>
-      let eax := s.regs.get (.low .rax .W32)
-      let edx : BitVec 32 := if eax.msb then -1#32 else 0#32
-      next (s.setReg (.low .rdx .W32) edx)
-    | .W64 =>
-      let rax := s.regs.get (.low .rax .W64)
-      let rdx : BitVec 64 := if rax.msb then -1#64 else 0#64
-      next (s.setReg (.low .rdx .W64) rdx)
-    | .W8 => .unimplemented "cwd w8"
+    if w == .W8 then .unimplemented "cwd w8" else
+    let ax := s.regs.get (Reg.low .rax w)
+    let dx := BitVec.ofInt w.bits (if ax.msb then -1 else 0)
+    next (s.setReg (.low .rdx w) dx)
 -- Bitwise
   | .test a b =>
     a.interp s p (fun a s =>

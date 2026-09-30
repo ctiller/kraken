@@ -185,15 +185,13 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .div src => s!"div {src.toStr addr_w}"
   | .idiv src => s!"idiv {src.toStr addr_w}"
   | .cbw => match w with
-    | .W16 => "cbw"
+    | .W8 | .W16 => "cbw"
     | .W32 => "cwde"
     | .W64 => "cdqe"
-    | .W8 => "cbw"
   | .cwd => match w with
-    | .W16 => "cwd"
+    | .W8 | .W16 => "cwd"
     | .W32 => "cdq"
     | .W64 => "cqo"
-    | .W8 => "cwd"
   | .test a b => s!"test {a.toStr addr_w}, {b.toStr addr_w}"
   | .and dst src => s!"and {dst.toStr addr_w}, {src.toStr addr_w}"
   | .not dst => s!"not {dst.toStr addr_w}"

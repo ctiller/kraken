@@ -22,3 +22,6 @@ structure FlagsOut where
   of : FlagOut := .keep
   deriving Repr, DecidableEq
 
+def FlagsOut.allUndef : FlagsOut :=
+  { cf := .undef, pf := .undef, af := .undef, zf := .undef, sf := .undef, of := .undef }
+
