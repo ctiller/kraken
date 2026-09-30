@@ -877,10 +877,10 @@ match i with
     src.interp s p (checkAlign := op.aligned) (fun v s => s.setAvx dst v p next op.aligned)
   | .sse op dst src =>
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    next (s.setAvxLegacyReg dst (.map2 128 op.interp (s.zmms.get dst) b)))
+    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b)))
   | .vex op dst src1 src2 =>
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
-    next (s.setAvxReg dst (.map2 128 op.interp (s.zmms.get src1) b)))
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b)))
   | .sseUn op dst src =>
     src.interpSimd (op.memBytes? w.bytes) s p (legacy := true) (fun a s =>
     next (s.setAvxLegacyReg dst (op.interp a)))
