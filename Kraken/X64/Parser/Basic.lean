@@ -711,6 +711,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     let (addr_w2, b) ← parseRegOrMem; parseComma
     let addr_w ← mergeAddrWidths addr_w1 addr_w2
     let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
+    if w matches .W8 | .W16 then fail s!"{mn}: expected 32- or 64-bit operands"
     let (src1, src2) := if op.src2First then (b, a) else (a, b)
     match ← ascribe w src1 with
     | .reg src1 => pure (toInstr addr_w (.bin op dst src1 (← ascribe w src2)))

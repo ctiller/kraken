@@ -180,3 +180,5 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard roundtrips "pushq $0" && roundtrips "crc32 %al, %eax"
 -- `rep` prefixes only apply to string instructions.
 #guard (parse "rep addq %rax, %rbx") matches .error _
+-- BMI operands are 32 or 64 bits wide.
+#guard (parse "shlx %ax, %bx, %cx") matches .error _

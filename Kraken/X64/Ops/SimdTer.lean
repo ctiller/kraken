@@ -48,7 +48,6 @@ structure SimdFmaOp where
 
 namespace SimdFmaOp
 def scalar (op : SimdFmaOp) : Bool := op.type.scalar
-def elemBits (op : SimdFmaOp) : Nat := op.type.elemBits
 
 instance : Mnemonic SimdFmaOp where
   names := Id.run do
@@ -64,7 +63,7 @@ others coming from `dst`). The order `132` computes `dst * src3 + src2`, `213` `
 and `231` `src2 * src3 + dst`; the kind picks the signs (alternating kinds: `fmaddsub` subtracts
 in even elements and adds in odd ones, `fmsubadd` the reverse). -/
 def interp {n} (op : SimdFmaOp) (a b c : BitVec n) : BitVec n :=
-  let fmt : FpFmt := if op.type matches .ps | .ss then .f32 else .f64
+  let fmt : FpFmt := if op.type.elemBits = 32 then .f32 else .f64
   let k := fmt.bits
   let elem (i : Nat) : BitVec k :=
     let (x, y, z) := match op.order with

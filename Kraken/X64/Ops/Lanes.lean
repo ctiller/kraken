@@ -4,7 +4,8 @@ public import Kraken.X64.Mnemonic
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
-/-! Pure helpers for SIMD opcode semantics: lanes of bit vectors, saturation, and SSE floats. -/
+/-! Pure helpers for SIMD opcode semantics: lanes of bit vectors, saturation, SSE floats, and the
+floating-point element types (`FpType`) shared by opcode families. -/
 
 @[expose] public section
 
@@ -33,8 +34,8 @@ def satS (k : Nat) (v : Int) : BitVec k := .ofInt k (max (-2 ^ (k - 1)) (min (2 
 /-- `v` saturated to the unsigned range of `k` bits. -/
 def satU (k : Nat) (v : Int) : BitVec k := .ofInt k (max 0 (min (2 ^ k - 1) v))
 
-/-- Packs `2 * k`-bit lanes into `k`-bit lanes with saturation `sat`: a's narrowed lanes
-fill the low half of each 128-bit lane and b's the high half. -/
+/-- Packs `2 * k`-bit lanes into `k`-bit lanes with saturation `sat`: a's narrowed lanes fill
+the low half of the result and b's the high half. -/
 def pack {n} (k : Nat) (sat : Int → BitVec k) (a b : BitVec n) : BitVec n :=
   ofLanes n k fun i =>
     let half := n / (2 * k)

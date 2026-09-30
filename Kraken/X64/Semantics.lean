@@ -469,21 +469,19 @@ def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
 @[kstep] def addFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
   let cin : BitVec w := if c then 1 else 0
   let v := a + b + cin
-  let cnat : Nat := if c then 1 else 0
   let cint : Int := if c then 1 else 0
   (v, StatusFlags.from_result old v {
-    cf := v.unsigned != a.unsigned + b.unsigned + cnat
-    af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + cnat
+    cf := v.unsigned != a.unsigned + b.unsigned + cint
+    af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + cint
     of := v.signed != a.signed + b.signed + cint })
 
 @[kstep] def subFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
   let cin : BitVec w := if c then 1 else 0
   let v := a - b - cin
-  let cnat : Nat := if c then 1 else 0
   let cint : Int := if c then 1 else 0
   (v, StatusFlags.from_result old v {
-    cf := v.unsigned != a.unsigned - b.unsigned - cnat
-    af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned - cnat
+    cf := v.unsigned != a.unsigned - b.unsigned - cint
+    af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned - cint
     of := v.signed != a.signed - b.signed - cint })
 
 @[kstep] def incFlags {w} (old : StatusFlags) (a : BitVec w) : BitVec w × StatusFlags :=
@@ -507,13 +505,18 @@ def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
     af := (b.take 4) != 0
     of := v.signed != - b.signed })
 
-def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineData → Effects)
-    (body : MachineData → (MachineData → Effects) → Effects) : Effects :=
+/-- Runs a string instruction on `w`-sized elements: `body delta` processes one element and
+advances rsi/rdi by `delta` (backwards if DF is set). With a `rep` prefix this repeats while rcx,
+decremented after each element, is nonzero; comparing instructions (`cmp`: cmps, scas) also stop
+when ZF is clear (repe) or set (repne). -/
+def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineData → Effects)
+    (body : BitVec 64 → MachineData → (MachineData → Effects) → Effects) : Effects :=
+  let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
   let rec loop (fuel : Nat) (s : MachineData) : Effects :=
     match fuel with
     | 0 => .unimplemented "rep count exceeded limit"
     | fuel + 1 =>
-      body s fun s =>
+      body delta s fun s =>
         match rp with
         | .none => next s
         | _ =>
@@ -524,8 +527,6 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
   match rp with
   | .none => loop 1 s
   | _ => if s.regs.get64 .rcx == 0 then next s else loop 1000000 s
-
-
 
 @[kstep] def Operation.interp [Labels] [address_size : AddressSize]
   {w} (i : Operation w) (p : Std.Rco Int64) (s : MachineData)
@@ -674,30 +675,26 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
   | .cld => next { s with status := { s.status with df := false } }
   | .std => next { s with status := { s.status with df := true } }
   | .movs rp =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rp false s next fun s k =>
+    stringLoop w rp false s next fun delta s k =>
       let rsi := s.regs.get64 .rsi
       let rdi := s.regs.get64 .rdi
       s.load rsi w fun val s =>
       s.store rdi val fun s =>
       k { s with regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
   | .stos rp =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rp false s next fun s k =>
+    stringLoop w rp false s next fun delta s k =>
       let rdi := s.regs.get64 .rdi
       let val := s.regs.get (Reg.low .rax w)
       s.store rdi val fun s =>
       k { s with regs := s.regs.set64 .rdi (rdi + delta) }
   | .lods rp =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rp false s next fun s k =>
+    stringLoop w rp false s next fun delta s k =>
       let rsi := s.regs.get64 .rsi
       s.load rsi w fun val s =>
       let s := s.setReg (Reg.low .rax w) val
       k { s with regs := s.regs.set64 .rsi (rsi + delta) }
   | .cmps rp =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rp true s next fun s k =>
+    stringLoop w rp true s next fun delta s k =>
       let rsi := s.regs.get64 .rsi
       let rdi := s.regs.get64 .rdi
       s.load rsi w fun a s =>
@@ -705,8 +702,7 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
       let (_, status) := subFlags s.status a b
       k { s with status, regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
   | .scas rp =>
-    let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
-    stringLoop rp true s next fun s k =>
+    stringLoop w rp true s next fun delta s k =>
       let rdi := s.regs.get64 .rdi
       let a := s.regs.get (Reg.low .rax w)
       s.load rdi w fun b s =>
@@ -854,18 +850,19 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
   | .shl dst count | .shr dst count | .sar dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
+    -- A zero count leaves flags unchanged but still writes dst, zero-extending 32-bit registers.
     if count == 0 then s.set dst a p next else
     let v := match i with
       | .shl _ _ => a <<< count
       | .shr _ _ => a.ushiftRight count
-      | _ => a.sshiftRight count
+      | _ /- sar -/ => a.sshiftRight count
     let cfBit := match i with
       | .shl _ _ => (a <<< (count-1)).msb
-      | _ => a.getLsbD (count-1)
+      | _ /- shr, sar -/ => a.getLsbD (count-1)
     let ofBit := match i with
       | .shl _ _ => v.msb != a.msb
       | .shr _ _ => a.msb
-      | _ => false
+      | _ /- sar -/ => false
     undefined (λ af =>
     (λ setcf => if count < w.bits then setcf cfBit else undefined setcf) (λ cf =>
     (λ setof => if count == 1 then setof ofBit else undefined setof) (λ of =>
@@ -877,14 +874,15 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
     if count == 0 then s.set dst a p next else
     let v := match i with
       | .shrd _ _ _ => (((b.append a) >>> count).take w.bits).setWidth _
-      | _ => (((a.append b) <<< count).drop w.bits).setWidth _
+      | _ /- shld -/ => (((a.append b) <<< count).drop w.bits).setWidth _
     (λ setstatus => if count >= w.bits then s.status.update .allUndef setstatus else
       let cf := match i with
         | .shrd _ _ _ => a.getLsbD (count-1)
-        | _ => (a <<< (count-1)).msb
+        | _ /- shld -/ => (a <<< (count-1)).msb
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
       setstatus (.from_result s.status v { cf, af, of })))) (λ status =>
+    -- The result is undefined if the count exceeds the operand size (only possible for 16 bits).
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
     { s with status }.set dst v p next))))
   | .rol dst count | .ror dst count =>
@@ -893,7 +891,7 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
     if count == 0 then s.set dst a p next else
     let (v, cf) := match i with
       | .rol _ _ => let v := a.rotateLeft count; (v, v.getLsbD 0)
-      | _ => let v := a.rotateRight count; (v, v.msb)
+      | _ /- ror -/ => let v := a.rotateRight count; (v, v.msb)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
     { s with status := { s.status with cf, of } }.set dst v p next))
   | .rcr dst count | .rcl dst count =>
@@ -903,7 +901,7 @@ def stringLoop (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineDa
     let ext := BitVec.ofBool s.status.cf ++ a
     let t := match i with
       | .rcr _ _ => ext.rotateRight count
-      | _ => ext.rotateLeft count
+      | _ /- rcl -/ => ext.rotateLeft count
     let (cf, v) := (t.msb, t.take w.bits)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
     { s with status := { s.status with cf, of } }.set dst v p next))

@@ -20,8 +20,9 @@ def GprBinOp.src2First : GprBinOp → Bool
   | .andn | .pdep | .pext => true
   | .bextr | .bzhi | .sarx | .shlx | .shrx => false
 
-/-- Helper for parallel deposit/extract (`pdep`/`pext`). -/
-def pdepPext {n} (a b : BitVec n) (deposit : Bool) : BitVec n :=
+/-- `pdep` (`deposit`) scatters the low bits of `a` to the positions of the set bits of the mask
+`b`; `pext` gathers the bits of `a` at those positions into the low bits. -/
+def GprBinOp.pdepPext {n} (a b : BitVec n) (deposit : Bool) : BitVec n :=
   (List.range n).foldl (fun (r, k) m =>
     if b.getLsbD m then
       let bit := if deposit then a.getLsbD k else a.getLsbD m
@@ -41,8 +42,9 @@ def GprBinOp.interp {n} : GprBinOp → BitVec n → BitVec n → BitVec n × Fla
     let idx := a.toNat &&& 0xff
     let r := b &&& ((1 <<< idx) - 1)
     (r, { cf := decide (idx > n - 1), pf := .undef, af := .undef, zf := r == 0, sf := r.msb, of := false })
-  | .pdep, a, b => (pdepPext a b true, {})
-  | .pext, a, b => (pdepPext a b false, {})
+  | .pdep, a, b => (pdepPext a b (deposit := true), {})
+  | .pext, a, b => (pdepPext a b (deposit := false), {})
+  -- The count is masked to 5 or 6 bits (the operands are 32 or 64 bits wide).
   | .sarx, a, b => (b.sshiftRight (a.toNat % n), {})
   | .shlx, a, b => (b <<< (a.toNat % n), {})
   | .shrx, a, b => (b.ushiftRight (a.toNat % n), {})

@@ -37,7 +37,9 @@ def SimdUnImmOp.interp {n} (op : SimdUnImmOp) (a : BitVec n) (imm : BitVec 8) : 
   match op with
   | .pshufd | .permilps => .ofLanes n 32 fun i => a.pick4 32 i (imm >>> (i % 4 * 2)).toNat
   | .pshuflw | .pshufhw => .ofLanes n 16 fun i =>
-    if (i % 8 < 4) == (op == .pshuflw) then a.pick4 16 i (imm >>> (i % 4 * 2)).toNat else a.lane 16 i
+    -- Shuffles the low (pshuflw) or high (pshufhw) four words of each 128-bit lane.
+    let shuffled := if op == .pshuflw then i % 8 < 4 else i % 8 >= 4
+    if shuffled then a.pick4 16 i (imm >>> (i % 4 * 2)).toNat else a.lane 16 i
   | .permq | .permpd => .ofLanes n 64 fun i => a.lane 64 (imm >>> (i % 4 * 2) &&& 3).toNat
   | .permilpd => .ofLanes n 64 fun i => a.lane 64 (i / 2 * 2 + (imm >>> i).toNat % 2)
   | .roundps => .map1 32 (FpFmt.f32.roundInt (roundImmMode imm)) a
