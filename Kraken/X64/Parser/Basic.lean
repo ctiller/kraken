@@ -784,8 +784,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     let ⟨w, src⟩ ← parseAvxRegW; parseComma
     let (addr_w, dst) ← parseAvxRegOrMem
     match w with
-    | .W128 => pure (toAvxInstr addr_w (.vcvtps2ph (← ascribeAvx .W128 dst) src imm))
-    | .W256 => pure (toAvxInstr addr_w (.vcvtps2ph (← ascribeAvx .W128 dst) src imm))
+    | .W128 | .W256 => pure (toAvxInstr addr_w (.vcvtps2ph (← ascribeAvx .W128 dst) src imm))
     | _ => fail "vcvtps2ph requires xmm or ymm source"
   for (vex, name) in [(false, mn), (true, v)] do
     if let some (op, w?) := lookupSized SimdToGprOp name then ps := ps.push do
@@ -1042,10 +1041,7 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     commaSeparated w parseOperand parseRegOrMem .mov
 
   | "movnti" | "movntil" | "movntiq" =>
-    let w? : Option Width := match mn with
-      | "movntil" => some .W32
-      | "movntiq" => some .W64
-      | _ => none
+    let w? := match mn with | "movntil" => some .W32 | "movntiq" => some .W64 | _ => none
     let ⟨w, src⟩ ← parseRegW; checkSuffix w? w; parseComma
     if w != .W32 && w != .W64 then fail "movnti requires 32-bit or 64-bit operand"
     let (addr_w, dst) ← parseMemory
@@ -1101,13 +1097,7 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     let ⟨ _w_dst, dst ⟩ ← parseRegW
     pure (toInstr .none (.movzx (.reg dst) (.reg src)))
 
-  | "movslq" =>
-    let (addr_w, src) ← parseRegOrMemAO .W32; parseComma
-    let dst ← parseRegO .W64
-    pure (toInstr addr_w (.movsx (.reg dst) src))
-
-  | "movsxd" =>
-    -- Intel mnemonic movsxd: in AT&T syntax `movsxd src, dst` (src: 32-bit reg/mem, dst: 64-bit reg)
+  | "movslq" | "movsxd" =>
     let (addr_w, src) ← parseRegOrMemAO .W32; parseComma
     let dst ← parseRegO .W64
     pure (toInstr addr_w (.movsx (.reg dst) src))
@@ -1442,30 +1432,16 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
       pure (toInstr (some addr_w) (w := .W8) .xlat)) <|>
       pure (toInstr .none (w := .W8) .xlat)
 
-  | "jrcxz" =>
+  | "jrcxz" | "jecxz" | "loop" | "loope" | "loopz" | "loopne" | "loopnz" =>
     skipHWs
     let target ← parseLabelRaw
-    pure (toInstr .none (w := .W64) (.jrcxz target))
-
-  | "jecxz" =>
-    skipHWs
-    let target ← parseLabelRaw
-    pure (toInstr .none (w := .W64) (.jecxz target))
-
-  | "loop" =>
-    skipHWs
-    let target ← parseLabelRaw
-    pure (toInstr .none (w := .W64) (.loop .none target))
-
-  | "loope" | "loopz" =>
-    skipHWs
-    let target ← parseLabelRaw
-    pure (toInstr .none (w := .W64) (.loop .e target))
-
-  | "loopne" | "loopnz" =>
-    skipHWs
-    let target ← parseLabelRaw
-    pure (toInstr .none (w := .W64) (.loop .ne target))
+    let op := match mn with
+      | "jrcxz" => .jrcxz target
+      | "jecxz" => .jecxz target
+      | "loope" | "loopz" => .loop .e target
+      | "loopne" | "loopnz" => .loop .ne target
+      | _ => .loop .none target
+    pure (toInstr .none (w := .W64) op)
 
   -- Control flow - conditional jumps
   | _ =>
@@ -1495,21 +1471,19 @@ def parseInstr : Parser Instr := do
   let mut mnemonic ← parseName
   -- The `lock` prefix doesn't change single-threaded semantics.
   if mnemonic.toLower == "lock" then skipHWs; mnemonic ← parseName
-  let mut rep : RepPrefix := .none
-  let lower := mnemonic.toLower
-  if lower == "rep" then
-    rep := .rep
-    skipHWs; mnemonic ← parseName
-  else if lower == "repe" || lower == "repz" then
-    rep := .repe
-    skipHWs; mnemonic ← parseName
-  else if lower == "repne" || lower == "repnz" then
-    rep := .repne
-    skipHWs; mnemonic ← parseName
+  let rep := match mnemonic.toLower with
+    | "rep" => .rep
+    | "repe" | "repz" => .repe
+    | "repne" | "repnz" => .repne
+    | _ => .none
+  if rep != .none then skipHWs; mnemonic ← parseName
   let mn := mnemonic.toLower
-  match parseFamily? mn with
-  | some p => attempt p <|> parseExplicit mnemonic mn rep
-  | none => parseExplicit mnemonic mn rep
+  if rep != .none then
+    parseExplicit mnemonic mn rep
+  else
+    match parseFamily? mn with
+    | some p => attempt p <|> parseExplicit mnemonic mn rep
+    | none => parseExplicit mnemonic mn rep
 
 -- ============================================================================
 -- Label Parsing
