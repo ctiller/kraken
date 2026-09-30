@@ -66,7 +66,8 @@ def corpus : List String := [
   "a:\nb: ret\n\nc:",
   -- AVX
   "movups %xmm0, %xmm1", "vmovups (%rsp), %ymm2", "vmovups %zmm31, 64(%rsp)",
-  "movaps %xmm3, %xmm4", "addps (%rax), %xmm5", "subps %xmm6, %xmm7"
+  "movaps %xmm3, %xmm4", "addps (%rax), %xmm5", "subps %xmm6, %xmm7",
+  "vzeroupper", "vzeroall", "movq %xmm1, %xmm0", "vmovq %xmm1, %xmm0"
 ]
 
 /-- info: [] -/
@@ -100,6 +101,22 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   failing SimdTestOp (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm3, %xmm4"]) ++
   failing SimdBlendvOp (fun _ mn => [s!"{mn} %xmm0, (%rsp), %xmm1", s!"v{mn} %ymm1, %ymm2, %ymm3, %ymm4"]) ++
   failing SimdFmaOp (fun _ mn => [s!"v{mn} (%rsp), %xmm1, %xmm2", s!"v{mn} %xmm1, %xmm2, %xmm3"]) ++
+  failing SimdScalarMov (fun _ mn => [
+    s!"{mn} %xmm1, %xmm0",
+    s!"{mn} (%rsp), %xmm0",
+    s!"{mn} %xmm0, (%rsp)",
+    s!"v{mn} %xmm2, %xmm1, %xmm0",
+    s!"v{mn} (%rsp), %xmm0",
+    s!"v{mn} %xmm0, (%rsp)"
+  ]) ++
+  failing SimdExtract128Op (fun _ mn => [
+    s!"v{mn} $1, %ymm0, %xmm1",
+    s!"v{mn} $0, %ymm0, (%rsp)"
+  ]) ++
+  failing SimdInsert128Op (fun _ mn => [
+    s!"v{mn} $1, %xmm2, %ymm1, %ymm0",
+    s!"v{mn} $0, (%rsp), %ymm1, %ymm0"
+  ]) ++
   failing HintOp (fun _ mn => [mn])
 
 -- Printed form is canonical AT&T.

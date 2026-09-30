@@ -659,8 +659,9 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       pure (toInstr addr_w (.un op (h ▸ dst.reg) (← ascribe w src)))
     else fail "impossible"
   if let some (op, w?) := lookupSized GprBinOp mn then ps := ps.push do
-    let (addr_w, a) ← parseRegOrMem; parseComma
-    let (_, b) ← parseRegOrMem; parseComma
+    let (addr_w1, a) ← parseRegOrMem; parseComma
+    let (addr_w2, b) ← parseRegOrMem; parseComma
+    let addr_w ← mergeAddrWidths addr_w1 addr_w2
     let dst ← parseRegW
     let w ← regWidth w? dst
     let (src1, src2) := if op.src2First then (b, a) else (a, b)
@@ -731,6 +732,58 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
   if let some op := Mnemonic.ofName? (α := SimdFmaOp) v then ps := ps.push do
     let (addr_w, ⟨_, src3, src2, dst⟩) ← parseAvxSrc2Src1Dst
     pure (toAvxInstr addr_w (.fma op dst src2 src3))
+  if let some op := Mnemonic.ofName? (α := SimdScalarMov) mn then ps := ps.push do
+    let (addr_w1, op1) ← parseAvxRegOrMem; parseComma
+    let rm1 ← ascribeAvx .W128 op1
+    match rm1 with
+    | .mem m =>
+      let ⟨w, dst⟩ ← parseAvxRegW
+      if h : w = .W128 then pure (toAvxInstr addr_w1 (.sseScalarLoad op (h ▸ dst) m))
+      else fail "scalar load destination must be xmm"
+    | .avx src =>
+      let (addr_w2, op2) ← parseAvxRegOrMem
+      let rm2 ← ascribeAvx .W128 op2
+      match rm2 with
+      | .mem m =>
+        pure (toAvxInstr addr_w2 (.sseScalarStore op m src))
+      | .avx dst =>
+        pure (toAvxInstr .none (.sseScalar op dst src))
+  if let some op := Mnemonic.ofName? (α := SimdScalarMov) v then ps := ps.push do
+    let (addr_w1, op1) ← parseAvxRegOrMem; parseComma
+    let rm1 ← ascribeAvx .W128 op1
+    match rm1 with
+    | .mem m =>
+      let ⟨w, dst⟩ ← parseAvxRegW
+      if h : w = .W128 then pure (toAvxInstr addr_w1 (.vexScalarLoad op (h ▸ dst) m))
+      else fail "scalar load destination must be xmm"
+    | .avx src2 =>
+      let (addr_w2, op2) ← parseAvxRegOrMem
+      let rm2 ← ascribeAvx .W128 op2
+      match rm2 with
+      | .mem m =>
+        pure (toAvxInstr addr_w2 (.vexScalarStore op m src2))
+      | .avx src1 =>
+        parseComma
+        let ⟨w3, dst⟩ ← parseAvxRegW
+        if h : w3 = .W128 then pure (toAvxInstr .none (.vexScalar op (h ▸ dst) src1 src2))
+        else fail "scalar destination must be xmm"
+  if let some op := Mnemonic.ofName? (α := SimdExtract128Op) v then ps := ps.push do
+    let imm ← parseImmComma
+    let ⟨w, src⟩ ← parseAvxRegW; parseComma
+    if h : w = .W256 then
+      let (addr_w, dst) ← parseAvxRegOrMem
+      pure (toAvxInstr addr_w (.vextract op (← ascribeAvx .W128 dst) (h ▸ src) imm))
+    else fail "vextract requires ymm source"
+  if let some op := Mnemonic.ofName? (α := SimdInsert128Op) v then ps := ps.push do
+    let imm ← parseImmComma
+    let (addr_w, src2) ← parseAvxRegOrMem; parseComma
+    let ⟨w1, src1⟩ ← parseAvxRegW; parseComma
+    let dst ← parseAvxRegW
+    if h1 : w1 = .W256 then
+      if h2 : dst.w = .W256 then
+        pure (toAvxInstr addr_w (.vinsert op (h2 ▸ dst.reg) (h1 ▸ src1) (← ascribeAvx .W128 src2) imm))
+      else fail "vinsert destination must be ymm"
+    else fail "vinsert source must be ymm"
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
@@ -972,6 +1025,8 @@ def parseExplicit (mnemonic mn : String) : Parser Instr := do
   | "cmc" => pure (toInstr .none (w := .W64) .cmc)
   | "lahf" => pure (toInstr .none (w := .W64) .lahf)
   | "sahf" => pure (toInstr .none (w := .W64) .sahf)
+  | "vzeroupper" => pure (toAvxInstr .none (w := .W256) .vzeroupper)
+  | "vzeroall" => pure (toAvxInstr .none (w := .W256) .vzeroall)
 
   | "movsx" =>
     -- Must be a register otherwise lacking type info
@@ -1268,7 +1323,7 @@ def parseInstr : Parser Instr := do
   if mnemonic.toLower == "lock" then skipHWs; mnemonic ← parseName
   let mn := mnemonic.toLower
   match parseFamily? mn with
-  | some p => attempt (parseExplicit mnemonic mn) <|> p
+  | some p => attempt p <|> parseExplicit mnemonic mn
   | none => parseExplicit mnemonic mn
 
 -- ============================================================================

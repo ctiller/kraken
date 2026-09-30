@@ -179,6 +179,21 @@ def RegZmms.setLegacy (s : RegZmms) {w} (r : AvxReg w) (v : w.type) : RegZmms :=
   | .ymm r => s.set512 r ((s.get512 r).replaceLow v)  -- impossible
   | .xmm r => s.set512 r ((s.get512 r).replaceLow v)
 
+def RegZmms.vzeroupper (s : RegZmms) : RegZmms :=
+  let zeroUpper (v : ZmmValue) : ZmmValue := (v.take 128).zeroExtend 512
+  { s with
+    zmm0 := zeroUpper s.zmm0, zmm1 := zeroUpper s.zmm1, zmm2 := zeroUpper s.zmm2, zmm3 := zeroUpper s.zmm3,
+    zmm4 := zeroUpper s.zmm4, zmm5 := zeroUpper s.zmm5, zmm6 := zeroUpper s.zmm6, zmm7 := zeroUpper s.zmm7,
+    zmm8 := zeroUpper s.zmm8, zmm9 := zeroUpper s.zmm9, zmm10 := zeroUpper s.zmm10, zmm11 := zeroUpper s.zmm11,
+    zmm12 := zeroUpper s.zmm12, zmm13 := zeroUpper s.zmm13, zmm14 := zeroUpper s.zmm14, zmm15 := zeroUpper s.zmm15 }
+
+def RegZmms.vzeroall (s : RegZmms) : RegZmms :=
+  { s with
+    zmm0 := zmmZero, zmm1 := zmmZero, zmm2 := zmmZero, zmm3 := zmmZero,
+    zmm4 := zmmZero, zmm5 := zmmZero, zmm6 := zmmZero, zmm7 := zmmZero,
+    zmm8 := zmmZero, zmm9 := zmmZero, zmm10 := zmmZero, zmm11 := zmmZero,
+    zmm12 := zmmZero, zmm13 := zmmZero, zmm14 := zmmZero, zmm15 := zmmZero }
+
 @[kstep]
 def BitVec.toAddressSize [address_size: AddressSize] (w: BitVec 64): BitVec address_size.address_size.bits :=
   w.take address_size.address_size.bits
@@ -913,6 +928,51 @@ match i with
   | .fma op dst src2 src3 =>
     src3.interpSimd op.memBytes? s p (legacy := false) (fun c s =>
     next (s.setAvxReg dst (op.interp (s.zmms.get dst) (s.zmms.get src2) c)))
+  | .vzeroupper => next { s with zmms := s.zmms.vzeroupper }
+  | .vzeroall => next { s with zmms := s.zmms.vzeroall }
+  | .sseScalar op dst src =>
+    let dval := (s.zmms.get dst).take 128
+    let sval := (s.zmms.get src).take 128
+    let v := match op with
+      | .movss => dval.replaceLow (sval.take 32)
+      | .movsd => dval.replaceLow (sval.take 64)
+    next (s.setAvxLegacyReg dst (v.zeroExtend _))
+  | .vexScalar op dst src1 src2 =>
+    let s1val := (s.zmms.get src1).take 128
+    let s2val := (s.zmms.get src2).take 128
+    let v := match op with
+      | .movss => s1val.replaceLow (s2val.take 32)
+      | .movsd => s1val.replaceLow (s2val.take 64)
+    next (s.setAvxReg dst (v.zeroExtend _))
+  | .sseScalarLoad op dst src =>
+    let addr := (src.interp s.regs p).zeroExtend 64
+    let w : Width := match op with | .movss => .W32 | .movsd => .W64
+    s.load addr w (fun v s =>
+    next (s.setAvxLegacyReg dst (v.zeroExtend _)))
+  | .vexScalarLoad op dst src =>
+    let addr := (src.interp s.regs p).zeroExtend 64
+    let w : Width := match op with | .movss => .W32 | .movsd => .W64
+    s.load addr w (fun v s =>
+    next (s.setAvxReg dst (v.zeroExtend _)))
+  | .sseScalarStore op dst src | .vexScalarStore op dst src =>
+    let addr := (dst.interp s.regs p).zeroExtend 64
+    let v := s.zmms.get src
+    match op with
+    | .movss => s.store addr (v.take 32) next
+    | .movsd => s.store addr (v.take 64) next
+  | .vextract _ dst src imm =>
+    let bit := ((imm.interp p).toBitVec.take 1)[0]
+    let yval : BitVec 256 := (s.zmms.get src).take 256
+    let val128 : BitVec 128 := if bit then yval.extractLsb' 128 128 else yval.take 128
+    s.setAvx dst val128 p next
+  | .vinsert _ dst src1 src2 imm =>
+    src2.interp s p (fun b s =>
+    let bit := ((imm.interp p).toBitVec.take 1)[0]
+    let yval : BitVec 256 := (s.zmms.get src1).take 256
+    let low128 := if bit then yval.take 128 else b
+    let high128 := if bit then b else yval.extractLsb' 128 128
+    let res256 : BitVec 256 := (BitVec.append high128 low128).setWidth _
+    next (s.setAvxReg dst (res256.zeroExtend _)))
 
 @[kstep]
 def Instr.interp [Labels]
