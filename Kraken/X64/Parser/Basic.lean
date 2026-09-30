@@ -526,18 +526,29 @@ def parseOperandAO := parseAO parseOperand
 def parseRegOrMemAO := parseAO parseRegOrMem
 
 -- TODO: why is the dot notation not working here?
-def Char.toWidth (c: Char): Parser Width :=
+def Char.toWidth? (c: Char): Option Width :=
   match c with
-  | 'b' => pure .W8
-  | 'w' => pure .W16
-  | 'l' => pure .W32
-  | 'q' => pure .W64
-  | _ => fail "impossible: unknown suffix"
+  | 'b' => some .W8
+  | 'w' => some .W16
+  | 'l' => some .W32
+  | 'q' => some .W64
+  | _ => none
+
+def Char.toWidth (c: Char): Parser Width :=
+  match Char.toWidth? c with
+  | some w => pure w
+  | none => fail "impossible: unknown suffix"
 
 def instrWidth (s: String): Parser Width :=
   match s.back? with
   | .none => fail "impossible: empty instruction"
   | .some c => Char.toWidth c
+
+/-- Strip a width suffix ('b', 'w', 'l', 'q') from `mn` if present. -/
+def splitWidthSuffix (mn : String) : String × Option Width :=
+  match mn.back?.bind Char.toWidth? with
+  | some w => ((mn.dropEnd 1).copy, some w)
+  | none => (mn, none)
 
 def commaSeparated {T1 T2} (op_w: Option Width) (p1: Parser (MaybeAddrWidth × MaybeOpWidth T1)) (p2: Parser (MaybeAddrWidth × MaybeOpWidth T2))
   (mk: {op_w: Width} → T2 op_w → T1 op_w → Operation op_w): Parser Instr := do
@@ -579,45 +590,63 @@ def Option.toParser {T} (self: Option T): Parser T :=
 
 instance {T} : Coe (Option T) (Parser T) where coe := Option.toParser
 
+def parseBinaryRegOrMem (op_w : Option Width) : Parser (MaybeAddrWidth × Σ w, RegOrMem w × RegOrMem w) := do
+  match op_w with
+  | some w =>
+    let (addr_w1, a) ← parseAO parseRegOrMem w
+    parseComma
+    let (addr_w2, b) ← parseAO parseRegOrMem w
+    let addr_w ← mergeAddrWidths addr_w1 addr_w2
+    pure (addr_w, ⟨w, a, b⟩)
+  | none =>
+    let a ← parseRegOrMem; parseComma
+    ascribeOrInfer a parseRegOrMem
+
+def parseUnaryRegOrMem (op_w : Option Width) : Parser (MaybeAddrWidth × Σ w, RegOrMem w) := do
+  match op_w with
+  | some w =>
+    let (addr_w, src) ← parseRegOrMemAO w
+    pure (addr_w, ⟨w, src⟩)
+  | none =>
+    let (addr_w, src) ← parseRegOrMem
+    let ⟨w, src⟩ ← assertW src
+    pure (addr_w, ⟨w, src⟩)
+
 def parseXchg (op_w : Option Width) : Parser Instr := do
-  let (addr_w, ⟨_w, a, b⟩) ← match op_w with
-    | some w =>
-      let (addr_w1, a) ← parseAO parseRegOrMem w
-      parseComma
-      let (addr_w2, b) ← parseAO parseRegOrMem w
-      let addr_w ← mergeAddrWidths addr_w1 addr_w2
-      pure (addr_w, ⟨w, a, b⟩)
-    | none =>
-      let a ← parseRegOrMem; parseComma
-      ascribeOrInfer a parseRegOrMem
+  let (addr_w, ⟨_w, a, b⟩) ← parseBinaryRegOrMem op_w
   match a, b with
   | .reg r, dst => pure (toInstr addr_w (.xchg dst r))
   | dst, .reg r => pure (toInstr addr_w (.xchg dst r))
   | .mem _, .mem _ => fail "xchg cannot have two memory operands"
 
 def parseMovbe (op_w : Option Width) : Parser Instr := do
-  let (addr_w, ⟨_w, a, b⟩) ← match op_w with
-    | some w =>
-      let (addr_w1, a) ← parseAO parseRegOrMem w
-      parseComma
-      let (addr_w2, b) ← parseAO parseRegOrMem w
-      let addr_w ← mergeAddrWidths addr_w1 addr_w2
-      pure (addr_w, ⟨w, a, b⟩)
-    | none =>
-      let a ← parseRegOrMem; parseComma
-      ascribeOrInfer a parseRegOrMem
+  let (addr_w, ⟨w, a, b⟩) ← parseBinaryRegOrMem op_w
+  if w == .W8 then fail "movbe requires 16-, 32-, or 64-bit operand"
   match a, b with
   | .mem a, .reg r => pure (toInstr addr_w (.movbe (.reg r) (.mem a)))
   | .reg r, .mem a => pure (toInstr addr_w (.movbe (.mem a) (.reg r)))
   | _, _ => fail "movbe requires one register and one memory operand"
 
+/-- If `mn` names a string operation (e.g. `movsb`, `cmpsl`), return the instruction. -/
+def stringOp? (mn : String) (repPfx : RepPrefix := .none) : Option Instr := do
+  guard (mn.length == 5)
+  let w ← match mn.back with
+    | 'b' => some Width.W8 | 'w' => some .W16 | 'l' | 'd' => some .W32 | 'q' => some .W64
+    | _ => none
+  let op : {w : Width} → Operation w ← match (mn.take 4).copy with
+    | "movs" => some (.movs repPfx)
+    | "stos" => some (.stos repPfx)
+    | "lods" => some (.lods repPfx)
+    | "cmps" => some (.cmps repPfx)
+    | "scas" => some (.scas repPfx)
+    | _ => none
+  pure (toInstr .none (w := w) op)
+
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
 def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
   (Mnemonic.ofName? mn).map (·, none) <|> do
-    let w ← match mn.back? with
-      | some 'b' => some Width.W8 | some 'w' => some .W16 | some 'l' => some .W32
-      | some 'q' => some .W64 | _ => none
-    return (← Mnemonic.ofName? (mn.dropEnd 1).copy, some w)
+    let (stem, some w) := splitWidthSuffix mn | none
+    return (← Mnemonic.ofName? stem, some w)
 
 /-- Checks an operand's width against a mnemonic's width suffix. -/
 def checkSuffix (w? : Option Width) (w : Width) : Parser Unit :=
@@ -836,6 +865,38 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
 /-- Parse the operands of the instructions not in a family, named `mn` (lowercase `mnemonic`).
     AT&T syntax: src, dst (reversed from Intel). -/
 def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Instr := do
+  if let some instr := stringOp? mn rep then
+    return instr
+  let (stem, w?) := splitWidthSuffix mn
+  match stem, w? with
+  | "div", w? =>
+    let (addr_w, ⟨_w, src⟩) ← parseUnaryRegOrMem w?
+    pure (toInstr addr_w (.div src))
+  | "idiv", w? =>
+    let (addr_w, ⟨_w, src⟩) ← parseUnaryRegOrMem w?
+    pure (toInstr addr_w (.idiv src))
+  | "xadd", w? =>
+    commaSeparated w? parseRegA parseRegOrMem .xadd
+  | "cmpxchg", w? =>
+    commaSeparated w? parseRegA parseRegOrMem .cmpxchg
+  | "xchg", w? =>
+    parseXchg w?
+  | "movbe", w? =>
+    parseMovbe w?
+  | "crc32", w? =>
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨_, dst⟩ ← parseRegW
+    let some w := w? <|> src.1 | fail "crc32 with a memory source needs a size suffix"
+    pure (toInstr addr_w (.crc32 dst (← ascribe w src)))
+  | "rorx", w? =>
+    let cnt ← parseImmComma
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨w, dst⟩ ← parseRegW
+    checkSuffix w? w
+    if w != .W32 && w != .W64 then fail "rorx requires 32-bit or 64-bit operand"
+    let src ← ascribe w src
+    pure (toInstr addr_w (.rorx dst src cnt))
+  | _, _ =>
   -- Match on full mnemonic name (no suffix stripping)
   match mn with
   -- Arithmetic (two-operand: src, dst) - 64-bit
@@ -963,27 +1024,6 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
       let (addr_w, src) ← parseRegOrMemAO w
       pure (toInstr addr_w (.imul1 src))
     )
-
-  | "div" =>
-    let ( addr_w, src ) ← parseRegOrMem
-    let ⟨ _w, src ⟩ ← assertW src
-    pure (toInstr addr_w (.div src))
-
-  | "divq" | "divl" | "divw" | "divb" =>
-    let w ← instrWidth mn
-    let ( addr_w, src ) ← parseRegOrMemAO w
-    pure (toInstr addr_w (.div src))
-
-  | "idiv" =>
-    let ( addr_w, src ) ← parseRegOrMem
-    let ⟨ _w, src ⟩ ← assertW src
-    pure (toInstr addr_w (.idiv src))
-
-  | "idivq" | "idivl" | "idivw" | "idivb" =>
-    let w ← instrWidth mn
-    let ( addr_w, src ) ← parseRegOrMemAO w
-    pure (toInstr addr_w (.idiv src))
-
   | "cbtw" | "cbw" =>
     pure (toInstr .none (w := .W16) .cbw)
 
@@ -1045,28 +1085,6 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     if w != .W32 && w != .W64 then fail "movnti requires 32-bit or 64-bit operand"
     let (addr_w, dst) ← parseMemory
     pure (toInstr (some addr_w) (w := w) (.movnti dst src))
-
-
-  | "xchg" =>
-    parseXchg .none
-
-  | "xchgq" | "xchgl" | "xchgw" | "xchgb" =>
-    let w ← instrWidth mn
-    parseXchg (some w)
-
-  | "xadd" =>
-    commaSeparated .none parseRegA parseRegOrMem .xadd
-
-  | "xaddq" | "xaddl" | "xaddw" | "xaddb" =>
-    let w ← instrWidth mn
-    commaSeparated w parseRegA parseRegOrMem .xadd
-
-  | "cmpxchg" =>
-    commaSeparated .none parseRegA parseRegOrMem .cmpxchg
-
-  | "cmpxchgq" | "cmpxchgl" | "cmpxchgw" | "cmpxchgb" =>
-    let w ← instrWidth mn
-    commaSeparated w parseRegA parseRegOrMem .cmpxchg
 
   | "cmpxchg8b" =>
     let (addr_w, a) ← parseMemory
@@ -1297,35 +1315,6 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
       fail "inconsistency in {mn}"
     else
       pure (toInstr .none (.bswap dst))
-
-  | "movbe" =>
-    parseMovbe .none
-
-  | "movbeq" | "movbel" | "movbew" =>
-    let w ← instrWidth mn
-    parseMovbe (some w)
-
-  | "crc32" | "crc32q" | "crc32l" | "crc32w" | "crc32b" =>
-    let w? ← if mn == "crc32" then pure none else some <$> instrWidth mn
-    let (addr_w, src) ← parseRegOrMem; parseComma
-    let ⟨_, dst⟩ ← parseRegW
-    let some w := w? <|> src.1 | fail "crc32 with a memory source needs a size suffix"
-    pure (toInstr addr_w (.crc32 dst (← ascribe w src)))
-
-  | "rorx" =>
-    let cnt ← parseImmComma
-    let (addr_w, src) ← parseRegOrMem; parseComma
-    let ⟨w, dst⟩ ← parseRegW
-    let src ← ascribe w src
-    pure (toInstr addr_w (.rorx dst src cnt))
-
-  | "rorxq" | "rorxl" =>
-    let w ← instrWidth mn
-    let cnt ← parseImmComma
-    let (addr_w, src) ← parseRegOrMemAO w; parseComma
-    let dst ← parseRegO w
-    pure (toInstr addr_w (.rorx dst src cnt))
-
   -- Stack operations
   | "push" =>
     let ( addr_w, src ) ← parseOperand
@@ -1361,32 +1350,6 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
 
   | "std" =>
     pure (toInstr .none (w := .W64) .std)
-
-  | "movsb" => pure (toInstr .none (w := .W8) (.movs rep))
-  | "movsw" => pure (toInstr .none (w := .W16) (.movs rep))
-  | "movsl" | "movsd" => pure (toInstr .none (w := .W32) (.movs rep))
-  | "movsq" => pure (toInstr .none (w := .W64) (.movs rep))
-
-  | "stosb" => pure (toInstr .none (w := .W8) (.stos rep))
-  | "stosw" => pure (toInstr .none (w := .W16) (.stos rep))
-  | "stosl" | "stosd" => pure (toInstr .none (w := .W32) (.stos rep))
-  | "stosq" => pure (toInstr .none (w := .W64) (.stos rep))
-
-  | "lodsb" => pure (toInstr .none (w := .W8) (.lods rep))
-  | "lodsw" => pure (toInstr .none (w := .W16) (.lods rep))
-  | "lodsl" | "lodsd" => pure (toInstr .none (w := .W32) (.lods rep))
-  | "lodsq" => pure (toInstr .none (w := .W64) (.lods rep))
-
-  | "cmpsb" => pure (toInstr .none (w := .W8) (.cmps rep))
-  | "cmpsw" => pure (toInstr .none (w := .W16) (.cmps rep))
-  | "cmpsl" | "cmpsd" => pure (toInstr .none (w := .W32) (.cmps rep))
-  | "cmpsq" => pure (toInstr .none (w := .W64) (.cmps rep))
-
-  | "scasb" => pure (toInstr .none (w := .W8) (.scas rep))
-  | "scasw" => pure (toInstr .none (w := .W16) (.scas rep))
-  | "scasl" | "scasd" => pure (toInstr .none (w := .W32) (.scas rep))
-  | "scasq" => pure (toInstr .none (w := .W64) (.scas rep))
-
   | "ud2" =>
     pure (toInstr .none (w := .W64) .ud2)
 
@@ -1472,8 +1435,7 @@ def parseInstr : Parser Instr := do
     | _ => .none
   if rep != .none then skipHWs; mnemonic ← parseName
   let mn := mnemonic.toLower
-  if rep != .none && !(mn.length == 5 && "bwlqd".contains mn.back &&
-      ["movs", "stos", "lods", "cmps", "scas"].any (mn.startsWith ·)) then
+  if rep != .none && (stringOp? mn).isNone then
     fail "rep prefixes apply only to string instructions"
   if rep != .none then
     parseExplicit mnemonic mn rep
