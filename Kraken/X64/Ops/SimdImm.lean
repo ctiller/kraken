@@ -33,18 +33,16 @@ def BitVec.pick4 {n} (k : Nat) (x : BitVec n) (i sel : Nat) : BitVec k := x.lane
 def roundImmMode (imm : BitVec 8) : Nat :=
   if imm.getLsbD 2 then 0 else (imm &&& 3).toNat
 
-def SimdUnImmOp.interp {n} : SimdUnImmOp → BitVec n → BitVec 8 → BitVec n
-  | .pshufd, a, imm => .ofLanes n 32 fun i => a.pick4 32 i (imm >>> (i % 4 * 2)).toNat
-  | .pshuflw, a, imm => .ofLanes n 16 fun i =>
-    if i % 8 < 4 then a.pick4 16 i (imm >>> (i % 4 * 2)).toNat else a.lane 16 i
-  | .pshufhw, a, imm => .ofLanes n 16 fun i =>
-    if i % 8 >= 4 then a.pick4 16 i (imm >>> ((i % 4) * 2)).toNat else a.lane 16 i
-  | .permq, a, imm | .permpd, a, imm => .ofLanes n 64 fun i => a.lane 64 (imm >>> (i % 4 * 2) &&& 3).toNat
-  | .permilps, a, imm => .ofLanes n 32 fun i => a.pick4 32 i (imm >>> (i % 4 * 2)).toNat
-  | .permilpd, a, imm => .ofLanes n 64 fun i => a.lane 64 (i / 2 * 2 + (imm >>> i).toNat % 2)
-  | .roundps, a, imm => .map1 32 (FpFmt.f32.roundInt (roundImmMode imm)) a
-  | .roundpd, a, imm => .map1 64 (FpFmt.f64.roundInt (roundImmMode imm)) a
-  | .aeskeygenassist, a, imm => .map1 128 (aesKeygenAssist imm) a
+def SimdUnImmOp.interp {n} (op : SimdUnImmOp) (a : BitVec n) (imm : BitVec 8) : BitVec n :=
+  match op with
+  | .pshufd | .permilps => .ofLanes n 32 fun i => a.pick4 32 i (imm >>> (i % 4 * 2)).toNat
+  | .pshuflw | .pshufhw => .ofLanes n 16 fun i =>
+    if (i % 8 < 4) == (op == .pshuflw) then a.pick4 16 i (imm >>> (i % 4 * 2)).toNat else a.lane 16 i
+  | .permq | .permpd => .ofLanes n 64 fun i => a.lane 64 (imm >>> (i % 4 * 2) &&& 3).toNat
+  | .permilpd => .ofLanes n 64 fun i => a.lane 64 (i / 2 * 2 + (imm >>> i).toNat % 2)
+  | .roundps => .map1 32 (FpFmt.f32.roundInt (roundImmMode imm)) a
+  | .roundpd => .map1 64 (FpFmt.f64.roundInt (roundImmMode imm)) a
+  | .aeskeygenassist => .map1 128 (aesKeygenAssist imm) a
 
 inductive SimdBinImmOp
   | shufps | shufpd
@@ -111,22 +109,16 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
     let dst_idx := (imm.toNat >>> 4) &&& 3
     let zmask := imm.toNat &&& 0xf
     let val := b.lane 32 src_idx
-    let inserted : BitVec n := .ofLanes n 32 fun i => if i == dst_idx then val else a.lane 32 i
-    .ofLanes n 32 fun i => if (zmask >>> i) &&& 1 == 1 then 0#32 else inserted.lane 32 i
-  | .roundss =>
-    let rounded := FpFmt.f32.roundInt (roundImmMode imm) (b.lane 32 0)
-    a.replaceLow rounded
-  | .roundsd =>
-    let rounded := FpFmt.f64.roundInt (roundImmMode imm) (b.lane 64 0)
-    a.replaceLow rounded
-  | .cmpps | .cmppd | .cmpss | .cmpsd =>
-    let pred := if legacy then imm.toNat &&& 7 else imm.toNat
-    match op with
-    | .cmpps => .map2 32 (f32cmpPred pred) a b
-    | .cmppd => .map2 64 (f64cmpPred pred) a b
-    | .cmpss => a.replaceLow (f32cmpPred pred (a.lane 32 0) (b.lane 32 0))
-    | .cmpsd => a.replaceLow (f64cmpPred pred (a.lane 64 0) (b.lane 64 0))
-    | _ => a
+    .ofLanes n 32 fun i =>
+      if (zmask >>> i) &&& 1 == 1 then 0#32
+      else if i == dst_idx then val
+      else a.lane 32 i
+  | .roundss => a.replaceLow (FpFmt.f32.roundInt (roundImmMode imm) (b.lane 32 0))
+  | .roundsd => a.replaceLow (FpFmt.f64.roundInt (roundImmMode imm) (b.lane 64 0))
+  | .cmpps => .map2 32 (f32cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
+  | .cmppd => .map2 64 (f64cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
+  | .cmpss => .scalar 32 (f32cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
+  | .cmpsd => .scalar 64 (f64cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
   | .perm2f128 | .perm2i128 => .ofLanes n 128 fun i =>
     let ctrl := (imm.toNat >>> (i * 4))
     if (ctrl >>> 3) &&& 1 == 1 then 0#128

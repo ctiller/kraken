@@ -6,6 +6,10 @@ public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
+/-! SSE/AVX conversions between vector registers and GPRs/memory:
+`SimdToGprOp` (vector to GPR/mask), `SimdExtractOp` (lane extract to GPR/mem),
+and `SimdInsertOp` (lane insert from GPR/mem). -/
+
 @[expose] public section
 
 inductive SimdToGprOp
@@ -61,9 +65,7 @@ def SimdExtractOp.interp {n} (op : SimdExtractOp) (bits : Nat) (src : BitVec n) 
   | .pextrb | .pextrw | .pextrd | .pextrq | .extractps =>
     let k := op.memBits
     (src.lane k (imm.toNat % (n / k))).zeroExtend bits
-  | .movd | .movq =>
-    let extractBits := min bits 64
-    (src.extractLsb' 0 extractBits).zeroExtend bits
+  | .movd | .movq => src.setWidth bits
   | .movlps | .movlpd => (src.lane 64 0).zeroExtend bits
   | .movhps | .movhpd => (src.lane 64 1).zeroExtend bits
 
@@ -97,19 +99,10 @@ def SimdInsertOp.interp {n} (op : SimdInsertOp) (old : BitVec n) (bits : Nat) (s
     let k := op.memBits
     let idx := imm.toNat % (n / k)
     .ofLanes n k fun i => if i == idx then src.extractLsb' 0 k else old.lane k i
-  | .cvtsi2ss =>
-    let fp := FpFmt.f32.ofInt (BitVec.toInt src)
-    old.replaceLow fp
-  | .cvtsi2sd =>
-    let fp := FpFmt.f64.ofInt (BitVec.toInt src)
-    old.replaceLow fp
-  | .movlps | .movlpd =>
-    let low64 : BitVec 64 := src.extractLsb' 0 64
-    old.replaceLow low64
+  | .cvtsi2ss => old.replaceLow (FpFmt.f32.ofInt (BitVec.toInt src))
+  | .cvtsi2sd => old.replaceLow (FpFmt.f64.ofInt (BitVec.toInt src))
+  | .movlps | .movlpd => old.replaceLow (src.extractLsb' 0 64)
   | .movhps | .movhpd =>
     let low64 : BitVec 64 := src.extractLsb' 0 64
     .ofLanes n 64 fun i => if i == 1 then low64 else old.lane 64 i
-  | .movd | .movq =>
-    let insertBits := min bits 64
-    (src.extractLsb' 0 insertBits).zeroExtend n
-
+  | .movd | .movq => src.setWidth 64 |>.setWidth n

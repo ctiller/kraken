@@ -9,14 +9,14 @@ meta import Lean.Elab.Deriving.ToExpr
 
 @[expose] public section
 
-inductive SimdFpCmp
-  | cmpeqps | cmpltps | cmpleps | cmpunordps | cmpneqps | cmpnltps | cmpnleps | cmpordps
-  | cmpeqpd | cmpltpd | cmplepd | cmpunordpd | cmpneqpd | cmpnltpd | cmpnlepd | cmpordpd
-  | cmpeqss | cmpltss | cmpless | cmpunordss | cmpneqss | cmpnltss | cmpnless | cmpordss
-  | cmpeqsd | cmpltsd | cmplesd | cmpunordsd | cmpneqsd | cmpnltsd | cmpnlesd | cmpordsd
+inductive FpCmpPred | eq | lt | le | unord | neq | nlt | nle | ord
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
-instance : Mnemonic SimdFpCmp := ⟨mnemonics% SimdFpCmp⟩
+instance : Mnemonic FpCmpPred := ⟨mnemonics% FpCmpPred⟩
+
+def FpCmpPred.code : FpCmpPred → Nat
+  | .eq => 0 | .lt => 1 | .le => 2 | .unord => 3
+  | .neq => 4 | .nlt => 5 | .nle => 6 | .ord => 7
 
 def fpPredicateMatch (pred : Nat) (lt eq unord : Bool) : Bool :=
   match pred % 16 with
@@ -51,44 +51,27 @@ def f64cmpPred (pred : Nat) (a b : BitVec 64) : BitVec 64 :=
   let eq := !unord && fa == fb
   if fpPredicateMatch pred lt eq unord then 0xffffffffffffffff#64 else 0#64
 
+structure SimdFpCmp where
+  pred : FpCmpPred
+  type : FpType
+  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
+
+instance : Mnemonic SimdFpCmp where
+  names := Id.run do
+    let mut r := #[]
+    for (t, tn) in Mnemonic.names do
+      for (p, pn) in Mnemonic.names do
+        r := r.push (⟨p, t⟩, "cmp" ++ pn ++ tn)
+    return r
+
 /-- The operation on one 128-bit lane. -/
-def SimdFpCmp.interp : SimdFpCmp → BitVec 128 → BitVec 128 → BitVec 128
-  | .cmpeqps    => .map2 32 (f32cmpPred 0)
-  | .cmpltps    => .map2 32 (f32cmpPred 1)
-  | .cmpleps    => .map2 32 (f32cmpPred 2)
-  | .cmpunordps => .map2 32 (f32cmpPred 3)
-  | .cmpneqps   => .map2 32 (f32cmpPred 4)
-  | .cmpnltps   => .map2 32 (f32cmpPred 5)
-  | .cmpnleps   => .map2 32 (f32cmpPred 6)
-  | .cmpordps   => .map2 32 (f32cmpPred 7)
-  | .cmpeqpd    => .map2 64 (f64cmpPred 0)
-  | .cmpltpd    => .map2 64 (f64cmpPred 1)
-  | .cmplepd    => .map2 64 (f64cmpPred 2)
-  | .cmpunordpd => .map2 64 (f64cmpPred 3)
-  | .cmpneqpd   => .map2 64 (f64cmpPred 4)
-  | .cmpnltpd   => .map2 64 (f64cmpPred 5)
-  | .cmpnlepd   => .map2 64 (f64cmpPred 6)
-  | .cmpordpd   => .map2 64 (f64cmpPred 7)
-  | .cmpeqss    => .scalar 32 (f32cmpPred 0)
-  | .cmpltss    => .scalar 32 (f32cmpPred 1)
-  | .cmpless    => .scalar 32 (f32cmpPred 2)
-  | .cmpunordss => .scalar 32 (f32cmpPred 3)
-  | .cmpneqss   => .scalar 32 (f32cmpPred 4)
-  | .cmpnltss   => .scalar 32 (f32cmpPred 5)
-  | .cmpnless   => .scalar 32 (f32cmpPred 6)
-  | .cmpordss   => .scalar 32 (f32cmpPred 7)
-  | .cmpeqsd    => .scalar 64 (f64cmpPred 0)
-  | .cmpltsd    => .scalar 64 (f64cmpPred 1)
-  | .cmplesd    => .scalar 64 (f64cmpPred 2)
-  | .cmpunordsd => .scalar 64 (f64cmpPred 3)
-  | .cmpneqsd   => .scalar 64 (f64cmpPred 4)
-  | .cmpnltsd   => .scalar 64 (f64cmpPred 5)
-  | .cmpnlesd   => .scalar 64 (f64cmpPred 6)
-  | .cmpordsd   => .scalar 64 (f64cmpPred 7)
+def SimdFpCmp.interp (op : SimdFpCmp) : BitVec 128 → BitVec 128 → BitVec 128 :=
+  let c := op.pred.code
+  match op.type with
+  | .ps => .map2 32 (f32cmpPred c)
+  | .pd => .map2 64 (f64cmpPred c)
+  | .ss => .scalar 32 (f32cmpPred c)
+  | .sd => .scalar 64 (f64cmpPred c)
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
-def SimdFpCmp.memBytes? : SimdFpCmp → Option Nat
-  | .cmpeqps | .cmpltps | .cmpleps | .cmpunordps | .cmpneqps | .cmpnltps | .cmpnleps | .cmpordps
-  | .cmpeqpd | .cmpltpd | .cmplepd | .cmpunordpd | .cmpneqpd | .cmpnltpd | .cmpnlepd | .cmpordpd => none
-  | .cmpeqss | .cmpltss | .cmpless | .cmpunordss | .cmpneqss | .cmpnltss | .cmpnless | .cmpordss => some 4
-  | .cmpeqsd | .cmpltsd | .cmplesd | .cmpunordsd | .cmpneqsd | .cmpnltsd | .cmpnlesd | .cmpordsd => some 8
+def SimdFpCmp.memBytes? (op : SimdFpCmp) : Option Nat := op.type.memBytes?

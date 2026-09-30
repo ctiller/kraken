@@ -36,22 +36,19 @@ inductive FmaKind | fmadd | fmsub | fnmadd | fnmsub | fmaddsub | fmsubadd
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 inductive FmaOrder | «132» | «213» | «231»
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
-inductive FmaType | ps | pd | ss | sd
-  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 instance : Mnemonic FmaKind := ⟨mnemonics% FmaKind⟩
 instance : Mnemonic FmaOrder := ⟨mnemonics% FmaOrder⟩
-instance : Mnemonic FmaType := ⟨mnemonics% FmaType⟩
 
 /-- FMA opcodes `v<kind><order><type>`, e.g. `vfmadd231ps`. -/
 structure SimdFmaOp where
   kind : FmaKind
   order : FmaOrder
-  type : FmaType
+  type : FpType
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 namespace SimdFmaOp
-def scalar (op : SimdFmaOp) : Bool := op.type matches .ss | .sd
-def elemBits (op : SimdFmaOp) : Nat := if op.type matches .ps | .ss then 32 else 64
+def scalar (op : SimdFmaOp) : Bool := op.type.scalar
+def elemBits (op : SimdFmaOp) : Nat := op.type.elemBits
 
 instance : Mnemonic SimdFmaOp where
   names := Id.run do
@@ -67,8 +64,8 @@ others coming from `dst`). The order `132` computes `dst * src3 + src2`, `213` `
 and `231` `src2 * src3 + dst`; the kind picks the signs (alternating kinds: `fmaddsub` subtracts
 in even elements and adds in odd ones, `fmsubadd` the reverse). -/
 def interp {n} (op : SimdFmaOp) (a b c : BitVec n) : BitVec n :=
-  let k := op.elemBits
-  let f : FpFmt := if k = 32 then .f32 else .f64
+  let fmt : FpFmt := if op.type matches .ps | .ss then .f32 else .f64
+  let k := fmt.bits
   let elem (i : Nat) : BitVec k :=
     let (x, y, z) := match op.order with
       | .«132» => (a.lane k i, c.lane k i, b.lane k i)
@@ -78,10 +75,10 @@ def interp {n} (op : SimdFmaOp) (a b c : BitVec n) : BitVec n :=
       | .fmadd => (false, false) | .fmsub => (false, true)
       | .fnmadd => (true, false) | .fnmsub => (true, true)
       | .fmaddsub => (false, i % 2 == 0) | .fmsubadd => (false, i % 2 == 1)
-    -- `f.bits = k` by construction.
-    if h : f.bits = k then h ▸ f.fma negP negC (h ▸ x) (h ▸ y) (h ▸ z) else 0
+    fmt.fma negP negC x y z
   if op.scalar then a.replaceLow (elem 0) else .ofLanes n k elem
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar types). -/
-def memBytes? (op : SimdFmaOp) : Option Nat := if op.scalar then some (op.elemBits / 8) else none
+def memBytes? (op : SimdFmaOp) : Option Nat := op.type.memBytes?
 end SimdFmaOp
+
