@@ -115,6 +115,7 @@ def fma (f : FpFmt) (negP negC : Bool) (a b c : BitVec f.bits) : BitVec f.bits :
       let r := (if sp then -p else p) + (if sc then -1 else 1) * (vc * 2 ^ (ec - e).toNat : Nat)
       if r = 0 then f.zero (if p = 0 && vc = 0 then sp && sc else false)
       else f.round (r < 0) r.natAbs e
+
 /-- Converts `x` from format `f` to format `g` with rounding `mode`. -/
 def convert (f g : FpFmt) (mode : Nat) (x : BitVec f.bits) : BitVec g.bits :=
   let sign := x.msb
