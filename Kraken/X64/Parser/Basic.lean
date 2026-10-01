@@ -885,7 +885,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       if vex && op.memBytes?.isSome && w != .W128 then fail s!"{name}: expected 128-bit operands"
       pure (toAvxInstr addr_w (if vex then .vexTest op src1 src2 else .sseTest op src1 src2))
   if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then ps := ps.push do
-    skipHWs; let _ ← pstring "%xmm0"; parseComma
+    let _ ← (attempt do skipHWs; let _ ← pstring "%xmm0"; parseComma) <|> pure ()
     let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
     if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sseBlendv op dst src))

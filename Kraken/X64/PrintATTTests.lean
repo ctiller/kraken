@@ -340,3 +340,21 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard roundtrips "vcmpeq_uqps %ymm1, %ymm2, %ymm3"
 #guard roundtrips "vcmpeq_uqss %xmm1, %xmm2, %xmm3"
 #guard roundtrips "vcmptrue_uspd 16(%rsp), %ymm2, %ymm3"
+-- Two-operand forms with implicit %xmm0
+#guard (parse "sha256rnds2 %xmm1, %xmm2") matches .ok _
+#guard (parse "sha256rnds2 (%rax), %xmm2") matches .ok _
+#guard (parse "blendvps %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvps (%rax), %xmm2") matches .ok _
+#guard (parse "blendvpd %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvpd (%rax), %xmm2") matches .ok _
+#guard (parse "pblendvb %xmm1, %xmm2") matches .ok _
+#guard (parse "pblendvb (%rax), %xmm2") matches .ok _
+#guard (parse "sha256rnds2 %xmm0, %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvps %xmm0, %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvps %xmm3, %xmm1, %xmm2") matches .error _
+#guard (parse "blendvps %ymm1, %ymm2") matches .error _
+#guard (parse "sha256rnds2 %ymm1, %ymm2") matches .error _
+#guard roundtrips "sha256rnds2 %xmm1, %xmm2"
+#guard roundtrips "blendvps %xmm1, %xmm2"
+#guard roundtrips "blendvpd (%rax), %xmm2"
+#guard roundtrips "pblendvb %xmm1, %xmm2"
