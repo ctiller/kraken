@@ -159,7 +159,7 @@ def SimdBinImmOp.resultUndefined {n} (op : SimdBinImmOp) (a b : BitVec n) (imm :
 
 /-- Whether `imm` sets bits the SDM reserves (round: 7:4). -/
 def SimdUnImmOp.reservedImm (op : SimdUnImmOp) (imm : BitVec 8) : Bool :=
-  op matches .roundps | .roundpd && imm.toNat ≥ 16
+  (op matches .roundps | .roundpd) && imm.toNat ≥ 16
 
 /-- Whether `imm` sets bits the SDM reserves (round: 7:4; cmp: 7:3 legacy, 7:5 VEX). -/
 def SimdBinImmOp.reservedImm (op : SimdBinImmOp) (imm : BitVec 8) (legacy : Bool) : Bool :=

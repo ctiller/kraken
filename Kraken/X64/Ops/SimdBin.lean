@@ -36,15 +36,13 @@ def SimdBinOp.interp {n} : SimdBinOp → BitVec n → BitVec n → BitVec n
   | .crypto op => .map2 128 op.interp
   | .perm op => op.interp
 
-/-- Whether the SDM leaves the result undefined: horizontal adds/subtracts of two NaNs pick one
-in an implementation-dependent way. -/
-def SimdBinOp.resultUndefined {n} (op : SimdBinOp) (a b : BitVec n) : Bool :=
-  let twoNaNs (f : FpFmt) (x : BitVec n) := (List.range (n / f.bits / 2)).any fun i =>
-    f.isNaN (x.lane f.bits (2 * i)) && f.isNaN (x.lane f.bits (2 * i + 1))
-  match op with
-  | .fp .haddps | .fp .hsubps => twoNaNs .f32 a || twoNaNs .f32 b
-  | .fp .haddpd | .fp .hsubpd => twoNaNs .f64 a || twoNaNs .f64 b
-  | _ => false
+/-- haddps/haddpd with the operands of each addition swapped. The SDM contradicts itself on the
+order (pseudocode `SRC1[63:32] + SRC1[31:0]`, figures `xmm1[31:0] + xmm1[63:32]`), which decides
+which of two NaNs is returned, so either order is possible. -/
+def SimdBinOp.swappedInterp? {n} : SimdBinOp → Option (BitVec n → BitVec n → BitVec n)
+  | .fp .haddps => some (.map2 128 (.hop 32 fun x y => sseBinOp (· + ·) y x))
+  | .fp .haddpd => some (.map2 128 (.hop 64 fun x y => sseBinOp64 (· + ·) y x))
+  | _ => none
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdBinOp.memBytes? : SimdBinOp → Option Nat

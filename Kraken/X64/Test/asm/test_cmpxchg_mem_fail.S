@@ -59,4 +59,11 @@ cmpxchg16b 16(%rsp)
 movq 16(%rsp), %rsi
 movq 24(%rsp), %rdi
 
+# --- 7. cmpxchgq failure where the accumulator is the address register ---
+movq $5, 16(%rsp)
+leaq 16(%rsp), %rax
+movq $9, %rbx
+cmpxchgq %rbx, (%rax)
+movq 16(%rsp), %r15
+
 addq $64, %rsp

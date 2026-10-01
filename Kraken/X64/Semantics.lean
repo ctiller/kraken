@@ -223,6 +223,7 @@ def NondetSupportingType.from_hash {α} [t : NondetSupportingType α] (h : UInt6
   | .avx_bitvec w => h.toBitVec.setWidth w.bits
 
 instance (w : Width) : NondetSupportingType w.type := .bitvec w
+-- For undefined 64-bit values written through a narrower `Reg` (e.g. `Regs.set64`).
 instance : NondetSupportingType (BitVec 64) := .bitvec .W64
 instance (w : AvxWidth) : NondetSupportingType w.type := .avx_bitvec w
 instance : NondetSupportingType Bool := .bool
@@ -275,15 +276,13 @@ def MachineData.load
 def isAligned (bytes : Nat) (addr : BitVec 64) : Bool :=
   addr.toNat % bytes == 0
 
-def require_read_access_chunks (addr : BitVec 64) (chunks : Nat) (ok : Unit → Effects) : Effects :=
+/-- Checks `access` (`require_read_access` or `require_write_access`) for each of `chunks`
+consecutive 8-byte chunks starting at `addr`. -/
+def require_access_chunks (access : BitVec 64 → Width → (Unit → Effects) → Effects)
+    (addr : BitVec 64) (chunks : Nat) (ok : Unit → Effects) : Effects :=
   match chunks with
   | 0 => ok ()
-  | chunks + 1 => require_read_access addr .W64 (fun () => require_read_access_chunks (addr + 8) chunks ok)
-
-def require_write_access_chunks (addr : BitVec 64) (chunks : Nat) (ok : Unit → Effects) : Effects :=
-  match chunks with
-  | 0 => ok ()
-  | chunks + 1 => require_write_access addr .W64 (fun () => require_write_access_chunks (addr + 8) chunks ok)
+  | chunks + 1 => access addr .W64 fun () => require_access_chunks access (addr + 8) chunks ok
 
 -- Legacy SSE instructions are generally stricter about alignment requirements,
 -- while AVX (VEX-encoded) instructions can mostly deal with unaligned
@@ -295,7 +294,7 @@ def MachineData.loadAvx
   if checkAlign && !(isAligned w.bytes addr) then
     .gp_unaligned addr w.bytes
   else
-    require_read_access_chunks addr (w.bytes / 8) (fun _unit =>
+    require_access_chunks require_read_access addr (w.bytes / 8) (fun _unit =>
       match Mem.loadInt s.dmem addr w.bytes with
       | .some i => ret (.ofInt _ i) s
       | .none => unimplemented "AVX nonmem load not supported")
@@ -311,7 +310,7 @@ def MachineData.storeAvx (s : MachineData) (addr : BitVec 64) {w : AvxWidth} (v 
   if checkAlign && !(isAligned w.bytes addr) then
     .gp_unaligned addr w.bytes
   else
-    require_write_access_chunks addr (w.bytes / 8) (fun _unit =>
+    require_access_chunks require_write_access addr (w.bytes / 8) (fun _unit =>
       match Mem.loadInt s.dmem addr w.bytes with
       | .some _ =>
           ret { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
@@ -384,6 +383,13 @@ def MachineData.set {w} [Labels] [AddressSize] (s : MachineData) (d : Dst w) (v 
   match d with
   | .reg r => ret (s.setReg r v)
   | .mem a => s.store ((a.interp s.regs p).zeroExtend _) v ret
+
+/-- Passes `op.interp a b` to `k`, or either operand order where the SDM leaves it open (see
+`SimdBinOp.swappedInterp?`). -/
+def SimdBinOp.eval {n} (op : SimdBinOp) (a b : BitVec n) (k : BitVec n → Effects) : Effects :=
+  match op.swappedInterp? with
+  | some f => undefined fun (swap : Bool) => k (if swap then f a b else op.interp a b)
+  | none => k (op.interp a b)
 
 def MachineData.setAvx {aw} [Labels] [AddressSize] (s : MachineData) (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) : Effects :=
 match d with
@@ -618,12 +624,16 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
       let sval := s.regs.get src
       s.set dst sval p next
     else
-      let s := s.setReg (Reg.low .rax w) dval
+      let setAcc (s : MachineData) := s.setReg (Reg.low .rax w) dval
       match dst with
-      | .mem _ => s.set dst dval p next
-      -- The SDM writes `DEST := TEMP` here too, which would zero-extend a 32-bit register, but
-      -- processors may leave it unchanged: either is possible.
-      | .reg r => undefined fun (write : Bool) => next (if write then s.setReg r dval else s))
+      -- Store first: the accumulator may be part of the address.
+      | .mem _ => s.set dst dval p fun s => next (setAcc s)
+      | .reg r =>
+        let s := setAcc s
+        -- The SDM writes `DEST := TEMP` here too, which would zero-extend a 32-bit register, but
+        -- Intel processors leave it unchanged: either is possible. Other widths are unaffected.
+        if w matches .W32 then undefined fun (write : Bool) => next (if write then s.setReg r dval else s)
+        else next s)
   | .cmpxchg8b a =>
     let addr := (a.interp s.regs p).zeroExtend 64
     s.load addr .W64 (fun mem_val s =>
@@ -959,6 +969,8 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
     match r with
     | some r => next { s.setReg dst r with status }
     | none =>
+      -- The SDM leaves DEST undefined; for a 32-bit register that includes whether the upper half
+      -- is zeroed (Intel processors leave the register unchanged).
       match (generalizing := false) (motive := Width → Effects) w with
       | .W32 => undefined fun (v64 : BitVec 64) => next { s with regs := s.regs.set64 dst.base v64, status }
       | _ => undefined fun v => next { s.setReg dst v with status })
@@ -1028,18 +1040,10 @@ match i with
     src.interp s p (checkAlign := op.aligned) (fun v s => s.setAvx dst v p next op.aligned)
   | .sse op dst src =>
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    let a := s.zmms.get dst
-    if op.resultUndefined a b then
-      undefined fun v => next (s.setAvxLegacyReg dst v)
-    else
-      next (s.setAvxLegacyReg dst (op.interp a b)))
+    op.eval (s.zmms.get dst) b fun r => next (s.setAvxLegacyReg dst r))
   | .vex op dst src1 src2 =>
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
-    let a := s.zmms.get src1
-    if op.resultUndefined a b then
-      undefined fun v => next (s.setAvxReg dst v)
-    else
-      next (s.setAvxReg dst (op.interp a b)))
+    op.eval (s.zmms.get src1) b fun r => next (s.setAvxReg dst r))
   | .sseUn op dst src =>
     src.interpSimd (op.memBytes? w.bytes) s p (legacy := true) (fun a s =>
     next (s.setAvxLegacyReg dst (op.interp a)))
