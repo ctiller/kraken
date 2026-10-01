@@ -1354,20 +1354,29 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
   -- Stack operations
   | "push" =>
     let ( addr_w, src ) ← parseOperand
-    let ⟨ _w, src ⟩ ← assertW src
-    pure (toInstr addr_w (.push src))
+    match src.1 with
+    | some w =>
+      if w != .W16 && w != .W64 then fail "push requires 16- or 64-bit operand"
+      let s ← ascribe w src
+      pure (toInstr addr_w (.push s))
+    | none =>
+      let s ← ascribe .W64 src
+      match s with
+      | .imm _ => pure (toInstr addr_w (.push s))
+      | _ => fail "push memory operand requires size suffix"
 
-  | "pushq" | "pushl" | "pushw" | "pushb" =>
+  | "pushq" | "pushw" =>
     let w ← instrWidth mn
     let ( addr_w, src ) ← parseOperandAO w
     pure (toInstr addr_w (.push src))
 
   | "pop" =>
     let ( addr_w, dst) ← parseRegOrMem
-    let ⟨ _w, dst ⟩ ← assertW dst
+    let ⟨ w, dst ⟩ ← assertW dst
+    if w != .W16 && w != .W64 then fail "pop requires 16- or 64-bit operand"
     pure (toInstr addr_w (.pop dst))
 
-  | "popq" | "popl" | "popw" | "popb" =>
+  | "popq" | "popw" =>
     let w ← instrWidth mn
     let ( addr_w, dst ) ← parseRegOrMemAO w
     pure (toInstr addr_w (.pop dst))

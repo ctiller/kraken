@@ -237,3 +237,18 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard (parse "vbroadcastsd (%rax), %xmm0") matches .error _
 #guard (parse "vbroadcasti128 (%rax), %xmm0") matches .error _
 #guard (parse "vbroadcastf128 (%rax), %xmm0") matches .error _
+-- push/pop only allow 16- and 64-bit operands
+#guard (parse "pushb $1") matches .error _
+#guard (parse "pushl $1") matches .error _
+#guard (parse "pushl %eax") matches .error _
+#guard (parse "pushb %al") matches .error _
+#guard (parse "popl %eax") matches .error _
+#guard (parse "popb %al") matches .error _
+#guard (parse "popl (%rax)") matches .error _
+#guard (parse "popb (%rax)") matches .error _
+#guard (parse "push $42") matches .ok _
+#guard (parse "pushw $42") matches .ok _
+#guard (parse "pushq $42") matches .ok _
+#guard match parse "pushw $42" with
+  | .ok [d] => toString d == "push word ptr 42"
+  | _ => false

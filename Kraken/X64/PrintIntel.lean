@@ -127,7 +127,10 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .mov dst src => s!"mov {dst.toStr addr_w}, {src.toStr addr_w}"
   | .movsx dst src => s!"movsx {dst.toStr addr_w}, {src.toStr addr_w}"
   | .movzx dst src => s!"movzx {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .push src => s!"push {src.toStr addr_w}"
+  | .push src =>
+    match w, src with
+    | .W16, .imm v => s!"push word ptr {v}"
+    | _, _ => s!"push {src.toStr addr_w}"
   | .pop dst => s!"pop {dst.toStr addr_w}"
   | .leave => "leave"
   | .pushf => "pushfq"
