@@ -204,6 +204,7 @@ vperm2i128 $0x20, 0(%rsp), %ymm0, %ymm4
 vperm2i128 $0x88, %ymm1, %ymm0, %ymm5
 
 # dpps / dppd
+vmovups 32(%rsp), %ymm0
 dpps $0xf1, %xmm1, %xmm0
 dpps $0xf5, 32(%rsp), %xmm0
 vdpps $0xf1, %xmm1, %xmm0, %xmm3

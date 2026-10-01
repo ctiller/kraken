@@ -136,3 +136,46 @@ def SimdBinImmOp.memBytes? : SimdBinImmOp → Option Nat
   | .insertps | .roundss | .cmpss => some 4
   | .roundsd | .cmpsd => some 8
   | _ => none
+
+/-- Whether the result of `op` is undefined/implementation-dependent (e.g. horizontal NaN choice in dpps/dppd). -/
+def SimdBinImmOp.resultUndefined {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) : Bool :=
+  match op with
+  | .dpps =>
+    if (imm.toNat &&& 0xf) == 0 then false
+    else
+      let numLanes := n / 128
+      (List.range numLanes).any fun l =>
+        let a128 := a.lane 128 l
+        let b128 := b.lane 128 l
+        let prods := (List.range 4).filterMap fun i =>
+          if imm.getLsbD (4 + i) then
+            some (sseBinOp (· * ·) (a128.lane 32 i) (b128.lane 32 i))
+          else none
+        let nanCount := prods.filter (fun p => FpFmt.f32.isNaN p) |>.length
+        if nanCount ≥ 2 then true
+        else if nanCount == 1 then
+          let nonNans := prods.filter (fun p => !FpFmt.f32.isNaN p)
+          let hasPosInf := nonNans.any (fun p => FpFmt.f32.isInf p && !p.msb)
+          let hasNegInf := nonNans.any (fun p => FpFmt.f32.isInf p && p.msb)
+          hasPosInf && hasNegInf
+        else false
+  | .dppd =>
+    if (imm.toNat &&& 0x3) == 0 then false
+    else
+      let numLanes := n / 128
+      (List.range numLanes).any fun l =>
+        let a128 := a.lane 128 l
+        let b128 := b.lane 128 l
+        let prods := (List.range 2).filterMap fun i =>
+          if imm.getLsbD (4 + i) then
+            some (sseBinOp64 (· * ·) (a128.lane 64 i) (b128.lane 64 i))
+          else none
+        let nanCount := prods.filter (fun p => FpFmt.f64.isNaN p) |>.length
+        if nanCount ≥ 2 then true
+        else if nanCount == 1 then
+          let nonNans := prods.filter (fun p => !FpFmt.f64.isNaN p)
+          let hasPosInf := nonNans.any (fun p => FpFmt.f64.isInf p && !p.msb)
+          let hasNegInf := nonNans.any (fun p => FpFmt.f64.isInf p && p.msb)
+          hasPosInf && hasNegInf
+        else false
+  | _ => false

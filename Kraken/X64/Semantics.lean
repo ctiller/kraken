@@ -1035,10 +1035,20 @@ match i with
     src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a (imm.imm8 p))))
   | .sseImm op dst src imm =>
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b (imm.imm8 p) (legacy := true) (src matches .mem _))))
+    let a := s.zmms.get dst
+    let immVal := imm.imm8 p
+    if op.resultUndefined a b immVal then
+      undefined fun v => next (s.setAvxLegacyReg dst v)
+    else
+      next (s.setAvxLegacyReg dst (op.interp a b immVal (legacy := true) (src matches .mem _))))
   | .vexImm op dst src1 src2 imm =>
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
-    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b (imm.imm8 p) (legacy := false) (src2 matches .mem _))))
+    let a := s.zmms.get src1
+    let immVal := imm.imm8 p
+    if op.resultUndefined a b immVal then
+      undefined fun v => next (s.setAvxReg dst v)
+    else
+      next (s.setAvxReg dst (op.interp a b immVal (legacy := false) (src2 matches .mem _))))
   | .sseShift op dst count =>
     count.interp s p (legacy := true) (fun c s =>
     next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) c)))
