@@ -182,3 +182,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard (parse "rep addq %rax, %rbx") matches .error _
 -- BMI operands are 32 or 64 bits wide.
 #guard (parse "shlx %ax, %bx, %cx") matches .error _
+-- `lock` prefix requires a valid lockable instruction with memory destination.
+#guard (parse "lock addq $1, %rax") matches .error _
+#guard (parse "lock btq $1, (%rsp)") matches .error _
+#guard (parse "lock movq %rax, (%rsp)") matches .error _
+#guard (parse "lock btsq $1, (%rsp)") matches .ok _

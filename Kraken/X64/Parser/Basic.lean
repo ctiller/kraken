@@ -1422,13 +1422,32 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     else
       fail s!"unsupported instruction: {mnemonic}"
 
+/-- Check whether an instruction is valid with the `lock` prefix per Intel SDM:
+destination must be a memory operand, and operation must be one of:
+ADD, ADC, AND, BTC, BTR, BTS, CMPXCHG, CMPXCHG8B, CMPXCHG16B, DEC, INC, NEG, NOT, OR, SBB, SUB, XOR, XADD, XCHG. -/
+def isLockable (instr : Instr) : Bool :=
+  match instr with
+  | .regular _ _ op =>
+    match op with
+    | .add (.mem _) _ | .adc (.mem _) _ | .and (.mem _) _ | .sub (.mem _) _ | .sbb (.mem _) _
+    | .xor (.mem _) _ | .or (.mem _) _ | .not (.mem _) | .neg (.mem _) | .inc (.mem _) | .dec (.mem _)
+    | .xadd (.mem _) _ | .cmpxchg (.mem _) _ | .xchg (.mem _) _
+    | .cmpxchg8b _ | .cmpxchg16b _ => true
+    | .bt op (.mem _) _ => op != .bt
+    | _ => false
+  | .avx .. => false
+
 /-- Parse an instruction mnemonic and its operands. A mnemonic may name both an explicit
 instruction and family opcodes (e.g. `movq`); the first whose operands parse wins. -/
 def parseInstr : Parser Instr := do
   skipHWs
   let mut mnemonic ← parseName
+  let mut hasLock := false
   -- The `lock` prefix doesn't change single-threaded semantics.
-  if mnemonic.toLower == "lock" then skipHWs; mnemonic ← parseName
+  if mnemonic.toLower == "lock" then
+    hasLock := true
+    skipHWs
+    mnemonic ← parseName
   let rep := match mnemonic.toLower with
     | "rep" => .rep
     | "repe" | "repz" => .repe
@@ -1438,12 +1457,15 @@ def parseInstr : Parser Instr := do
   let mn := mnemonic.toLower
   if rep != .none && (stringOp? mn).isNone then
     fail "rep prefixes apply only to string instructions"
-  if rep != .none then
+  let instr ← if rep != .none then
     parseExplicit mnemonic mn rep
   else
     match parseFamily? mn with
     | some p => attempt p <|> parseExplicit mnemonic mn rep
     | none => parseExplicit mnemonic mn rep
+  if hasLock && !isLockable instr then
+    fail "instruction cannot take lock prefix"
+  return instr
 
 -- ============================================================================
 -- Label Parsing
