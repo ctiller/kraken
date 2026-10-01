@@ -274,6 +274,16 @@ def MachineData.load
 def isAligned (bytes : Nat) (addr : BitVec 64) : Bool :=
   addr.toNat % bytes == 0
 
+def require_read_access_chunks (addr : BitVec 64) (chunks : Nat) (ok : Unit → Effects) : Effects :=
+  match chunks with
+  | 0 => ok ()
+  | chunks + 1 => require_read_access addr .W64 (fun () => require_read_access_chunks (addr + 8) chunks ok)
+
+def require_write_access_chunks (addr : BitVec 64) (chunks : Nat) (ok : Unit → Effects) : Effects :=
+  match chunks with
+  | 0 => ok ()
+  | chunks + 1 => require_write_access addr .W64 (fun () => require_write_access_chunks (addr + 8) chunks ok)
+
 -- Legacy SSE instructions are generally stricter about alignment requirements,
 -- while AVX (VEX-encoded) instructions can mostly deal with unaligned
 -- addresses (https://discourse.llvm.org/t/memory-alignment-model-on-avx-avx2-and-avx-512-targets/34705).
@@ -284,8 +294,8 @@ def MachineData.loadAvx
   if checkAlign && !(isAligned w.bytes addr) then
     .gp_unaligned addr w.bytes
   else
-    require_read_access addr .W64 (fun _unit =>
-  match Mem.loadInt s.dmem addr w.bytes with
+    require_read_access_chunks addr (w.bytes / 8) (fun _unit =>
+      match Mem.loadInt s.dmem addr w.bytes with
       | .some i => ret (.ofInt _ i) s
       | .none => unimplemented "AVX nonmem load not supported")
 
@@ -300,8 +310,8 @@ def MachineData.storeAvx (s : MachineData) (addr : BitVec 64) {w : AvxWidth} (v 
   if checkAlign && !(isAligned w.bytes addr) then
     .gp_unaligned addr w.bytes
   else
-    require_write_access addr .W64 (fun _unit =>
-  match Mem.loadInt s.dmem addr w.bytes with
+    require_write_access_chunks addr (w.bytes / 8) (fun _unit =>
+      match Mem.loadInt s.dmem addr w.bytes with
       | .some _ =>
           ret { s with dmem := Mem.storeInt s.dmem addr w.bytes v.toInt }
       | .none => unimplemented "AVX nonmem store not supported")
