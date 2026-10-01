@@ -137,60 +137,33 @@ def SimdBinImmOp.memBytes? : SimdBinImmOp → Option Nat
   | .roundsd | .cmpsd => some 8
   | _ => none
 
-/-- Whether the result of `op` is undefined/implementation-dependent (e.g. horizontal NaN choice in dpps/dppd). -/
+/-- Whether the horizontal sum of the products `ps` could yield one of several NaNs (two NaN
+products, or one alongside an invalid `+inf + -inf`), whose choice the SDM leaves
+implementation-dependent. -/
+def ambiguousNaNSum (f : FpFmt) (ps : List (BitVec f.bits)) : Bool :=
+  let nans := (ps.filter f.isNaN).length
+  let infs := ps.filter f.isInf
+  nans ≥ 2 || (nans == 1 && infs.any (·.msb) && infs.any (!·.msb))
+
+/-- Whether the SDM leaves the result undefined (dpps/dppd, see `ambiguousNaNSum`). -/
 def SimdBinImmOp.resultUndefined {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) : Bool :=
+  let products {k} (count : Nat) (mul : BitVec k → BitVec k → BitVec k) (l : Nat) :=
+    (List.range count).filterMap fun i => if imm.getLsbD (4 + i) then
+      some (mul (a.lane k (count * l + i)) (b.lane k (count * l + i))) else none
   match op with
-  | .dpps =>
-    if (imm.toNat &&& 0xf) == 0 then false
-    else
-      let numLanes := n / 128
-      (List.range numLanes).any fun l =>
-        let a128 := a.lane 128 l
-        let b128 := b.lane 128 l
-        let prods := (List.range 4).filterMap fun i =>
-          if imm.getLsbD (4 + i) then
-            some (sseBinOp (· * ·) (a128.lane 32 i) (b128.lane 32 i))
-          else none
-        let nanCount := prods.filter (fun p => FpFmt.f32.isNaN p) |>.length
-        if nanCount ≥ 2 then true
-        else if nanCount == 1 then
-          let nonNans := prods.filter (fun p => !FpFmt.f32.isNaN p)
-          let hasPosInf := nonNans.any (fun p => FpFmt.f32.isInf p && !p.msb)
-          let hasNegInf := nonNans.any (fun p => FpFmt.f32.isInf p && p.msb)
-          hasPosInf && hasNegInf
-        else false
-  | .dppd =>
-    if (imm.toNat &&& 0x3) == 0 then false
-    else
-      let numLanes := n / 128
-      (List.range numLanes).any fun l =>
-        let a128 := a.lane 128 l
-        let b128 := b.lane 128 l
-        let prods := (List.range 2).filterMap fun i =>
-          if imm.getLsbD (4 + i) then
-            some (sseBinOp64 (· * ·) (a128.lane 64 i) (b128.lane 64 i))
-          else none
-        let nanCount := prods.filter (fun p => FpFmt.f64.isNaN p) |>.length
-        if nanCount ≥ 2 then true
-        else if nanCount == 1 then
-          let nonNans := prods.filter (fun p => !FpFmt.f64.isNaN p)
-          let hasPosInf := nonNans.any (fun p => FpFmt.f64.isInf p && !p.msb)
-          let hasNegInf := nonNans.any (fun p => FpFmt.f64.isInf p && p.msb)
-          hasPosInf && hasNegInf
-        else false
+  | .dpps => imm.toNat % 16 != 0 &&
+    (List.range (n / 128)).any fun l => ambiguousNaNSum .f32 (products 4 (sseBinOp (· * ·)) l)
+  | .dppd => imm.toNat % 4 != 0 &&
+    (List.range (n / 128)).any fun l => ambiguousNaNSum .f64 (products 2 (sseBinOp64 (· * ·)) l)
   | _ => false
 
-/-- Whether the immediate operand uses reserved bits (e.g. ROUNDPS/PD bits 7:4). -/
+/-- Whether `imm` sets bits the SDM reserves (round: 7:4). -/
 def SimdUnImmOp.reservedImm (op : SimdUnImmOp) (imm : BitVec 8) : Bool :=
-  match op with
-  | .roundps | .roundpd => (imm.toNat &&& 0xf0) != 0
-  | _ => false
+  op matches .roundps | .roundpd && imm.toNat ≥ 16
 
-/-- Whether the immediate operand uses reserved bits (e.g. ROUNDSS/SD bits 7:4, CMPPS/PD/SS/SD bits 7:3 or 7:5). -/
+/-- Whether `imm` sets bits the SDM reserves (round: 7:4; cmp: 7:3 legacy, 7:5 VEX). -/
 def SimdBinImmOp.reservedImm (op : SimdBinImmOp) (imm : BitVec 8) (legacy : Bool) : Bool :=
   match op with
-  | .roundss | .roundsd => (imm.toNat &&& 0xf0) != 0
-  | .cmpps | .cmppd | .cmpss | .cmpsd =>
-    let mask := if legacy then 0xf8 else 0xe0
-    (imm.toNat &&& mask) != 0
+  | .roundss | .roundsd => imm.toNat ≥ 16
+  | .cmpps | .cmppd | .cmpss | .cmpsd => imm.toNat ≥ if legacy then 8 else 32
   | _ => false

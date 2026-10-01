@@ -621,7 +621,9 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
       let s := s.setReg (Reg.low .rax w) dval
       match dst with
       | .mem _ => s.set dst dval p next
-      | .reg _ => next s)
+      -- The SDM writes `DEST := TEMP` here too, which would zero-extend a 32-bit register, but
+      -- processors may leave it unchanged: either is possible.
+      | .reg r => undefined fun (write : Bool) => next (if write then s.setReg r dval else s))
   | .cmpxchg8b a =>
     let addr := (a.interp s.regs p).zeroExtend 64
     s.load addr .W64 (fun mem_val s =>
