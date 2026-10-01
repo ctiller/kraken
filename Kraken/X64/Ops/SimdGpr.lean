@@ -82,12 +82,14 @@ def SimdInsertOp.hasImm : SimdInsertOp → Bool
   | .pinsrb | .pinsrw | .pinsrd | .pinsrq => true
   | .cvtsi2ss | .cvtsi2sd | .movlps | .movhps | .movlpd | .movhpd | .movd | .movq => false
 
+/-- The width of a memory source; for `cvtsi2ss`/`cvtsi2sd`, that of an unsuffixed one, which GNU as
+reads as 32 bits (`l`). -/
 def SimdInsertOp.memBits (op : SimdInsertOp) : Nat :=
   match op with
   | .pinsrb => 8
   | .pinsrw => 16
-  | .pinsrd | .cvtsi2ss | .movd => 32
-  | .pinsrq | .cvtsi2sd | .movq | .movlps | .movhps | .movlpd | .movhpd => 64
+  | .pinsrd | .cvtsi2ss | .cvtsi2sd | .movd => 32
+  | .pinsrq | .movq | .movlps | .movhps | .movlpd | .movhpd => 64
 
 def SimdInsertOp.twoOperand : SimdInsertOp → Bool
   | .movd | .movq => true

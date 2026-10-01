@@ -359,3 +359,11 @@ def reprinted (s : String) : Option String := (parse s).toOption.map toATT
 #guard match parse "pushw $42" with
   | .ok [d] => toString d == "push word ptr 42"
   | _ => false
+
+-- An unsuffixed `cvtsi2ss`/`cvtsi2sd` memory source is 32 bits wide, as GNU as reads it.
+#guard [("cvtsi2sd (%rsp), %xmm1", "cvtsi2sdl (%rsp), %xmm1"),
+  ("cvtsi2ss (%rsp), %xmm1", "cvtsi2ssl (%rsp), %xmm1"),
+  ("vcvtsi2sd 8(%rax), %xmm1, %xmm2", "vcvtsi2sdl 8(%rax), %xmm1, %xmm2"),
+  ("vcvtsi2ss 8(%rax), %xmm1, %xmm2", "vcvtsi2ssl 8(%rax), %xmm1, %xmm2"),
+  ("cvtsi2sdq (%rsp), %xmm1", "cvtsi2sdq (%rsp), %xmm1")].all
+  fun (s, e) => reprinted s == some e
