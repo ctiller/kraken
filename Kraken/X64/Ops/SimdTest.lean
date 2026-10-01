@@ -45,3 +45,8 @@ def SimdTestOp.memBytes? : SimdTestOp → Option Nat
   | .ucomiss | .comiss => some 4
   | .ucomisd | .comisd => some 8
   | .ptest | .testps | .testpd => none
+
+/-- Whether this operation has a legacy (non-VEX) SSE form. -/
+def SimdTestOp.hasLegacy : SimdTestOp → Bool
+  | .testps | .testpd => false
+  | _ => true
