@@ -335,6 +335,27 @@ def accepted : List String := [
 #guard_msgs in
 #eval accepted.filter (!roundtrips ·)
 
+/-- `s` parsed and printed, if it parses. -/
+def reprinted (s : String) : Option String := (parse s).toOption.map toATT
+
+-- Compare pseudo-ops `[v]cmp{pred}{type}` are `[v]cmp{type} $pred`, `pred` being the index in
+-- `cmpPreds` of any spelling (VEX) or of the first spelling of predicates 0-7 (legacy).
+/-- info: [] -/
+#guard_msgs in
+#eval (cmpPreds.toList.zipIdx.flatMap fun (preds, i) => preds.zipIdx.flatMap fun (p, j) =>
+  ["ps", "pd", "ss", "sd"].flatMap fun t =>
+    [(s!"vcmp{p}{t} 16(%rsp), %xmm2, %xmm3", some s!"vcmp{t} ${i}, 16(%rsp), %xmm2, %xmm3"),
+     (s!"cmp{p}{t} 16(%rsp), %xmm2",
+      if i < 8 && j == 0 then some s!"cmp{t} ${i}, 16(%rsp), %xmm2" else none)]
+  ).filter fun (s, expected) => reprinted s != expected
+
+#guard [("cmpltss %xmm1, %xmm2", "cmpss $1, %xmm1, %xmm2"),
+  ("cmpordpd (%rax), %xmm2", "cmppd $7, (%rax), %xmm2"),
+  ("vcmpneq_oqps %xmm1, %xmm2, %xmm3", "vcmpps $12, %xmm1, %xmm2, %xmm3"),
+  ("vcmpnge_uqsd %xmm1, %xmm2, %xmm3", "vcmpsd $25, %xmm1, %xmm2, %xmm3"),
+  ("vcmptrue_uspd %ymm1, %ymm2, %ymm3", "vcmppd $31, %ymm1, %ymm2, %ymm3")].all
+  fun (s, e) => reprinted s == some e
+
 #guard match parse "pushw $42" with
   | .ok [d] => toString d == "push word ptr 42"
   | _ => false

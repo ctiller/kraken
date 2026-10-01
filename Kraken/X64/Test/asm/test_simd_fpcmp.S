@@ -1,4 +1,4 @@
-# Test: SimdFpCmp opcodes (ps, pd, ss, sd for all 8 comparison predicates)
+# Test: compare pseudo-ops cmp{pred}{ps,pd,ss,sd} for all 8 legacy predicates
 # Tests NaNs, signed zeros (+0.0 vs -0.0), infinities, and regular numbers.
 
 subq $0x80, %rsp

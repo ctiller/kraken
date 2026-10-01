@@ -642,8 +642,9 @@ def stringOp? (mn : String) (repPfx : RepPrefix := .none) : Option Instr := do
     | _ => none
   pure (toInstr .none (w := w) (.str (← Mnemonic.ofName? (mn.take 4).copy) repPfx))
 
-/-- The VEX comparison pseudo-op predicates 0-31 (SDM Table 3-4), with alias spellings. -/
-def vexCmpPreds : Array (List String) := #[
+/-- The predicates 0-31 of the compare pseudo-ops (SDM Table 3-4), with alias spellings. Legacy SSE
+has only predicates 0-7, in their first spelling. -/
+public def cmpPreds : Array (List String) := #[
   ["eq", "eq_oq"], ["lt", "lt_os"], ["le", "le_os"], ["unord", "unord_q"],
   ["neq", "neq_uq"], ["nlt", "nlt_us"], ["nle", "nle_us"], ["ord", "ord_q"],
   ["eq_uq"], ["nge", "nge_us"], ["ngt", "ngt_us"], ["false", "false_oq"],
@@ -654,13 +655,16 @@ def vexCmpPreds : Array (List String) := #[
   ["neq_os"], ["ge_oq"], ["gt_oq"], ["true_us"]
 ]
 
-/-- Matches `vcmp{pred}{type}` for predicates 0-31 and types `ps`, `pd`, `ss`, `sd`. -/
-def parseVexCmpPseudo? (mn : String) : Option (SimdBinImmOp × Nat) := do
-  guard (mn.startsWith "vcmp")
-  let rest := (mn.drop 4).copy
+/-- Matches the compare pseudo-op `cmp{pred}{type}` (`type` is `ps`, `pd`, `ss` or `sd`), which
+stands for `cmp{type} $pred`. If `vex`, `name` is the `v` form without its `v`. -/
+def parseCmpPseudo? (vex : Bool) (name : String) : Option (SimdBinImmOp × Nat) := do
+  guard (name.startsWith "cmp")
+  let rest := (name.drop 3).copy
   let op ← if rest.endsWith "ps" then some .cmpps else if rest.endsWith "pd" then some .cmppd
     else if rest.endsWith "ss" then some .cmpss else if rest.endsWith "sd" then some .cmpsd else none
-  let idx ← vexCmpPreds.findIdx? (·.contains (rest.dropEnd 2).copy)
+  let pred := (rest.dropEnd 2).copy
+  let idx ← cmpPreds.findIdx? fun ps => if vex then ps.contains pred else ps.head? == some pred
+  guard (vex || idx < 8)
   some (op, idx)
 
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
@@ -818,10 +822,11 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrcs vex
       checkBits name (if vex then op.vexBits? else some 128) w
       pure (toAvxInstr addr_w (if vex then .vexImm op dst src1 src2 imm else .sseImm op dst src2 imm))
-  if let some (op, code) := parseVexCmpPseudo? mn then ps := ps.push do
-    let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
-    checkBits mn op.vexBits? w
-    pure (toAvxInstr addr_w (.vexImm op dst src1 src2 (.int64 (Int64.ofNat code))))
+    if let some (op, pred) := parseCmpPseudo? vex name then ps := ps.push do
+      let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrcs vex
+      checkBits name (if vex then op.vexBits? else some 128) w
+      let imm := .int64 (.ofNat pred)
+      pure (toAvxInstr addr_w (if vex then .vexImm op dst src1 src2 imm else .sseImm op dst src2 imm))
   if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
     let ⟨w, dst⟩ ← parseAvxRegW

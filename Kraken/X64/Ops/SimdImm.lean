@@ -3,7 +3,6 @@ module
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Lanes
 public import Kraken.X64.Ops.SimdCrypto
-public import Kraken.X64.Ops.SimdFpCmp
 public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
@@ -89,6 +88,42 @@ def dpp {k : Nat} (mulOp addOp : BitVec k → BitVec k → BitVec k) (count : Na
   -- Summed pairwise, as the SDM specifies (this matters for rounding and the sign of zero).
   let sum := if count = 2 then addOp (p 0) (p 1) else addOp (addOp (p 0) (p 1)) (addOp (p 2) (p 3))
   .ofLanes 128 k fun i => if imm.getLsbD i then sum else 0#k
+
+def fpPredicateMatch (pred : Nat) (lt eq unord : Bool) : Bool :=
+  match pred % 16 with
+  | 0 => eq
+  | 1 => lt
+  | 2 => lt || eq
+  | 3 => unord
+  | 4 => !eq
+  | 5 => !lt
+  | 6 => !lt && !eq
+  | 7 => !unord
+  | 8 => eq || unord
+  | 9 => lt || unord
+  | 10 => lt || eq || unord
+  | 11 => false
+  | 12 => !eq && !unord
+  | 13 => !lt && !unord
+  | 14 => !lt && !eq && !unord
+  | _ => true
+
+/-- All ones if `pred` holds for single-precision `a` and `b`, else zero. -/
+def f32cmpPred (pred : Nat) (a b : BitVec 32) : BitVec 32 :=
+  let (unord, lt, eq) := fcmp32 a b; .mask 32 (fpPredicateMatch pred lt eq unord)
+
+/-- `f32cmpPred` for double precision. -/
+def f64cmpPred (pred : Nat) (a b : BitVec 64) : BitVec 64 :=
+  let (unord, lt, eq) := fcmp64 a b; .mask 64 (fpPredicateMatch pred lt eq unord)
+
+/-- Compares elements of type `t` with predicate `pred` (scalar types: only the lowest element,
+the others coming from `a`). -/
+def FpType.cmp {n} (t : FpType) (pred : Nat) : BitVec n → BitVec n → BitVec n :=
+  match t with
+  | .ps => .map2 32 (f32cmpPred pred)
+  | .pd => .map2 64 (f64cmpPred pred)
+  | .ss => .scalar 32 (f32cmpPred pred)
+  | .sd => .scalar 64 (f64cmpPred pred)
 
 def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8)
     (memSrc : Bool := false) : BitVec n :=

@@ -4,7 +4,6 @@ public import Kraken.X64.Ops.SimdInt
 public import Kraken.X64.Ops.SimdFp
 public import Kraken.X64.Ops.SimdLogic
 public import Kraken.X64.Ops.SimdShuf
-public import Kraken.X64.Ops.SimdFpCmp
 public import Kraken.X64.Ops.SimdCrypto
 public import Kraken.X64.Ops.SimdPerm
 
@@ -20,7 +19,6 @@ inductive SimdBinOp
   | fp (op : SimdFp)
   | logic (op : SimdLogic)
   | shuf (op : SimdShuf)
-  | fpcmp (op : SimdFpCmp)
   | crypto (op : SimdCrypto)
   | perm (op : SimdPerm)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
@@ -32,7 +30,6 @@ def SimdBinOp.interp {n} : SimdBinOp → BitVec n → BitVec n → BitVec n
   | .fp op => .map2 128 op.interp
   | .logic op => .map2 128 op.interp
   | .shuf op => .map2 128 op.interp
-  | .fpcmp op => .map2 128 op.interp
   | .crypto op => .map2 128 op.interp
   | .perm op => op.interp
 
@@ -47,7 +44,6 @@ def SimdBinOp.swappedInterp? {n} : SimdBinOp → Option (BitVec n → BitVec n �
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdBinOp.memBytes? : SimdBinOp → Option Nat
   | .fp op => op.memBytes?
-  | .fpcmp op => op.memBytes?
   | _ => none
 
 /-- Whether this operation has a VEX (`v`) form. -/
