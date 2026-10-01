@@ -240,6 +240,10 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard (parse "vbroadcastsd (%rax), %xmm0") matches .error _
 #guard (parse "vbroadcasti128 (%rax), %xmm0") matches .error _
 #guard (parse "vbroadcastf128 (%rax), %xmm0") matches .error _
+#guard (parse "vextractf128 $0, %xmm0, (%rax)") matches .error _
+#guard (parse "vextracti128 $0, %xmm0, (%rax)") matches .error _
+#guard (parse "vinsertf128 $0, (%rax), %xmm0, %ymm1") matches .error _
+#guard (parse "vinserti128 $0, (%rax), %ymm0, %xmm1") matches .error _
 -- push/pop only allow 16- and 64-bit operands
 #guard (parse "pushb $1") matches .error _
 #guard (parse "pushl $1") matches .error _
