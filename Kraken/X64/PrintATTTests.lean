@@ -111,7 +111,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #eval failing SimdBinOp (fun op mn =>
     let hasVex := match op with | .crypto cop => cop.hasVex | _ => true
     let isScalar := op.memBytes?.isSome || (op matches .shuf .movlhps | .shuf .movhlps)
-    (if op.hasLegacy then [s!"{mn} 16(%rsp), %xmm1"] else []) ++
+    let isRegOnly := op matches .shuf .movlhps | .shuf .movhlps
+    (if op.hasLegacy then [if isRegOnly then s!"{mn} %xmm0, %xmm1" else s!"{mn} 16(%rsp), %xmm1"] else []) ++
     (if hasVex then [s!"v{mn} %{if isScalar then "x" else "y"}mm1, %{if isScalar then "x" else "y"}mm2, %{if isScalar then "x" else "y"}mm3"] else [])) ++
   failing GprUnOp (fun _ mn => [s!"{mn} (%rsp), %rax", s!"{mn}l %eax, %ebx"]) ++
   failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
@@ -165,10 +166,14 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
     else [s!"{mn} %xmm1, %eax", s!"v{mn} %xmm1, %rax", s!"v{mn} %ymm1, %eax"]) ++
   failing SimdExtractOp (fun op mn =>
     let imm := if op.hasImm then "$1, " else ""
-    [s!"{mn} {imm}%xmm1, (%rsp)", s!"v{mn} {imm}%xmm1, %rax"]) ++
+    let dstReg := if op == .pextrd then "%eax" else "%rax"
+    [s!"{mn} {imm}%xmm1, (%rsp)", s!"v{mn} {imm}%xmm1, {dstReg}"]) ++
   failing SimdInsertOp (fun op mn =>
     let imm := if op.hasImm then "$1, " else ""
-    let (src_s, src_v) := if op matches .movd | .movq then ("%rax", "%rax") else ("(%rsp)", "(%rsp)")
+    let (src_s, src_v) :=
+      if op == .movd then ("%eax", "%eax")
+      else if op == .movq then ("%rax", "%rax")
+      else ("(%rsp)", "(%rsp)")
     let sfx := if op == .cvtsi2ss || op == .cvtsi2sd then "q" else ""
     if op.twoOperand then
       [s!"{mn} {src_s}, %xmm1", s!"v{mn} {src_v}, %xmm1"]
@@ -397,3 +402,45 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 
 -- movd between vector registers rejected
 #guard (parse "movd %xmm1, %xmm0") matches .error _
+
+-- permilps/permilpd legacy forms rejected (VEX-only)
+#guard (parse "permilps $1, %xmm0, %xmm1") matches .error _
+#guard (parse "permilpd $1, %xmm0, %xmm1") matches .error _
+#guard (parse "vpermilps $1, %xmm0, %xmm1") matches .ok _
+#guard (parse "vpermilpd $1, %xmm0, %xmm1") matches .ok _
+
+-- SIMD GPR transfer register width restrictions
+#guard (parse "pinsrb $0, %al, %xmm0") matches .error _
+#guard (parse "pinsrb $0, %ah, %xmm0") matches .error _
+#guard (parse "pinsrw $0, %ax, %xmm0") matches .error _
+#guard (parse "pinsrd $0, %ax, %xmm0") matches .error _
+#guard (parse "pextrb $0, %xmm0, %al") matches .error _
+#guard (parse "pextrw $0, %xmm0, %ax") matches .error _
+#guard (parse "vpinsrb $0, %ah, %xmm1, %xmm2") matches .error _
+#guard (parse "cvtsi2ss %al, %xmm0") matches .error _
+#guard (parse "movd %ax, %xmm0") matches .error _
+#guard (parse "vmovd %ax, %xmm0") matches .error _
+#guard (parse "movq %eax, %xmm0") matches .error _
+#guard (parse "vmovq %eax, %xmm0") matches .error _
+#guard (parse "movq %xmm0, %eax") matches .error _
+#guard (parse "vmovq %xmm0, %eax") matches .error _
+#guard (parse "pinsrd $0, %rax, %xmm0") matches .error _
+#guard (parse "pinsrq $0, %eax, %xmm0") matches .error _
+#guard (parse "pextrd $0, %xmm0, %rax") matches .error _
+#guard (parse "pextrq $0, %xmm0, %eax") matches .error _
+#guard (parse "pinsrb $0, %eax, %xmm0") matches .ok _
+#guard (parse "pinsrb $0, %rax, %xmm0") matches .ok _
+#guard (parse "pextrb $0, %xmm0, %eax") matches .ok _
+#guard (parse "pextrb $0, %xmm0, %rax") matches .ok _
+#guard (parse "pinsrd $0, %eax, %xmm0") matches .ok _
+#guard (parse "pinsrq $0, %rax, %xmm0") matches .ok _
+#guard (parse "pextrd $0, %xmm0, %eax") matches .ok _
+#guard (parse "pextrq $0, %xmm0, %rax") matches .ok _
+#guard (parse "movq %rax, %xmm0") matches .ok _
+#guard (parse "movq %xmm0, %rax") matches .ok _
+
+-- movlhps/movhlps reject memory source
+#guard (parse "movlhps (%rax), %xmm1") matches .error _
+#guard (parse "vmovlhps (%rax), %xmm1, %xmm2") matches .error _
+#guard (parse "movhlps (%rax), %xmm1") matches .error _
+#guard (parse "vmovhlps (%rax), %xmm1, %xmm2") matches .error _

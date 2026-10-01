@@ -685,6 +685,23 @@ def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :
 def checkSuffix (w? : Option Width) (w : Width) : Parser Unit :=
   if w?.all (· == w) then pure () else fail "operand width contradicts suffix"
 
+/-- Parse a register or memory operand for SIMD GPR transfer operations
+(SimdInsertOp, SimdExtractOp, etc.). Per x86-64 / GNU as conventions, register operands
+must be 32-bit or 64-bit GPRs, matching the optional width constraint or default memBits. -/
+def parseGprRegOrMem (regW? : Option Width) (w? : Option Width) (memBits : Nat) : Parser (MaybeAddrWidth × Σ w, RegOrMem w) := do
+  let (addr_w, dst) ← parseRegOrMem
+  match dst.1 with
+  | some (.W8) | some (.W16) => fail "SIMD GPR transfer requires 32-bit or 64-bit register operand"
+  | some w =>
+    checkSuffix regW? w
+    checkSuffix w? w
+    let d ← ascribe w dst
+    pure (addr_w, ⟨w, d⟩)
+  | none =>
+    let w := w?.getD (.ofBits memBits)
+    let d ← ascribe w dst
+    pure (addr_w, ⟨w, d⟩)
+
 /-- `src, %dst` with AVX operands. -/
 def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
   let (addr_w, src) ← parseAvxRegOrMem; parseComma
@@ -763,6 +780,8 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if !op.hasLegacy then fail s!"{mn}: VEX-only instruction"
     let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
     if w != .W128 then fail s!"{mn}: expected 128-bit operands"
+    if (op matches .shuf .movlhps | .shuf .movhlps) && src matches .mem _ then
+      fail s!"{mn}: expected register operand"
     pure (toAvxInstr addr_w (.sse op dst src))
   if let some op := Mnemonic.ofName? (α := SimdBinOp) v then ps := ps.push do
     if let .crypto cop := op then
@@ -771,6 +790,8 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if op.memBytes?.isSome && w != .W128 then fail s!"v{v}: scalar op requires 128-bit operands"
     if (op matches .shuf .movlhps | .shuf .movhlps) && w != .W128 then
       fail s!"v{v}: requires 128-bit operands"
+    if (op matches .shuf .movlhps | .shuf .movhlps) && src2 matches .mem _ then
+      fail s!"v{v}: expected register operand"
     if let .perm pop := op then
       if (pop == .permd || pop == .permps) && w != .W256 then fail s!"v{v}: requires 256-bit operands"
     pure (toAvxInstr addr_w (.vex op dst src1 src2))
@@ -924,47 +945,50 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some (op, w?) := lookupSized SimdToGprOp name then ps := ps.push do
       let (addr_w, src) ← parseAvxRegOrMem; parseComma
       let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
+      if w != .W32 && w != .W64 then fail s!"{name}: expected 32-bit or 64-bit destination register"
       if !vex && src.1.any (· != .W128) then fail s!"{name}: expected 128-bit operand"
       let srcW := if !vex || op.memBytes?.isSome then .W128 else src.1.getD .W128
       let vsrc ← ascribeAvx srcW src
       pure (toAvxInstr addr_w (if vex then .vexToGpr op dst vsrc else .sseToGpr op dst vsrc))
   for (vex, name) in [(false, mn), (true, v)] do
-    if let some op := Mnemonic.ofName? (α := SimdExtractOp) name then ps := ps.push do
+    if let some (op, w?) := lookupSized SimdExtractOp name then ps := ps.push do
       let imm ← parseOptImmComma op.hasImm
       let ⟨w, src⟩ ← parseAvxRegW; parseComma
       if w != .W128 then fail s!"{name}: expected xmm source"
-      let (addr_w, dst) ← parseRegOrMem
-      let w := dst.1.getD (.ofBits op.memBits)
-      let d ← ascribe w dst
+      let regW? : Option Width := match op with
+        | .movq | .pextrq => some .W64
+        | .pextrd => some .W32
+        | _ => none
+      let (addr_w, ⟨_gw, d⟩) ← parseGprRegOrMem regW? w? op.memBits
       pure (toAvxInstr addr_w (if vex then .vexExtract op d src imm else .sseExtract op d src imm))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some (op, w?) := lookupSized SimdInsertOp name then ps := ps.push do
+      let regW? : Option Width := match op with
+        | .movq | .pinsrq => some .W64
+        | .pinsrd => some .W32
+        | _ => none
       if op.twoOperand then
-        let (addr_w, src) ← parseRegOrMem
-        if src.1.isNone then fail s!"{name} memory loads handled by SimdUnOp"
+        let (addr_w, ⟨_gw, src⟩) ← parseGprRegOrMem regW? w? op.memBits
+        if src matches .mem _ then fail s!"{name} memory loads handled by SimdUnOp"
         parseComma
         let ⟨w, dst⟩ ← parseAvxRegW
         if w != .W128 then fail s!"{name}: expected xmm destination"
-        let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
-        let ascribed ← ascribe srcW src
-        pure (toAvxInstr addr_w (if vex then .vexInsert op dst dst ascribed none else .sseInsert op dst ascribed none))
+        pure (toAvxInstr addr_w (if vex then .vexInsert op dst dst src none else .sseInsert op dst src none))
       else if vex then
         let imm ← parseOptImmComma op.hasImm
-        let (addr_w, src2) ← parseRegOrMem; parseComma
+        let (addr_w, ⟨_gw, src2⟩) ← parseGprRegOrMem regW? w? op.memBits; parseComma
         let ⟨w, src1⟩ ← parseAvxRegW; parseComma
         let dst ← parseAvxRegW
         if w != .W128 then fail s!"{name}: expected xmm source"
         if h : dst.w = w then
-          let srcW := (w? <|> src2.1).getD (.ofBits op.memBits)
-          pure (toAvxInstr addr_w (.vexInsert op (h ▸ dst.reg) src1 (← ascribe srcW src2) imm))
+          pure (toAvxInstr addr_w (.vexInsert op (h ▸ dst.reg) src1 src2 imm))
         else fail "AVX operand widths differ"
       else
         let imm ← parseOptImmComma op.hasImm
-        let (addr_w, src) ← parseRegOrMem; parseComma
+        let (addr_w, ⟨_gw, src⟩) ← parseGprRegOrMem regW? w? op.memBits; parseComma
         let ⟨w, dst⟩ ← parseAvxRegW
         if w != .W128 then fail s!"{name}: expected xmm destination"
-        let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
-        pure (toAvxInstr addr_w (.sseInsert op dst (← ascribe srcW src) imm))
+        pure (toAvxInstr addr_w (.sseInsert op dst src imm))
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose

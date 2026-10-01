@@ -48,7 +48,7 @@ def SimdUnImmOp.interp {n} (op : SimdUnImmOp) (a : BitVec n) (imm : BitVec 8) : 
 
 /-- Whether this operation has a legacy (non-VEX) SSE form. -/
 def SimdUnImmOp.hasLegacy : SimdUnImmOp → Bool
-  | .permq | .permpd => false
+  | .permq | .permpd | .permilps | .permilpd => false
   | _ => true
 
 inductive SimdBinImmOp
