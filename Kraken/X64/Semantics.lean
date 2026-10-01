@@ -607,14 +607,17 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
   | .xchg dst src =>
     dst.interp s p (fun dval s =>
     let sval := s.regs.get src
-    let s := s.setReg src dval
-    s.set dst sval p next)
+    -- Store first: `src` may be part of the address.
+    s.set dst sval p fun s => next (s.setReg src dval))
   | .xadd dst src =>
     dst.interp s p (fun dval s =>
-    let sval := s.regs.get src
-    let (v, status) := addFlags s.status dval sval
-    let s := { s with status }.setReg src dval
-    s.set dst v p next)
+    let (v, status) := addFlags s.status dval (s.regs.get src)
+    let s := { s with status }
+    match dst with
+    -- Store first: `src` may be part of the address.
+    | .mem _ => s.set dst v p fun s => next (s.setReg src dval)
+    -- `SRC := DEST; DEST := TEMP`: the sum wins if they are the same register.
+    | .reg r => next ((s.setReg src dval).setReg r v))
   | .cmpxchg dst src =>
     let acc := s.regs.get (Reg.low .rax w)
     dst.interp s p (fun dval s =>
