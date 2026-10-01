@@ -359,7 +359,10 @@ def AvxRegOrMem.interpSimd {w} [Labels] [AddressSize]
   let addr (a : AddrExpr) := (a.interp s.regs p).zeroExtend 64
   match o, bytes? with
   | .mem a, some 16 => s.loadAvx (addr a) .W128 (fun v s => ret (v.zeroExtend _) s)
-  | .mem a, some n => s.load (addr a) (.ofBytes n) (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some 32 => s.loadAvx (addr a) .W256 (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some n => match Width.ofBytes? n with
+    | some w => s.load (addr a) w (fun v s => ret (v.zeroExtend _) s)
+    | none => unimplemented s!"{n}-byte SIMD memory operand"
   | _, _ => o.interp s p ret (checkAlign := legacy)
 
 def SimdCount.interp [Labels] [AddressSize] (c : SimdCount) (s : MachineData) (p : Std.Rco Int64)
@@ -1005,7 +1008,7 @@ match i with
       src.interpSimd (some op.bytes) s p legacy (fun v s =>
         next (s.setAvxReg d v legacy))
     | _, .mem a, .avx s_reg =>
-      s.store ((a.interp s.regs p).zeroExtend 64) (w := .ofBytes op.bytes) ((s.zmms.get s_reg).take _) next
+      s.store ((a.interp s.regs p).zeroExtend 64) (w := op.width) ((s.zmms.get s_reg).take _) next
     | _, _, _ => next s
   | .vexScalar op dst src1 src2 =>
     let s1val := (s.zmms.get src1).take 128

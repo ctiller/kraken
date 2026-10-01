@@ -220,7 +220,10 @@ def AvxRegOrMem.toStrSimd {w} (memBytes? : Option Nat) (rm : AvxRegOrMem w) (add
   | .avx r, some _ => ToString.toString (r.as .W128)
   | .avx r, none => ToString.toString r
   | .mem a, some 16 => "XMMWORD PTR " ++ a.toStr addr_w
-  | .mem a, some n => s!"{(Width.ofBytes n).ptrName} PTR {a.toStr addr_w}"
+  | .mem a, some 32 => "YMMWORD PTR " ++ a.toStr addr_w
+  | .mem a, some n => match Width.ofBytes? n with
+    | some w => s!"{w.ptrName} PTR {a.toStr addr_w}"
+    | none => rm.toStr addr_w
   | .mem _, _ => rm.toStr addr_w
 
 /-- The mnemonic of `op`, `v`-prefixed unless `legacy`. -/

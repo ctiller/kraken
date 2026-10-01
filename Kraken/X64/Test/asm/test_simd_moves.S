@@ -1,4 +1,5 @@
-# Test: SIMD scalar moves, zeroing, extract/insert, movq/movd
+# Test: SIMD scalar moves and movq/movd (extract/insert and vzeroupper/vzeroall are in
+# test_simd_extract_insert.S and test_simd_vzero.S, so that every result reaches the final state)
 subq $0x80, %rsp
 
 # Setup memory constants
@@ -37,6 +38,10 @@ movsd %xmm5, %xmm6
 vmovss %xmm5, %xmm6, %xmm7
 vmovsd %xmm5, %xmm4, %xmm8
 
+# Read the stores back (xmm5 is no longer needed as an input)
+movups 32(%rsp), %xmm15
+movq 48(%rsp), %xmm5
+
 # 2. movq / movd
 movq %xmm7, %xmm9
 vmovq %xmm8, %xmm10
@@ -44,31 +49,5 @@ movq 0(%rsp), %xmm11
 vmovq 8(%rsp), %xmm12
 movd 16(%rsp), %xmm13
 vmovd 20(%rsp), %xmm14
-
-# 3. vextracti128 / vextractf128 and vinserti128 / vinsertf128
-vmovups 0(%rsp), %ymm0
-vextracti128 $0, %ymm0, %xmm1
-vextracti128 $1, %ymm0, %xmm2
-vextracti128 $1, %ymm0, 56(%rsp)
-vextractf128 $0, %ymm0, 72(%rsp)
-vextractf128 $1, %ymm0, %xmm3
-
-vinserti128 $0, %xmm1, %ymm0, %ymm4
-vinserti128 $1, %xmm2, %ymm0, %ymm5
-vinserti128 $0, 56(%rsp), %ymm0, %ymm6
-vinsertf128 $1, %xmm3, %ymm0, %ymm7
-vinsertf128 $0, 72(%rsp), %ymm0, %ymm8
-
-# 4. vzeroupper test:
-# ymm4-8 have non-zero upper halves. vzeroupper zeroes bits 255:128 while keeping xmm4-8.
-vzeroupper
-
-# 5. vzeroall test:
-# Zero all ymm0-15.
-vzeroall
-
-# Re-populate a couple registers after vzeroall so final state is non-trivial
-vmovups 0(%rsp), %ymm1
-vmovsd 8(%rsp), %xmm2
 
 addq $0x80, %rsp

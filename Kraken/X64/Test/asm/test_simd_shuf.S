@@ -1,7 +1,7 @@
-# Test: SIMD shuffle, pack, unpack, and byte permute instructions
+# Test: SIMD pack and unpack instructions
 # Exercises packsswb, packssdw, packuswb, packusdw, punpcklbw, punpcklwd,
-# punpckldq, punpcklqdq, punpckhbw, punpckhwd, punpckhdq, punpckhqdq,
-# unpcklps, unpckhps, unpcklpd, unpckhpd, pshufb, movlhps, movhlps
+# punpckldq, punpcklqdq, punpckhbw, punpckhwd (continued in test_simd_shuf2.S and
+# test_simd_shuf_256.S, so that every result reaches the final state)
 
 subq $0x80, %rsp
 
@@ -69,59 +69,11 @@ punpckldq 16(%rsp), %xmm12
 movups 0(%rsp), %xmm13
 punpcklqdq 16(%rsp), %xmm13
 
-# 3. punpckh family: punpckhbw, punpckhwd, punpckhdq, punpckhqdq
+# 3. punpckh family: punpckhbw, punpckhwd (punpckhdq and punpckhqdq are in test_simd_shuf2.S)
 movups 0(%rsp), %xmm14
 punpckhbw 16(%rsp), %xmm14
 
 movups 0(%rsp), %xmm15
 punpckhwd 16(%rsp), %xmm15
-
-# Overwrite earlier registers to test remaining opcodes
-movups 0(%rsp), %xmm0
-punpckhdq 16(%rsp), %xmm0
-
-movups 0(%rsp), %xmm1
-punpckhqdq 16(%rsp), %xmm1
-
-# 4. FP unpacks: unpcklps, unpckhps, unpcklpd, unpckhpd
-movups 0(%rsp), %xmm2
-unpcklps 16(%rsp), %xmm2
-
-movups 0(%rsp), %xmm3
-unpckhps 16(%rsp), %xmm3
-
-movups 0(%rsp), %xmm4
-unpcklpd 16(%rsp), %xmm4
-
-movups 0(%rsp), %xmm5
-unpckhpd 16(%rsp), %xmm5
-
-# 5. pshufb
-movups 16(%rsp), %xmm6
-pshufb 32(%rsp), %xmm6
-
-vpshufb 32(%rsp), %xmm6, %xmm7
-
-# 6. movlhps, movhlps
-movups 0(%rsp), %xmm8
-movups 16(%rsp), %xmm9
-movlhps %xmm9, %xmm8
-
-movups 0(%rsp), %xmm10
-movups 16(%rsp), %xmm11
-movhlps %xmm11, %xmm10
-
-vmovlhps %xmm9, %xmm0, %xmm12
-vmovhlps %xmm11, %xmm1, %xmm13
-
-# 7. 256-bit VEX forms
-vmovups 48(%rsp), %ymm14
-vmovups 48(%rsp), %ymm15
-vpacksswb %ymm15, %ymm14, %ymm0
-vpshufb %ymm15, %ymm14, %ymm1
-vpunpcklbw %ymm15, %ymm14, %ymm2
-vpunpckhqdq %ymm15, %ymm14, %ymm3
-vunpcklps %ymm15, %ymm14, %ymm4
-vunpckhpd %ymm15, %ymm14, %ymm5
 
 addq $0x80, %rsp

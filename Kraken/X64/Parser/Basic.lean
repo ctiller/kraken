@@ -690,7 +690,7 @@ def parseGprRegOrMem (regW? : Option Width) (w? : Option Width) (memBits : Nat) 
     let d ← ascribe w dst
     pure (addr_w, ⟨w, d⟩)
   | none =>
-    let w := w?.getD (.ofBits memBits)
+    let some w := w? <|> Width.ofBits? memBits | fail s!"no {memBits}-bit memory operand width"
     let d ← ascribe w dst
     pure (addr_w, ⟨w, d⟩)
 

@@ -29,10 +29,12 @@ instance : ToString Width where
 namespace Width
 @[kstep, simp, reducible] def bits : Width → Nat | W8 => 8 | W16 => 16 | W32 => 32 | W64 => 64
 @[kstep, simp, reducible] def bytes : Width → Nat | W8 => 1 | W16 => 2 | W32 => 4 | W64 => 8
-@[simp, reducible] def ofBits : Nat → Width
-  | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
-@[simp, reducible] def ofBytes : Nat → Width
-  | 1 => .W8 | 2 => .W16 | 4 => .W32 | _ => .W64
+/-- The width of `n` bits, if there is one (no fallback, so callers must handle other sizes). -/
+@[simp, reducible] def ofBits? : Nat → Option Width
+  | 8 => some .W8 | 16 => some .W16 | 32 => some .W32 | 64 => some .W64 | _ => none
+/-- The width of `n` bytes, if there is one (no fallback, so callers must handle other sizes). -/
+@[simp, reducible] def ofBytes? : Nat → Option Width
+  | 1 => some .W8 | 2 => some .W16 | 4 => some .W32 | 8 => some .W64 | _ => none
 @[kstep] abbrev bytesv (w : Width) {n} : BitVec n := BitVec.ofNat n w.bytes
 @[kstep] abbrev type (w : Width) : Type := BitVec w.bits
 instance {w : Width} : Coe Bool w.type where coe := fun b : Bool => BitVec.ofNat _ b.toNat
@@ -49,6 +51,9 @@ unif_hint (w : Width) where
 
 unif_hint (w : Width) where
   w =?= Width.W64 |- Width.type w =?= BitVec 64
+
+/-- The width of the memory operand of `movss`/`movsd`. -/
+def SimdScalarMov.width : SimdScalarMov → Width | .movss => .W32 | .movsd => .W64
 
 inductive AvxWidth | W128 | W256 | W512 deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 

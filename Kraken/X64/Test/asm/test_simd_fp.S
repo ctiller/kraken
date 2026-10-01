@@ -136,6 +136,18 @@ addsubps %xmm15, %xmm14
 haddps %xmm15, %xmm14
 hsubps %xmm15, %xmm14
 
+# Fold the results that the code below overwrites into %ymm15 (no longer needed as an input),
+# so that they reach the final state; unlike xor, vaesenc doesn't cancel equal results.
+vaesenc %ymm0, %ymm15, %ymm15
+vaesenc %ymm2, %ymm15, %ymm15
+vaesenc %ymm3, %ymm15, %ymm15
+vaesenc %ymm4, %ymm15, %ymm15
+vaesenc %ymm5, %ymm15, %ymm15
+vaesenc %ymm8, %ymm15, %ymm15
+vaesenc %ymm9, %ymm15, %ymm15
+vaesenc %ymm10, %ymm15, %ymm15
+vaesenc %ymm11, %ymm15, %ymm15
+
 movaps 96(%rsp), %xmm0
 movaps 112(%rsp), %xmm1
 addsubpd %xmm1, %xmm0

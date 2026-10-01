@@ -1,6 +1,4 @@
-# Test: compare pseudo-ops cmp{pred}{ps,pd} for all 8 legacy predicates (scalar forms are in
-# test_simd_fpcmp_scalar.S and test_simd_fpcmp_vex.S, so that every result reaches the final state)
-# Tests NaNs, signed zeros (+0.0 vs -0.0), infinities, and regular numbers.
+# Test: SimdFpCmp scalar ss and sd for all 8 comparison predicates (from test_simd_fpcmp.S)
 
 subq $0x80, %rsp
 
@@ -35,54 +33,54 @@ movl $0x3f800000, 64(%rsp)   # 1.0f
 movabsq $0x3ff0000000000000, %rax # 1.0
 movq %rax, 72(%rsp)
 
-# Test packed single ps (all 8 predicates)
+# Scalar single ss (all 8 predicates, memory source, high lanes from the destination)
 movaps 0(%rsp), %xmm0
-cmpeqps 16(%rsp), %xmm0
+cmpeqss 16(%rsp), %xmm0
 
 movaps 0(%rsp), %xmm1
-cmpltps 16(%rsp), %xmm1
+cmpltss 16(%rsp), %xmm1
 
 movaps 0(%rsp), %xmm2
-cmpleps 16(%rsp), %xmm2
+cmpless 16(%rsp), %xmm2
 
 movaps 0(%rsp), %xmm3
-cmpunordps 16(%rsp), %xmm3
+cmpunordss 16(%rsp), %xmm3
 
 movaps 0(%rsp), %xmm4
-cmpneqps 16(%rsp), %xmm4
+cmpneqss 16(%rsp), %xmm4
 
 movaps 0(%rsp), %xmm5
-cmpnltps 16(%rsp), %xmm5
+cmpnltss 16(%rsp), %xmm5
 
 movaps 0(%rsp), %xmm6
-cmpnleps 16(%rsp), %xmm6
+cmpnless 16(%rsp), %xmm6
 
 movaps 0(%rsp), %xmm7
-cmpordps 16(%rsp), %xmm7
+cmpordss 16(%rsp), %xmm7
 
-# Test packed double pd (all 8 predicates)
+# Scalar double sd (all 8 predicates, memory source, high lanes from the destination)
 movaps 32(%rsp), %xmm8
-cmpeqpd 48(%rsp), %xmm8
+cmpeqsd 48(%rsp), %xmm8
 
 movaps 32(%rsp), %xmm9
-cmpltpd 48(%rsp), %xmm9
+cmpltsd 48(%rsp), %xmm9
 
 movaps 32(%rsp), %xmm10
-cmplepd 48(%rsp), %xmm10
+cmplesd 48(%rsp), %xmm10
 
 movaps 32(%rsp), %xmm11
-cmpunordpd 48(%rsp), %xmm11
+cmpunordsd 48(%rsp), %xmm11
 
 movaps 32(%rsp), %xmm12
-cmpneqpd 48(%rsp), %xmm12
+cmpneqsd 48(%rsp), %xmm12
 
 movaps 32(%rsp), %xmm13
-cmpnltpd 48(%rsp), %xmm13
+cmpnltsd 48(%rsp), %xmm13
 
 movaps 32(%rsp), %xmm14
-cmpnlepd 48(%rsp), %xmm14
+cmpnlesd 48(%rsp), %xmm14
 
 movaps 32(%rsp), %xmm15
-cmpordpd 48(%rsp), %xmm15
+cmpordsd 48(%rsp), %xmm15
 
 addq $0x80, %rsp
