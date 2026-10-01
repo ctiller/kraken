@@ -607,7 +607,10 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
       let sval := s.regs.get src
       s.set dst sval p next
     else
-      next (s.setReg (Reg.low .rax w) dval))
+      let s := s.setReg (Reg.low .rax w) dval
+      match dst with
+      | .mem _ => s.set dst dval p next
+      | .reg _ => next s)
   | .cmpxchg8b a =>
     let addr := (a.interp s.regs p).zeroExtend 64
     s.load addr .W64 (fun mem_val s =>
@@ -626,7 +629,7 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
       let low := (mem_val.take 32).setWidth 32
       let high := (mem_val.drop 32).setWidth 32
       let s := (s.setReg (.low .rax .W32) low).setReg (.low .rdx .W32) high
-      next s)
+      s.store addr mem_val next)
   | .cmpxchg16b a =>
     let addr := (a.interp s.regs p).zeroExtend 64
     if !isAligned 16 addr then
@@ -647,7 +650,8 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
         let status := { s.status with zf := false }
         let s := { s with status }
         let s := (s.setReg (.low .rax .W64) mem_low).setReg (.low .rdx .W64) mem_high
-        next s))
+        s.store addr mem_low (fun s =>
+        s.store (addr + 8) mem_high next)))
   | .ud2 => Effects.fault "#UD: undefined instruction"
   | .int3 => Effects.fault "#BP: breakpoint trap"
   | .hlt => Effects.fault "HLT: halt instruction"
