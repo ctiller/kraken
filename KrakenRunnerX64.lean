@@ -168,6 +168,7 @@ elab "gen_ctors% " t:ident : term <= ty => do
   elabTerm (← `(oneOf #[$alts,*])) ty
 
 instance {α : Type} [Gen α] : Gen (Option α) := ⟨gen_ctors% Option⟩
+instance : Gen Bool := ⟨gen_ctors% Bool⟩
 instance : Gen Width := ⟨gen_ctors% Width⟩
 instance : Gen AvxWidth := ⟨gen_ctors% AvxWidth⟩
 instance : Gen RegMm := ⟨gen_ctors% RegMm⟩

@@ -773,9 +773,9 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if instr.width? == some .W8 then fail s!"{mn}: expected 16-, 32-, or 64-bit operands"
     pure instr
   if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
-    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.mov op)
+    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.mov true op)
   if let some op := Mnemonic.ofName? (α := SimdMov) v then ps := ps.push do
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op)
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov false op)
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
       if !(if vex then op.hasVex else op.hasLegacy) then fail s!"{name} is not a valid instruction"
@@ -789,8 +789,6 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     else (name, none)
     if let some op := Mnemonic.ofName? (α := SimdUnOp) stem then ps := ps.push do
       if !vex && !op.hasLegacy then fail s!"{stem}: VEX-only instruction"
-      let mk {w} (dst : AvxReg w) (src : AvxRegOrMem w) : AvxOperation w :=
-        if vex then .vexUn op dst src else .sseUn op dst src
       if op.isNarrowing then
         -- An xmm destination; the source width comes from the x/y suffix or a register source.
         let (addr_w, src) ← parseAvxRegOrMem; parseComma
@@ -799,20 +797,20 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
           | fail s!"{name}: memory operand requires x or y suffix"
         if sfx?.any fun sw => src.1.any (· != sw) then fail s!"{name}: operand width contradicts suffix"
         if w == .W512 then fail s!"{name}: unsupported width"
-        pure (toAvxInstr addr_w (mk ((AvxReg.xmm mm).as w) (← ascribeAvx w src)))
+        pure (toAvxInstr addr_w (.un (!vex) op ((AvxReg.xmm mm).as w) (← ascribeAvx w src)))
       else
         if sfx?.isSome then fail s!"{name}: unexpected suffix"
         let (addr_w, ⟨w, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
         checkBits name (if vex then op.vexBits? else some 128) w
         if op == .movd && src matches .avx _ then fail s!"{name}: expected memory operand"
-        pure (toAvxInstr addr_w (mk dst src))
+        pure (toAvxInstr addr_w (.un (!vex) op dst src))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdUnImmOp) name then ps := ps.push do
       if !vex && !op.hasLegacy then fail s!"{name}: VEX-only instruction"
       let imm ← parseImmComma
       let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
       checkBits name (if vex then op.vexBits? else some 128) w
-      pure (toAvxInstr addr_w (if vex then .vexUnImm op dst src imm else .sseUnImm op dst src imm))
+      pure (toAvxInstr addr_w (.unImm (!vex) op dst src imm))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdBinImmOp) name then ps := ps.push do
       if !(if vex then op.hasVex else op.hasLegacy) then fail s!"{name} is not a valid instruction"
@@ -841,7 +839,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       let (addr_w, ⟨w, src2, src1⟩) ← parseAvxSrcDst
       if !vex && w != .W128 then fail s!"{name}: expected 128-bit operands"
       if vex && op.memBytes?.isSome && w != .W128 then fail s!"{name}: expected 128-bit operands"
-      pure (toAvxInstr addr_w (if vex then .vexTest op src1 src2 else .sseTest op src1 src2))
+      pure (toAvxInstr addr_w (.test (!vex) op src1 src2))
   if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then ps := ps.push do
     let (addr_w, ⟨w, src, dst⟩) ←
       (attempt do
@@ -861,20 +859,20 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if op.scalar && w != .W128 then fail s!"{mn}: scalar FMA requires 128-bit operands"
     pure (toAvxInstr addr_w (.fma op dst src2 src3))
   if let some op := Mnemonic.ofName? (α := SimdScalarMov) mn then ps := ps.push do
-    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.sseMovs op)
+    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.movs true op)
   if let some op := Mnemonic.ofName? (α := SimdScalarMov) v then ps := ps.push do
     let (addr_w1, op1) ← parseAvxAO parseAvxRegOrMem .W128; parseComma
     match op1 with
     | .mem _ =>
       let (addr_w2, dst) ← parseAvxAO parseAvxRegOrMem .W128
       let addr_w ← mergeAddrWidths addr_w1 addr_w2
-      pure (toAvxInstr addr_w (.vexMovs op dst op1))
+      pure (toAvxInstr addr_w (.movs false op dst op1))
     | .avx src2 =>
       let (addr_w2, op2) ← parseAvxAO parseAvxRegOrMem .W128
       match op2 with
       | .mem _ =>
         let addr_w ← mergeAddrWidths addr_w1 addr_w2
-        pure (toAvxInstr addr_w (.vexMovs op op2 op1))
+        pure (toAvxInstr addr_w (.movs false op op2 op1))
       | .avx src1 =>
         parseComma
         let ⟨w, dst⟩ ← parseAvxRegW
@@ -912,7 +910,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       if !vex && src.1.any (· != .W128) then fail s!"{name}: expected 128-bit operand"
       let srcW := if !vex || op.memBytes?.isSome then .W128 else src.1.getD .W128
       let vsrc ← ascribeAvx srcW src
-      pure (toAvxInstr addr_w (if vex then .vexToGpr op dst vsrc else .sseToGpr op dst vsrc))
+      pure (toAvxInstr addr_w (.toGpr (!vex) op dst vsrc))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some (op, w?) := lookupSized SimdExtractOp name then ps := ps.push do
       let imm ← parseOptImmComma op.hasImm
@@ -923,7 +921,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         | .pextrd => some .W32
         | _ => none
       let (addr_w, ⟨_gw, d⟩) ← parseGprRegOrMem regW? w? op.memBits
-      pure (toAvxInstr addr_w (if vex then .vexExtract op d src imm else .sseExtract op d src imm))
+      pure (toAvxInstr addr_w (.extract (!vex) op d src imm))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some (op, w?) := lookupSized SimdInsertOp name then ps := ps.push do
       let regW? : Option Width := match op with

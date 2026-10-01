@@ -963,16 +963,14 @@ def AvxOperation.interp [Labels] [address_size : AddressSize]
     if op.resultUndefined a b immVal then undefined fun v => next (s.setAvxReg dst v legacy)
     else next (s.setAvxReg dst (op.interp a b immVal (src2 matches .mem _)) legacy)
 match i with
-  | .mov op dst src | .vmov op dst src =>
+  | .mov legacy op dst src =>
     src.interp s p (checkAlign := op.aligned) (fun v s =>
-    s.setAvx dst v p next op.aligned (legacy := i matches .mov ..))
+    s.setAvx dst v p next op.aligned legacy)
   | .sse op dst src => bin true op dst dst src
   | .vex op dst src1 src2 => bin false op dst src1 src2
-  | .sseUn op dst src | .vexUn op dst src =>
-    let legacy := i matches .sseUn ..
+  | .un legacy op dst src =>
     src.interpSimd (op.memBytes? w.bytes) s p legacy (fun a s => next (s.setAvxReg dst (op.interp a) legacy))
-  | .sseUnImm op dst src imm | .vexUnImm op dst src imm =>
-    let legacy := i matches .sseUnImm ..
+  | .unImm legacy op dst src imm =>
     let immVal := imm.imm8 p
     if op.reservedImm immVal then .unimplemented "reserved imm8 bits" else
     src.interp s p (checkAlign := legacy) (fun a s => next (s.setAvxReg dst (op.interp a immVal) legacy))
@@ -983,8 +981,8 @@ match i with
     next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) c)))
   | .vexShift op dst src count =>
     count.interp s p (legacy := false) (fun c s => next (s.setAvxReg dst (op.interp (s.zmms.get src) c)))
-  | .sseTest op src1 src2 | .vexTest op src1 src2 =>
-    src2.interpSimd op.memBytes? s p (legacy := i matches .sseTest ..) (fun b s =>
+  | .test legacy op src1 src2 =>
+    src2.interpSimd op.memBytes? s p legacy (fun b s =>
     s.status.update (op.interp (s.zmms.get src1) b) fun status => next { s with status })
   | .sseBlendv op dst src =>
     src.interp s p (checkAlign := true) (fun b s =>
@@ -996,25 +994,19 @@ match i with
     next (s.setAvxReg dst (op.interp (s.zmms.get dst) (s.zmms.get src2) c)))
   | .vzeroupper => next { s with zmms := s.zmms.vzeroupper }
   | .vzeroall => next { s with zmms := s.zmms.vzeroall }
-  | .sseMovs op dst src => match dst, src with
-    | .avx d, .avx s_reg =>
+  | .movs legacy op dst src => match legacy, dst, src with
+    -- (The VEX register form is `vexScalar`.)
+    | true, .avx d, .avx s_reg =>
       let dval := (s.zmms.get d).take 128
       let sval := (s.zmms.get s_reg).take 128
       let v := dval.replaceLow (sval.take (op.bytes * 8))
       next (s.setAvxReg (legacy := true) d (v.zeroExtend _))
-    | .avx d, .mem _ =>
-      src.interpSimd (some op.bytes) s p (legacy := true) (fun v s =>
-        next (s.setAvxReg (legacy := true) d v))
-    | .mem a, .avx s_reg =>
+    | _, .avx d, .mem _ =>
+      src.interpSimd (some op.bytes) s p legacy (fun v s =>
+        next (s.setAvxReg d v legacy))
+    | _, .mem a, .avx s_reg =>
       s.store ((a.interp s.regs p).zeroExtend 64) (w := .ofBytes op.bytes) ((s.zmms.get s_reg).take _) next
-    | _, _ => next s
-  | .vexMovs op dst src => match dst, src with
-    | .avx d, .mem _ =>
-      src.interpSimd (some op.bytes) s p (legacy := false) (fun v s =>
-        next (s.setAvxReg d v))
-    | .mem a, .avx s_reg =>
-      s.store ((a.interp s.regs p).zeroExtend 64) (w := .ofBytes op.bytes) ((s.zmms.get s_reg).take _) next
-    | _, _ => next s
+    | _, _, _ => next s
   | .vexScalar op dst src1 src2 =>
     let s1val := (s.zmms.get src1).take 128
     let s2val := (s.zmms.get src2).take 128
@@ -1050,10 +1042,10 @@ match i with
         f32ToF16 mode (sval.lane 32 i)
       s.setAvx dst res128 p next
     | _ => .unimplemented "vcvtps2ph requires 128- or 256-bit source"
-  | .sseToGpr op (gw := gw) dst src | .vexToGpr op (gw := gw) dst src =>
-    src.interpSimd op.memBytes? s p (legacy := i matches .sseToGpr ..) (fun a s =>
+  | .toGpr legacy op (gw := gw) dst src =>
+    src.interpSimd op.memBytes? s p legacy (fun a s =>
     next (s.setReg dst (op.interp gw.bits a)))
-  | .sseExtract op (gw := gw) dst src imm | .vexExtract op (gw := gw) dst src imm =>
+  | .extract _ op (gw := gw) dst src imm =>
     let res := op.interp gw.bits (s.zmms.get src) (imm.imm8 p)
     s.set dst res p next
   | .sseInsert op dst (gw := gw) src imm =>

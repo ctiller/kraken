@@ -4,7 +4,7 @@ public import Kraken.X64.Mnemonic
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
-/-! Full-vector SSE/AVX moves `op src, dst` (`AvxOperation.mov`, and `.vmov` for the `v` forms). -/
+/-! Full-vector SSE/AVX moves `op src, dst` (`AvxOperation.mov`). -/
 
 @[expose] public section
 

@@ -6,8 +6,7 @@ public import Kraken.X64.Ops.Lanes
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
-/-! SSE/AVX operations that only set status flags: `op src2, src1` (`AvxOperation.sseTest`, and
-`.vexTest` for the `v` forms). -/
+/-! SSE/AVX operations that only set status flags: `op src2, src1` (`AvxOperation.test`). -/
 
 @[expose] public section
 

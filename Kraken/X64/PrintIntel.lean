@@ -223,36 +223,34 @@ def AvxRegOrMem.toStrSimd {w} (memBytes? : Option Nat) (rm : AvxRegOrMem w) (add
   | .mem a, some n => s!"{(Width.ofBytes n).ptrName} PTR {a.toStr addr_w}"
   | .mem _, _ => rm.toStr addr_w
 
+/-- The mnemonic of `op`, `v`-prefixed unless `legacy`. -/
+def avxName {α} [Mnemonic α] [DecidableEq α] (legacy : Bool) (op : α) : String :=
+  (if legacy then "" else "v") ++ Mnemonic.name op
+
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
-  | .mov op dst src => s!"{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .vmov op dst src => s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src.toStr addr_w}"
+  | .mov l op dst src => s!"{avxName l op} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
-  | .sseUn op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
-  | .vexUn op dst src =>
-    let dstStr := if op.isNarrowing then ToString.toString (dst.as AvxWidth.W128) else ToString.toString dst
-    s!"v{Mnemonic.name op} {dstStr}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
-  | .sseUnImm op dst src imm =>
-    s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
+  | .un l op dst src =>
+    let dstStr := if !l && op.isNarrowing then ToString.toString (dst.as AvxWidth.W128) else ToString.toString dst
+    s!"{avxName l op} {dstStr}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
+  | .unImm l op dst src imm =>
+    s!"{avxName l op} {dst}, {src.toStr addr_w}, {imm}"
   | .sseImm op dst src imm =>
     s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}, {imm}"
-  | .vexUnImm op dst src imm => s!"v{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
   | .vexImm op dst src1 src2 imm =>
     s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}, {imm}"
   | .sseShift op dst c => s!"{Mnemonic.name op} {dst}, {c.toStr addr_w}"
   | .vexShift op dst src c => s!"v{Mnemonic.name op} {dst}, {src}, {c.toStr addr_w}"
-  | .sseTest op src1 src2 => s!"{Mnemonic.name op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
-  | .vexTest op src1 src2 => s!"v{Mnemonic.name op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
+  | .test l op src1 src2 => s!"{avxName l op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .sseBlendv op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}, xmm0"
   | .vexBlendv op dst src1 src2 mask =>
     s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}, {mask}"
   | .fma op dst src2 src3 => s!"v{Mnemonic.name op} {dst}, {src2}, {src3.toStrSimd op.memBytes? addr_w}"
   | .vzeroupper => "vzeroupper"
   | .vzeroall => "vzeroall"
-  | .sseMovs op dst src =>
-    s!"{Mnemonic.name op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
-  | .vexMovs op dst src =>
-    s!"v{Mnemonic.name op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
+  | .movs l op dst src =>
+    s!"{avxName l op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
   | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2}"
   | .vextract op dst src imm =>
     s!"v{Mnemonic.name op} {dst.toStrSimd (some 16) addr_w}, {src}, {imm}"
@@ -261,10 +259,8 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
   | .vcvtps2ph dst src imm =>
     let ptr := if w matches .W128 then some 8 else some 16
     s!"vcvtps2ph {dst.toStrSimd ptr addr_w}, {src}, {imm}"
-  | .sseToGpr op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
-  | .vexToGpr op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
-  | .sseExtract op dst src imm => s!"{Mnemonic.name op} {dst.toStr addr_w}, {src}{optImm imm}"
-  | .vexExtract op dst src imm => s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src}{optImm imm}"
+  | .toGpr l op dst src => s!"{avxName l op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
+  | .extract l op dst src imm => s!"{avxName l op} {dst.toStr addr_w}, {src}{optImm imm}"
   | .sseInsert op dst src imm => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}{optImm imm}"
   | .vexInsert op dst src1 src2 imm =>
     if op.twoOperand then s!"v{Mnemonic.name op} {dst}, {src2.toStr addr_w}"

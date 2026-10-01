@@ -311,42 +311,36 @@ inductive Operation (w : Width)
   | xlat
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
--- The non-v* variants take SSE registers only.
+-- The non-v* variants take SSE registers only. A constructor with a `legacy` field covers both
+-- forms of an instruction whose legacy SSE and `v` (VEX) forms have the same operands.
 -- TODO: AVX512 extensions (write-masking, ...)
 inductive AvxOperation (w : AvxWidth)
   -- Full-vector moves; the legacy forms preserve the upper bits of a register destination, the
   -- `v` forms zero them.
-  | mov (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
-  | vmov (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
+  | mov (legacy : Bool) (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
   -- `dst := op dst src` on xmm registers, preserving the upper bits.
   | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.
   | vex (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w)
-  | sseUn (op : SimdUnOp) (dst : AvxReg w) (src : AvxRegOrMem w)
-  | vexUn (op : SimdUnOp) (dst : AvxReg w) (src : AvxRegOrMem w)
-  | sseUnImm (op : SimdUnImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
-  | vexUnImm (op : SimdUnImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | un (legacy : Bool) (op : SimdUnOp) (dst : AvxReg w) (src : AvxRegOrMem w)
+  | unImm (legacy : Bool) (op : SimdUnImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
   | sseImm (op : SimdBinImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
   | vexImm (op : SimdBinImmOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) (imm : ConstExpr)
   | sseShift (op : SimdShiftOp) (dst : AvxReg w) (count : SimdCount)
   | vexShift (op : SimdShiftOp) (dst src : AvxReg w) (count : SimdCount)
-  | sseTest (op : SimdTestOp) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
-  | vexTest (op : SimdTestOp) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | test (legacy : Bool) (op : SimdTestOp) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
   | sseBlendv (op : SimdBlendvOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   | vexBlendv (op : SimdBlendvOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) (mask : AvxReg w)
   | fma (op : SimdFmaOp) (dst src2 : AvxReg w) (src3 : AvxRegOrMem w)
   | vzeroupper
   | vzeroall
-  | sseMovs (op : SimdScalarMov) (dst : AvxRegOrMem w) (src : AvxRegOrMem w)
-  | vexMovs (op : SimdScalarMov) (dst : AvxRegOrMem w) (src : AvxRegOrMem w)
+  | movs (legacy : Bool) (op : SimdScalarMov) (dst : AvxRegOrMem w) (src : AvxRegOrMem w)
   | vexScalar (op : SimdScalarMov) (dst src1 src2 : AvxReg w)
   | vextract (op : SimdExtract128Op) (dst : AvxRegOrMem .W128) (src : AvxReg w) (imm : ConstExpr)
   | vinsert (op : SimdInsert128Op) (dst src1 : AvxReg w) (src2 : AvxRegOrMem .W128) (imm : ConstExpr)
   | vcvtps2ph (dst : AvxRegOrMem .W128) (src : AvxReg w) (imm : ConstExpr)
-  | sseToGpr (op : SimdToGprOp) {gw : Width} (dst : Reg gw) (src : AvxRegOrMem w)
-  | vexToGpr (op : SimdToGprOp) {gw : Width} (dst : Reg gw) (src : AvxRegOrMem w)
-  | sseExtract (op : SimdExtractOp) {gw : Width} (dst : RegOrMem gw) (src : AvxReg w) (imm : Option ConstExpr)
-  | vexExtract (op : SimdExtractOp) {gw : Width} (dst : RegOrMem gw) (src : AvxReg w) (imm : Option ConstExpr)
+  | toGpr (legacy : Bool) (op : SimdToGprOp) {gw : Width} (dst : Reg gw) (src : AvxRegOrMem w)
+  | extract (legacy : Bool) (op : SimdExtractOp) {gw : Width} (dst : RegOrMem gw) (src : AvxReg w) (imm : Option ConstExpr)
   | sseInsert (op : SimdInsertOp) (dst : AvxReg w) {gw : Width} (src : RegOrMem gw) (imm : Option ConstExpr)
   | vexInsert (op : SimdInsertOp) (dst src1 : AvxReg w) {gw : Width} (src2 : RegOrMem gw) (imm : Option ConstExpr)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr

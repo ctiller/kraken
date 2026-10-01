@@ -7,7 +7,7 @@ public import Kraken.X64.Ops.SoftFloat
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
-/-! Unary SSE/AVX operations `op src, dst` (`AvxOperation.sseUn`, and `.vexUn` for the `v` forms):
+/-! Unary SSE/AVX operations `op src, dst` (`AvxOperation.un`):
 `dst := op(src)` on the whole vector. -/
 
 @[expose] public section

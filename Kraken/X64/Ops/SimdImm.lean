@@ -9,7 +9,7 @@ public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
 /-! SSE/AVX operations with an 8-bit immediate, on the whole vector:
-* unary `op $imm, src, dst` (`AvxOperation.sseUnImm`/`.vexUnImm`): `dst := op(src, imm)`;
+* unary `op $imm, src, dst` (`AvxOperation.unImm`): `dst := op(src, imm)`;
 * binary `op $imm, src, dst` (`AvxOperation.sseImm`: `dst := op(dst, src, imm)`) and
   `vop $imm, src2, src1, dst` (`AvxOperation.vexImm`: `dst := op(src1, src2, imm)`). -/
 

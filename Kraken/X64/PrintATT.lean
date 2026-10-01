@@ -178,27 +178,22 @@ def cvtSuffix {gw : Width} (op : SimdInsertOp) (src : RegOrMem gw) : String :=
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
-  | .mov op d x => two (Mnemonic.name op) d x
-  | .vmov op d x => two s!"v{Mnemonic.name op}" d x
-  | .sseMovs op d x => two (Mnemonic.name op) d x
-  | .vexMovs op d x => two s!"v{Mnemonic.name op}" d x
+  | .mov l op d x => two (avxName l op) d x
+  | .movs l op d x => two (avxName l op) d x
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
-  | .sseUn op d x => s!"{Mnemonic.name op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
-  | .vexUn op d x =>
-    if op.isNarrowing then
+  | .un l op d x =>
+    if !l && op.isNarrowing then
       let suffix := if x matches .mem _ then (if w == .W128 then "x" else "y") else ""
       s!"v{Mnemonic.name op}{suffix} {avxSrc aw none x}, {avxReg (d.as .W128)}"
     else
-      s!"v{Mnemonic.name op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
-  | .sseUnImm op d x i | .sseImm op d x i =>
-    s!"{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
-  | .vexUnImm op d x i => s!"v{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
+      s!"{avxName l op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
+  | .unImm l op d x i => s!"{avxName l op} ${const i}, {avxRm aw x}, {avxReg d}"
+  | .sseImm op d x i => s!"{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
   | .vexImm op d a x i => s!"v{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg a}, {avxReg d}"
   | .sseShift op d c => s!"{Mnemonic.name op} {simdCount aw c}, {avxReg d}"
   | .vexShift op d a c => s!"v{Mnemonic.name op} {simdCount aw c}, {avxReg a}, {avxReg d}"
-  | .sseTest op a x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg a}"
-  | .vexTest op a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}"
+  | .test l op a x => s!"{avxName l op} {avxRm aw x}, {avxReg a}"
   | .sseBlendv op d x => s!"{Mnemonic.name op} %xmm0, {avxRm aw x}, {avxReg d}"
   | .vexBlendv op d a x m => s!"v{Mnemonic.name op} {avxReg m}, {avxRm aw x}, {avxReg a}, {avxReg d}"
   | .fma op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
@@ -208,10 +203,8 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vextract op dst src imm => s!"v{Mnemonic.name op} ${const imm}, {avxReg src}, {avxRm aw dst}"
   | .vinsert op dst src1 src2 imm => s!"v{Mnemonic.name op} ${const imm}, {avxRm aw src2}, {avxReg src1}, {avxReg dst}"
   | .vcvtps2ph dst src imm => s!"vcvtps2ph ${const imm}, {avxReg src}, {avxRm aw dst}"
-  | .sseToGpr op d x => s!"{Mnemonic.name op} {avxSrc aw op.memBytes? x}, {reg d}"
-  | .vexToGpr op d x => s!"v{Mnemonic.name op} {avxSrc aw op.memBytes? x}, {reg d}"
-  | .sseExtract op d x imm => s!"{Mnemonic.name op} {optImm imm}{avxReg x}, {rm aw d}"
-  | .vexExtract op d x imm => s!"v{Mnemonic.name op} {optImm imm}{avxReg x}, {rm aw d}"
+  | .toGpr l op d x => s!"{avxName l op} {avxSrc aw op.memBytes? x}, {reg d}"
+  | .extract l op d x imm => s!"{avxName l op} {optImm imm}{avxReg x}, {rm aw d}"
   | .sseInsert op d src imm => s!"{Mnemonic.name op}{cvtSuffix op src} {optImm imm}{rm aw src}, {avxReg d}"
   | .vexInsert op d a src imm =>
     if op.twoOperand then s!"v{Mnemonic.name op} {rm aw src}, {avxReg d}"
