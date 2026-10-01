@@ -931,9 +931,21 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     parseMovbe w?
   | "crc32", w? =>
     let (addr_w, src) ← parseRegOrMem; parseComma
-    let ⟨_, dst⟩ ← parseRegW
+    let ⟨dst_w, dst⟩ ← parseRegW
     let some w := w? <|> src.1 | fail "crc32 with a memory source needs a size suffix"
-    pure (toInstr addr_w (.crc32 dst (← ascribe w src)))
+    let src ← ascribe w src
+    if dst_w != .W32 && dst_w != .W64 then
+      fail "crc32 destination must be r32 or r64"
+    if dst_w == .W64 then
+      if w != .W8 && w != .W64 then
+        fail "crc32 with 64-bit destination requires 8-bit or 64-bit source"
+      if let .reg r := src then
+        if r.isHighByte then
+          fail "cannot use high byte register with 64-bit destination in crc32"
+    else -- dst_w == .W32
+      if w != .W8 && w != .W16 && w != .W32 then
+        fail "crc32 with 32-bit destination requires 8-, 16-, or 32-bit source"
+    pure (toInstr addr_w (.crc32 dst src))
   | "rorx", w? =>
     let cnt ← parseImmComma
     let (addr_w, src) ← parseRegOrMem; parseComma

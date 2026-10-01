@@ -292,3 +292,16 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard (parse "bswapw %ax") matches .error _
 #guard (parse "bswap %eax") matches .ok _
 #guard (parse "bswap %rax") matches .ok _
+-- crc32 width constraints
+#guard (parse "crc32b %al, %ebx") matches .ok _
+#guard (parse "crc32w %ax, %ebx") matches .ok _
+#guard (parse "crc32l %eax, %ebx") matches .ok _
+#guard (parse "crc32b %al, %rbx") matches .ok _
+#guard (parse "crc32q %rax, %rbx") matches .ok _
+#guard (parse "crc32w %ax, %rbx") matches .error _
+#guard (parse "crc32l %eax, %rbx") matches .error _
+#guard (parse "crc32q %rax, %ebx") matches .error _
+#guard (parse "crc32b %al, %bx") matches .error _
+#guard (parse "crc32b %ah, %ebx") matches .ok _
+#guard (parse "crc32b %ah, %rbx") matches .error _
+#guard (parse "crc32 %ah, %rbx") matches .error _
