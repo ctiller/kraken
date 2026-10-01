@@ -203,244 +203,138 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
       unless roundtrips (stripDirectives (← IO.FS.readFile f.path)) do
         throw <| .userError s!"{f.path} does not round-trip"
 
--- A trailing `$0` operand, and `crc32` sized by its register source.
-#guard roundtrips "pushq $0" && roundtrips "crc32 %al, %eax"
--- `rep` prefixes only apply to string instructions.
-#guard (parse "rep addq %rax, %rbx") matches .error _
--- BMI operands are 32 or 64 bits wide.
-#guard (parse "shlx %ax, %bx, %cx") matches .error _
--- `lock` prefix requires a valid lockable instruction with memory destination.
-#guard (parse "lock addq $1, %rax") matches .error _
-#guard (parse "lock btq $1, (%rsp)") matches .error _
-#guard (parse "lock movq %rax, (%rsp)") matches .error _
-#guard (parse "lock btsq $1, (%rsp)") matches .ok _
--- Legacy SSE instructions reject ymm operands
-#guard (parse "addps %ymm0, %ymm1") matches .error _
-#guard (parse "movdqa %ymm0, %ymm1") matches .error _
--- VEX SHA instructions do not exist
-#guard (parse "vsha1msg1 %xmm1, %xmm2, %xmm3") matches .error _
-#guard (parse "vsha1rnds4 $1, %xmm1, %xmm2, %xmm3") matches .error _
-#guard (parse "vsha256rnds2 %xmm1, %xmm2, %xmm3") matches .error _
--- 128-bit only VEX instructions reject ymm
-#guard (parse "vaesimc %ymm0, %ymm1") matches .error _
-#guard (parse "vaeskeygenassist $0, %ymm0, %ymm1") matches .error _
-#guard (parse "vphminposuw %ymm0, %ymm1") matches .error _
-#guard (parse "vdppd $1, %ymm0, %ymm1, %ymm2") matches .error _
-#guard (parse "vpextrb $0, %ymm0, %rax") matches .error _
-#guard (parse "vpinsrb $0, %rax, %ymm0, %ymm1") matches .error _
-#guard (parse "vmovd %rax, %ymm0") matches .error _
-#guard (parse "vmovq %rax, %ymm0") matches .error _
-#guard (parse "vextractps $0, %ymm0, %rax") matches .error _
-#guard (parse "vinsertps $0, %xmm0, %ymm1, %ymm2") matches .error _
--- Scalar SIMD VEX instructions reject ymm
-#guard (parse "vaddss %ymm0, %ymm1, %ymm2") matches .error _
-#guard (parse "vcmpss $0, %ymm0, %ymm1, %ymm2") matches .error _
-#guard (parse "vroundss $0, %ymm0, %ymm1, %ymm2") matches .error _
-#guard (parse "vfmadd132ss %ymm0, %ymm1, %ymm2") matches .error _
--- 256-bit only VEX instructions reject xmm
-#guard (parse "vpermq $0, %xmm0, %xmm1") matches .error _
-#guard (parse "vpermpd $0, %xmm0, %xmm1") matches .error _
-#guard (parse "vpermd %xmm0, %xmm1, %xmm2") matches .error _
-#guard (parse "vpermps %xmm0, %xmm1, %xmm2") matches .error _
-#guard (parse "vperm2f128 $0, %xmm0, %xmm1, %xmm2") matches .error _
-#guard (parse "vperm2i128 $0, %xmm0, %xmm1, %xmm2") matches .error _
-#guard (parse "vbroadcastsd (%rax), %xmm0") matches .error _
-#guard (parse "vbroadcasti128 (%rax), %xmm0") matches .error _
-#guard (parse "vbroadcastf128 (%rax), %xmm0") matches .error _
-#guard (parse "vextractf128 $0, %xmm0, (%rax)") matches .error _
-#guard (parse "vextracti128 $0, %xmm0, (%rax)") matches .error _
-#guard (parse "vinsertf128 $0, (%rax), %xmm0, %ymm1") matches .error _
-#guard (parse "vinserti128 $0, (%rax), %ymm0, %xmm1") matches .error _
--- push/pop only allow 16- and 64-bit operands
-#guard (parse "pushb $1") matches .error _
-#guard (parse "pushl $1") matches .error _
-#guard (parse "pushl %eax") matches .error _
-#guard (parse "pushb %al") matches .error _
-#guard (parse "popl %eax") matches .error _
-#guard (parse "popb %al") matches .error _
-#guard (parse "popl (%rax)") matches .error _
-#guard (parse "popb (%rax)") matches .error _
-#guard (parse "push $42") matches .ok _
-#guard (parse "pushw $42") matches .ok _
-#guard (parse "pushq $42") matches .ok _
+/-- Programs the parser rejects. -/
+def rejected : List String := [
+  -- `rep` prefixes only apply to string instructions.
+  "rep addq %rax, %rbx",
+  -- BMI operands are 32 or 64 bits wide.
+  "shlx %ax, %bx, %cx",
+  -- `lock` prefix requires a valid lockable instruction with memory destination.
+  "lock addq $1, %rax", "lock btq $1, (%rsp)", "lock movq %rax, (%rsp)",
+  -- Legacy SSE instructions reject ymm operands
+  "addps %ymm0, %ymm1", "movdqa %ymm0, %ymm1",
+  -- VEX SHA instructions do not exist
+  "vsha1msg1 %xmm1, %xmm2, %xmm3", "vsha1rnds4 $1, %xmm1, %xmm2, %xmm3",
+  "vsha256rnds2 %xmm1, %xmm2, %xmm3",
+  -- 128-bit only VEX instructions reject ymm
+  "vaesimc %ymm0, %ymm1", "vaeskeygenassist $0, %ymm0, %ymm1", "vphminposuw %ymm0, %ymm1",
+  "vdppd $1, %ymm0, %ymm1, %ymm2", "vpextrb $0, %ymm0, %rax", "vpinsrb $0, %rax, %ymm0, %ymm1",
+  "vmovd %rax, %ymm0", "vmovq %rax, %ymm0", "vextractps $0, %ymm0, %rax",
+  "vinsertps $0, %xmm0, %ymm1, %ymm2",
+  -- Scalar SIMD VEX instructions reject ymm
+  "vaddss %ymm0, %ymm1, %ymm2", "vcmpss $0, %ymm0, %ymm1, %ymm2", "vroundss $0, %ymm0, %ymm1, %ymm2",
+  "vfmadd132ss %ymm0, %ymm1, %ymm2",
+  -- 256-bit only VEX instructions reject xmm
+  "vpermq $0, %xmm0, %xmm1", "vpermpd $0, %xmm0, %xmm1", "vpermd %xmm0, %xmm1, %xmm2",
+  "vpermps %xmm0, %xmm1, %xmm2", "vperm2f128 $0, %xmm0, %xmm1, %xmm2",
+  "vperm2i128 $0, %xmm0, %xmm1, %xmm2", "vbroadcastsd (%rax), %xmm0", "vbroadcasti128 (%rax), %xmm0",
+  "vbroadcastf128 (%rax), %xmm0", "vextractf128 $0, %xmm0, (%rax)", "vextracti128 $0, %xmm0, (%rax)",
+  "vinsertf128 $0, (%rax), %xmm0, %ymm1", "vinserti128 $0, (%rax), %ymm0, %xmm1",
+  -- push/pop only allow 16- and 64-bit operands
+  "pushb $1", "pushl $1", "pushl %eax", "pushb %al", "popl %eax", "popb %al", "popl (%rax)",
+  "popb (%rax)",
+  -- 8-bit operands rejected for popcnt/lzcnt/tzcnt/bsf/bsr
+  "popcnt %al, %bl", "popcntb %al, %bl", "lzcnt %al, %bl", "tzcnt %al, %bl", "bsf %al, %bl",
+  "bsr %al, %bl",
+  -- 8-bit operands rejected for bt/bts/btr/btc
+  "bt %al, %bl", "btb $1, (%rax)", "bts %al, %bl", "btr %al, %bl", "btc %al, %bl",
+  -- 8-bit operands rejected for cmovcc
+  "cmove %al, %bl", "cmovzb %al, %bl",
+  -- 8- and 16-bit operands rejected for blsi/blsmsk/blsr
+  "blsi %al, %bl", "blsi %ax, %bx", "blsiw %ax, %bx", "blsmsk %ax, %bx", "blsr %ax, %bx",
+  -- 8- and 16-bit operands rejected for adcx/adox
+  "adcx %al, %bl", "adcx %ax, %bx", "adcxw %ax, %bx", "adox %ax, %bx",
+  -- 8- and 16-bit operands rejected for bswap
+  "bswap %al", "bswap %ax", "bswapw %ax",
+  -- crc32 width constraints
+  "crc32w %ax, %rbx", "crc32l %eax, %rbx", "crc32q %rax, %ebx", "crc32b %al, %bx",
+  "crc32b %ah, %rbx", "crc32 %ah, %rbx",
+  -- vcvtpd2ps, vcvtpd2dq, vcvttpd2dq narrowing operand and suffix constraints
+  "vcvtpd2ps (%rax), %xmm0", "vcvtpd2ps %ymm1, %ymm0", "cvtpd2psx (%rax), %xmm0",
+  -- VEX compare pseudo-ops for predicates 8-31
+  "vcmpeq_uqss %ymm1, %ymm2, %ymm3", "vcmpeq_uqsd 16(%rsp), %ymm2, %ymm3", "cmpeq_uqps %xmm1, %xmm2",
+  -- Two-operand forms with implicit %xmm0
+  "blendvps %xmm3, %xmm1, %xmm2", "blendvps %ymm1, %ymm2", "sha256rnds2 %ymm1, %ymm2",
+  -- VEX-only instructions reject legacy non-v forms
+  "pbroadcastb %xmm0, %xmm1", "permd %xmm0, %xmm1, %xmm2", "permps %xmm0, %xmm1, %xmm2",
+  "psllvd %xmm0, %xmm1, %xmm2", "permq $0, %xmm0, %xmm1", "pblendd $1, %xmm0, %xmm1",
+  "testps %xmm0, %xmm1", "testpd %xmm0, %xmm1",
+  -- vmovlhps/vmovhlps reject ymm
+  "vmovlhps %ymm0, %ymm1, %ymm2", "vmovhlps %ymm0, %ymm1, %ymm2",
+  -- REX registers with high byte registers
+  "crc32b %ah, %r8d", "movb %ah, %sil", "addb %ah, %r8b", "movzbq %ah, %rax", "movb %ah, (%r8)",
+  -- movd between vector registers rejected
+  "movd %xmm1, %xmm0",
+  -- permilps/permilpd legacy forms rejected (VEX-only)
+  "permilps $1, %xmm0, %xmm1", "permilpd $1, %xmm0, %xmm1",
+  -- SIMD GPR transfer register width restrictions
+  "pinsrb $0, %al, %xmm0", "pinsrb $0, %ah, %xmm0", "pinsrw $0, %ax, %xmm0", "pinsrd $0, %ax, %xmm0",
+  "pextrb $0, %xmm0, %al", "pextrw $0, %xmm0, %ax", "vpinsrb $0, %ah, %xmm1, %xmm2",
+  "cvtsi2ss %al, %xmm0", "movd %ax, %xmm0", "vmovd %ax, %xmm0", "movq %eax, %xmm0",
+  "vmovq %eax, %xmm0", "movq %xmm0, %eax", "vmovq %xmm0, %eax", "pinsrd $0, %rax, %xmm0",
+  "pinsrq $0, %eax, %xmm0", "pextrd $0, %xmm0, %rax", "pextrq $0, %xmm0, %eax",
+  -- movlhps/movhlps reject memory source
+  "movlhps (%rax), %xmm1", "vmovlhps (%rax), %xmm1, %xmm2", "movhlps (%rax), %xmm1",
+  "vmovhlps (%rax), %xmm1, %xmm2"
+]
+
+/-- info: [] -/
+#guard_msgs in
+#eval rejected.filter (parse · matches .ok _)
+
+/-- Parser edge cases that are accepted and round-trip. -/
+def accepted : List String := [
+  -- A trailing `$0` operand, and `crc32` sized by its register source.
+  "pushq $0", "crc32 %al, %eax",
+  -- `lock` prefix requires a valid lockable instruction with memory destination.
+  "lock btsq $1, (%rsp)",
+  -- push/pop only allow 16- and 64-bit operands
+  "push $42", "pushw $42", "pushq $42",
+  -- 8-bit operands rejected for popcnt/lzcnt/tzcnt/bsf/bsr
+  "popcnt %ax, %bx",
+  -- 8-bit operands rejected for bt/bts/btr/btc
+  "bt %ax, %bx",
+  -- 8-bit operands rejected for cmovcc
+  "cmove %ax, %bx", "cmovzl %eax, %ebx",
+  -- 8- and 16-bit operands rejected for blsi/blsmsk/blsr
+  "blsi %eax, %ebx",
+  -- 8- and 16-bit operands rejected for adcx/adox
+  "adcx %eax, %ebx", "adox %eax, %ebx",
+  -- 8- and 16-bit operands rejected for bswap
+  "bswap %eax", "bswap %rax",
+  -- crc32 width constraints
+  "crc32b %al, %ebx", "crc32w %ax, %ebx", "crc32l %eax, %ebx", "crc32b %al, %rbx",
+  "crc32q %rax, %rbx", "crc32b %ah, %ebx",
+  -- vcvtpd2ps, vcvtpd2dq, vcvttpd2dq narrowing operand and suffix constraints
+  "vcvtpd2ps %ymm1, %xmm0", "vcvtpd2ps %xmm1, %xmm0", "vcvtpd2psx (%rax), %xmm0",
+  "vcvtpd2psy (%rax), %xmm0", "cvtpd2ps (%rax), %xmm0", "vcvtpd2dq %ymm1, %xmm0",
+  "vcvtpd2dqy (%rax), %xmm0", "vcvttpd2dq %ymm1, %xmm0", "vcvttpd2dqx (%rax), %xmm0",
+  -- VEX compare pseudo-ops for predicates 8-31
+  "vcmpeq_uqps %xmm1, %xmm2, %xmm3", "vcmpeq_uqps %ymm1, %ymm2, %ymm3",
+  "vcmpeq_uqpd 16(%rsp), %ymm2, %ymm3", "vcmptrue_usps %xmm1, %xmm2, %xmm3",
+  "vcmpeq_uqss %xmm1, %xmm2, %xmm3", "vcmpeq_uqsd 16(%rsp), %xmm2, %xmm3",
+  "vcmptrue_uspd 16(%rsp), %ymm2, %ymm3",
+  -- Two-operand forms with implicit %xmm0
+  "sha256rnds2 %xmm1, %xmm2", "sha256rnds2 (%rax), %xmm2", "blendvps %xmm1, %xmm2",
+  "blendvps (%rax), %xmm2", "blendvpd %xmm1, %xmm2", "blendvpd (%rax), %xmm2",
+  "pblendvb %xmm1, %xmm2", "pblendvb (%rax), %xmm2", "sha256rnds2 %xmm0, %xmm1, %xmm2",
+  "blendvps %xmm0, %xmm1, %xmm2", "blendvps %xmm0, %xmm2", "sha256rnds2 %xmm0, %xmm2",
+  -- Unsuffixed memory push/pop defaults to 64-bit
+  "push (%rax)", "pop 8(%rsp)",
+  -- REX registers with high byte registers
+  "movb %ah, (%rax)", "movb %ah, %al", "movzbl %ah, %eax",
+  -- permilps/permilpd legacy forms rejected (VEX-only)
+  "vpermilps $1, %xmm0, %xmm1", "vpermilpd $1, %xmm0, %xmm1",
+  -- SIMD GPR transfer register width restrictions
+  "pinsrb $0, %eax, %xmm0", "pinsrb $0, %rax, %xmm0", "pextrb $0, %xmm0, %eax",
+  "pextrb $0, %xmm0, %rax", "pinsrd $0, %eax, %xmm0", "pinsrq $0, %rax, %xmm0",
+  "pextrd $0, %xmm0, %eax", "pextrq $0, %xmm0, %rax", "movq %rax, %xmm0", "movq %xmm0, %rax"
+]
+
+/-- info: [] -/
+#guard_msgs in
+#eval accepted.filter (!roundtrips ·)
+
 #guard match parse "pushw $42" with
   | .ok [d] => toString d == "push word ptr 42"
   | _ => false
--- 8-bit operands rejected for popcnt/lzcnt/tzcnt/bsf/bsr
-#guard (parse "popcnt %al, %bl") matches .error _
-#guard (parse "popcntb %al, %bl") matches .error _
-#guard (parse "popcnt %ax, %bx") matches .ok _
-#guard (parse "lzcnt %al, %bl") matches .error _
-#guard (parse "tzcnt %al, %bl") matches .error _
-#guard (parse "bsf %al, %bl") matches .error _
-#guard (parse "bsr %al, %bl") matches .error _
--- 8-bit operands rejected for bt/bts/btr/btc
-#guard (parse "bt %al, %bl") matches .error _
-#guard (parse "btb $1, (%rax)") matches .error _
-#guard (parse "bts %al, %bl") matches .error _
-#guard (parse "btr %al, %bl") matches .error _
-#guard (parse "btc %al, %bl") matches .error _
-#guard (parse "bt %ax, %bx") matches .ok _
--- 8-bit operands rejected for cmovcc
-#guard (parse "cmove %al, %bl") matches .error _
-#guard (parse "cmovzb %al, %bl") matches .error _
-#guard (parse "cmove %ax, %bx") matches .ok _
-#guard (parse "cmovzl %eax, %ebx") matches .ok _
--- 8- and 16-bit operands rejected for blsi/blsmsk/blsr
-#guard (parse "blsi %al, %bl") matches .error _
-#guard (parse "blsi %ax, %bx") matches .error _
-#guard (parse "blsiw %ax, %bx") matches .error _
-#guard (parse "blsi %eax, %ebx") matches .ok _
-#guard (parse "blsmsk %ax, %bx") matches .error _
-#guard (parse "blsr %ax, %bx") matches .error _
--- 8- and 16-bit operands rejected for adcx/adox
-#guard (parse "adcx %al, %bl") matches .error _
-#guard (parse "adcx %ax, %bx") matches .error _
-#guard (parse "adcxw %ax, %bx") matches .error _
-#guard (parse "adcx %eax, %ebx") matches .ok _
-#guard (parse "adox %ax, %bx") matches .error _
-#guard (parse "adox %eax, %ebx") matches .ok _
--- 8- and 16-bit operands rejected for bswap
-#guard (parse "bswap %al") matches .error _
-#guard (parse "bswap %ax") matches .error _
-#guard (parse "bswapw %ax") matches .error _
-#guard (parse "bswap %eax") matches .ok _
-#guard (parse "bswap %rax") matches .ok _
--- crc32 width constraints
-#guard (parse "crc32b %al, %ebx") matches .ok _
-#guard (parse "crc32w %ax, %ebx") matches .ok _
-#guard (parse "crc32l %eax, %ebx") matches .ok _
-#guard (parse "crc32b %al, %rbx") matches .ok _
-#guard (parse "crc32q %rax, %rbx") matches .ok _
-#guard (parse "crc32w %ax, %rbx") matches .error _
-#guard (parse "crc32l %eax, %rbx") matches .error _
-#guard (parse "crc32q %rax, %ebx") matches .error _
-#guard (parse "crc32b %al, %bx") matches .error _
-#guard (parse "crc32b %ah, %ebx") matches .ok _
-#guard (parse "crc32b %ah, %rbx") matches .error _
-#guard (parse "crc32 %ah, %rbx") matches .error _
--- vcvtpd2ps, vcvtpd2dq, vcvttpd2dq narrowing operand and suffix constraints
-#guard (parse "vcvtpd2ps %ymm1, %xmm0") matches .ok _
-#guard (parse "vcvtpd2ps %xmm1, %xmm0") matches .ok _
-#guard (parse "vcvtpd2psx (%rax), %xmm0") matches .ok _
-#guard (parse "vcvtpd2psy (%rax), %xmm0") matches .ok _
-#guard (parse "vcvtpd2ps (%rax), %xmm0") matches .error _
-#guard (parse "vcvtpd2ps %ymm1, %ymm0") matches .error _
-#guard (parse "cvtpd2ps (%rax), %xmm0") matches .ok _
-#guard (parse "cvtpd2psx (%rax), %xmm0") matches .error _
-#guard (parse "vcvtpd2dq %ymm1, %xmm0") matches .ok _
-#guard (parse "vcvtpd2dqy (%rax), %xmm0") matches .ok _
-#guard (parse "vcvttpd2dq %ymm1, %xmm0") matches .ok _
-#guard (parse "vcvttpd2dqx (%rax), %xmm0") matches .ok _
-#guard roundtrips "vcvtpd2ps %ymm1, %xmm0"
-#guard roundtrips "vcvtpd2ps %xmm1, %xmm0"
-#guard roundtrips "vcvtpd2psx (%rax), %xmm0"
-#guard roundtrips "vcvtpd2psy (%rax), %xmm0"
-#guard roundtrips "cvtpd2ps (%rax), %xmm0"
--- VEX compare pseudo-ops for predicates 8-31
-#guard (parse "vcmpeq_uqps %xmm1, %xmm2, %xmm3") matches .ok _
-#guard (parse "vcmpeq_uqps %ymm1, %ymm2, %ymm3") matches .ok _
-#guard (parse "vcmpeq_uqpd 16(%rsp), %ymm2, %ymm3") matches .ok _
-#guard (parse "vcmptrue_usps %xmm1, %xmm2, %xmm3") matches .ok _
-#guard (parse "vcmpeq_uqss %xmm1, %xmm2, %xmm3") matches .ok _
-#guard (parse "vcmpeq_uqsd 16(%rsp), %xmm2, %xmm3") matches .ok _
-#guard (parse "vcmpeq_uqss %ymm1, %ymm2, %ymm3") matches .error _
-#guard (parse "vcmpeq_uqsd 16(%rsp), %ymm2, %ymm3") matches .error _
-#guard (parse "cmpeq_uqps %xmm1, %xmm2") matches .error _
-#guard roundtrips "vcmpeq_uqps %xmm1, %xmm2, %xmm3"
-#guard roundtrips "vcmpeq_uqps %ymm1, %ymm2, %ymm3"
-#guard roundtrips "vcmpeq_uqss %xmm1, %xmm2, %xmm3"
-#guard roundtrips "vcmptrue_uspd 16(%rsp), %ymm2, %ymm3"
--- Two-operand forms with implicit %xmm0
-#guard (parse "sha256rnds2 %xmm1, %xmm2") matches .ok _
-#guard (parse "sha256rnds2 (%rax), %xmm2") matches .ok _
-#guard (parse "blendvps %xmm1, %xmm2") matches .ok _
-#guard (parse "blendvps (%rax), %xmm2") matches .ok _
-#guard (parse "blendvpd %xmm1, %xmm2") matches .ok _
-#guard (parse "blendvpd (%rax), %xmm2") matches .ok _
-#guard (parse "pblendvb %xmm1, %xmm2") matches .ok _
-#guard (parse "pblendvb (%rax), %xmm2") matches .ok _
-#guard (parse "sha256rnds2 %xmm0, %xmm1, %xmm2") matches .ok _
-#guard (parse "blendvps %xmm0, %xmm1, %xmm2") matches .ok _
-#guard (parse "blendvps %xmm3, %xmm1, %xmm2") matches .error _
-#guard (parse "blendvps %ymm1, %ymm2") matches .error _
-#guard (parse "sha256rnds2 %ymm1, %ymm2") matches .error _
-#guard roundtrips "sha256rnds2 %xmm1, %xmm2"
-#guard roundtrips "blendvps %xmm1, %xmm2"
-#guard roundtrips "blendvpd (%rax), %xmm2"
-#guard roundtrips "pblendvb %xmm1, %xmm2"
-#guard (parse "blendvps %xmm0, %xmm2") matches .ok _
-#guard (parse "sha256rnds2 %xmm0, %xmm2") matches .ok _
-
--- Unsuffixed memory push/pop defaults to 64-bit
-#guard (parse "push (%rax)") matches .ok _
-#guard (parse "pop 8(%rsp)") matches .ok _
-
--- VEX-only instructions reject legacy non-v forms
-#guard (parse "pbroadcastb %xmm0, %xmm1") matches .error _
-#guard (parse "permd %xmm0, %xmm1, %xmm2") matches .error _
-#guard (parse "permps %xmm0, %xmm1, %xmm2") matches .error _
-#guard (parse "psllvd %xmm0, %xmm1, %xmm2") matches .error _
-#guard (parse "permq $0, %xmm0, %xmm1") matches .error _
-#guard (parse "pblendd $1, %xmm0, %xmm1") matches .error _
-#guard (parse "testps %xmm0, %xmm1") matches .error _
-#guard (parse "testpd %xmm0, %xmm1") matches .error _
-
--- vmovlhps/vmovhlps reject ymm
-#guard (parse "vmovlhps %ymm0, %ymm1, %ymm2") matches .error _
-#guard (parse "vmovhlps %ymm0, %ymm1, %ymm2") matches .error _
-
--- REX registers with high byte registers
-#guard (parse "crc32b %ah, %r8d") matches .error _
-#guard (parse "movb %ah, %sil") matches .error _
-#guard (parse "addb %ah, %r8b") matches .error _
-#guard (parse "movzbq %ah, %rax") matches .error _
-#guard (parse "movb %ah, (%r8)") matches .error _
-#guard (parse "movb %ah, (%rax)") matches .ok _
-#guard (parse "movb %ah, %al") matches .ok _
-#guard (parse "movzbl %ah, %eax") matches .ok _
-
--- movd between vector registers rejected
-#guard (parse "movd %xmm1, %xmm0") matches .error _
-
--- permilps/permilpd legacy forms rejected (VEX-only)
-#guard (parse "permilps $1, %xmm0, %xmm1") matches .error _
-#guard (parse "permilpd $1, %xmm0, %xmm1") matches .error _
-#guard (parse "vpermilps $1, %xmm0, %xmm1") matches .ok _
-#guard (parse "vpermilpd $1, %xmm0, %xmm1") matches .ok _
-
--- SIMD GPR transfer register width restrictions
-#guard (parse "pinsrb $0, %al, %xmm0") matches .error _
-#guard (parse "pinsrb $0, %ah, %xmm0") matches .error _
-#guard (parse "pinsrw $0, %ax, %xmm0") matches .error _
-#guard (parse "pinsrd $0, %ax, %xmm0") matches .error _
-#guard (parse "pextrb $0, %xmm0, %al") matches .error _
-#guard (parse "pextrw $0, %xmm0, %ax") matches .error _
-#guard (parse "vpinsrb $0, %ah, %xmm1, %xmm2") matches .error _
-#guard (parse "cvtsi2ss %al, %xmm0") matches .error _
-#guard (parse "movd %ax, %xmm0") matches .error _
-#guard (parse "vmovd %ax, %xmm0") matches .error _
-#guard (parse "movq %eax, %xmm0") matches .error _
-#guard (parse "vmovq %eax, %xmm0") matches .error _
-#guard (parse "movq %xmm0, %eax") matches .error _
-#guard (parse "vmovq %xmm0, %eax") matches .error _
-#guard (parse "pinsrd $0, %rax, %xmm0") matches .error _
-#guard (parse "pinsrq $0, %eax, %xmm0") matches .error _
-#guard (parse "pextrd $0, %xmm0, %rax") matches .error _
-#guard (parse "pextrq $0, %xmm0, %eax") matches .error _
-#guard (parse "pinsrb $0, %eax, %xmm0") matches .ok _
-#guard (parse "pinsrb $0, %rax, %xmm0") matches .ok _
-#guard (parse "pextrb $0, %xmm0, %eax") matches .ok _
-#guard (parse "pextrb $0, %xmm0, %rax") matches .ok _
-#guard (parse "pinsrd $0, %eax, %xmm0") matches .ok _
-#guard (parse "pinsrq $0, %rax, %xmm0") matches .ok _
-#guard (parse "pextrd $0, %xmm0, %eax") matches .ok _
-#guard (parse "pextrq $0, %xmm0, %rax") matches .ok _
-#guard (parse "movq %rax, %xmm0") matches .ok _
-#guard (parse "movq %xmm0, %rax") matches .ok _
-
--- movlhps/movhlps reject memory source
-#guard (parse "movlhps (%rax), %xmm1") matches .error _
-#guard (parse "vmovlhps (%rax), %xmm1, %xmm2") matches .error _
-#guard (parse "movhlps (%rax), %xmm1") matches .error _
-#guard (parse "vmovhlps (%rax), %xmm1, %xmm2") matches .error _

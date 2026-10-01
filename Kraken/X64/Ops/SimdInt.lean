@@ -29,6 +29,13 @@ inductive SimdInt
 
 instance : Mnemonic SimdInt := ⟨mnemonics% SimdInt⟩
 
+/-- Signed minimum and maximum (`min`/`max` on `BitVec` are unsigned). -/
+def smin {k} (a b : BitVec k) : BitVec k := if a.sle b then a else b
+def smax {k} (a b : BitVec k) : BitVec k := if a.sle b then b else a
+
+/-- `a` negated, zeroed, or kept, as `b` is negative, zero, or positive. -/
+def psign {k} (a b : BitVec k) : BitVec k := if b.toInt < 0 then -a else if b == 0 then 0 else a
+
 /-- The operation on one 128-bit lane. -/
 def SimdInt.interp : SimdInt → BitVec 128 → BitVec 128 → BitVec 128
   | .paddb => .map2 8 (· + ·) | .paddw => .map2 16 (· + ·)
@@ -62,26 +69,16 @@ def SimdInt.interp : SimdInt → BitVec 128 → BitVec 128 → BitVec 128
       .extractLsb' 1 16 (BitVec.ofInt 32 ((prod >>> 14) + 1))
   | .pavgb => .map2 8 fun a b => .ofNat 8 ((a.toNat + b.toNat + 1) / 2)
   | .pavgw => .map2 16 fun a b => .ofNat 16 ((a.toNat + b.toNat + 1) / 2)
-  | .pminub => .map2 8 fun a b => if a.toNat ≤ b.toNat then a else b
-  | .pminuw => .map2 16 fun a b => if a.toNat ≤ b.toNat then a else b
-  | .pminud => .map2 32 fun a b => if a.toNat ≤ b.toNat then a else b
-  | .pminsb => .map2 8 fun a b => if a.toInt ≤ b.toInt then a else b
-  | .pminsw => .map2 16 fun a b => if a.toInt ≤ b.toInt then a else b
-  | .pminsd => .map2 32 fun a b => if a.toInt ≤ b.toInt then a else b
-  | .pmaxub => .map2 8 fun a b => if a.toNat ≥ b.toNat then a else b
-  | .pmaxuw => .map2 16 fun a b => if a.toNat ≥ b.toNat then a else b
-  | .pmaxud => .map2 32 fun a b => if a.toNat ≥ b.toNat then a else b
-  | .pmaxsb => .map2 8 fun a b => if a.toInt ≥ b.toInt then a else b
-  | .pmaxsw => .map2 16 fun a b => if a.toInt ≥ b.toInt then a else b
-  | .pmaxsd => .map2 32 fun a b => if a.toInt ≥ b.toInt then a else b
+  | .pminub => .map2 8 min | .pminuw => .map2 16 min | .pminud => .map2 32 min
+  | .pminsb => .map2 8 smin | .pminsw => .map2 16 smin | .pminsd => .map2 32 smin
+  | .pmaxub => .map2 8 max | .pmaxuw => .map2 16 max | .pmaxud => .map2 32 max
+  | .pmaxsb => .map2 8 smax | .pmaxsw => .map2 16 smax | .pmaxsd => .map2 32 smax
   | .psadbw => fun a b => .ofLanes 128 64 fun i =>
       let sum := (List.range 8).foldl (fun acc j =>
         let diff : Int := (a.lane 8 (i * 8 + j)).toNat - (b.lane 8 (i * 8 + j)).toNat
         acc + diff.natAbs) 0
       BitVec.ofNat 64 sum
-  | .psignb => .map2 8 fun a b => if b.toInt < 0 then -a else if b == 0 then 0 else a
-  | .psignw => .map2 16 fun a b => if b.toInt < 0 then -a else if b == 0 then 0 else a
-  | .psignd => .map2 32 fun a b => if b.toInt < 0 then -a else if b == 0 then 0 else a
+  | .psignb => .map2 8 psign | .psignw => .map2 16 psign | .psignd => .map2 32 psign
   | .phaddw => .hop 16 (· + ·)
   | .phaddd => .hop 32 (· + ·)
   | .phaddsw => .hop 16 fun a b => .satS 16 (a.toInt + b.toInt)

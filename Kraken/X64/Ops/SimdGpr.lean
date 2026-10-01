@@ -95,14 +95,10 @@ def SimdInsertOp.twoOperand : SimdInsertOp → Bool
 
 def SimdInsertOp.interp {n} (op : SimdInsertOp) (old : BitVec n) (bits : Nat) (src : BitVec bits) (imm : BitVec 8) : BitVec n :=
   match op with
-  | .pinsrb | .pinsrw | .pinsrd | .pinsrq =>
+  | .pinsrb | .pinsrw | .pinsrd | .pinsrq | .movlps | .movlpd | .movhps | .movhpd =>
     let k := op.memBits
-    let idx := imm.toNat % (n / k)
+    let idx := match op with | .movlps | .movlpd => 0 | .movhps | .movhpd => 1 | _ => imm.toNat % (n / k)
     .ofLanes n k fun i => if i == idx then src.extractLsb' 0 k else old.lane k i
   | .cvtsi2ss => old.replaceLow (FpFmt.f32.ofInt (BitVec.toInt src))
   | .cvtsi2sd => old.replaceLow (FpFmt.f64.ofInt (BitVec.toInt src))
-  | .movlps | .movlpd => old.replaceLow (src.extractLsb' 0 64)
-  | .movhps | .movhpd =>
-    let low64 : BitVec 64 := src.extractLsb' 0 64
-    .ofLanes n 64 fun i => if i == 1 then low64 else old.lane 64 i
   | .movd | .movq => src.setWidth 64 |>.setWidth n

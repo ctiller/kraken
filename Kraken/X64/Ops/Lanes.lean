@@ -74,30 +74,13 @@ end BitVec
 def Float32.toBitVec (f : Float32) : BitVec 32 := UInt32.toBitVec (Float32.toBits f)
 def Float.toBitVec (f : Float) : BitVec 64 := UInt64.toBitVec (Float.toBits f)
 
-/-- An SSE single-precision operation on one lane: a NaN operand propagates (quieted, the first
-operand winning), and an invalid operation gives the default NaN ("QNaN floating-point
-indefinite"). Lean's `Float32` would instead canonicalize every NaN to `0x7fc00000`. -/
-def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 32 :=
-  if a.toFloat32.isNaN then a ||| 0x400000#32
-  else if b.toFloat32.isNaN then b ||| 0x400000#32
-  else let r := op a.toFloat32 b.toFloat32; if r.isNaN then 0xffc00000#32 else r.toBitVec
+/-- `(unordered, a < b, a = b)` for single-precision `a` and `b`. -/
+def fcmp32 (a b : BitVec 32) : Bool × Bool × Bool :=
+  let (x, y) := (a.toFloat32, b.toFloat32); (x.isNaN || y.isNaN, x < y, x == y)
 
-/-- `sseBinOp` for double precision. -/
-def sseBinOp64 (op : Float → Float → Float) (a b : BitVec 64) : BitVec 64 :=
-  if a.toFloat.isNaN then a ||| 0x8000000000000#64
-  else if b.toFloat.isNaN then b ||| 0x8000000000000#64
-  else let r := op a.toFloat b.toFloat; if r.isNaN then 0xfff8000000000000#64 else r.toBitVec
-
-/-- An SSE single-precision unary operation on one lane: a NaN operand propagates (quieted),
-and an invalid operation (e.g. sqrt of negative non-zero) gives the default NaN. -/
-def sseUnOp (op : Float32 → Float32) (a : BitVec 32) : BitVec 32 :=
-  if a.toFloat32.isNaN then a ||| 0x400000#32
-  else let r := op a.toFloat32; if r.isNaN then 0xffc00000#32 else r.toBitVec
-
-/-- `sseUnOp` for double precision. -/
-def sseUnOp64 (op : Float → Float) (a : BitVec 64) : BitVec 64 :=
-  if a.toFloat.isNaN then a ||| 0x8000000000000#64
-  else let r := op a.toFloat; if r.isNaN then 0xfff8000000000000#64 else r.toBitVec
+/-- `fcmp32` for double precision. -/
+def fcmp64 (a b : BitVec 64) : Bool × Bool × Bool :=
+  let (x, y) := (a.toFloat, b.toFloat); (x.isNaN || y.isNaN, x < y, x == y)
 
 /-- Floating-point element type and lane/scalar configuration. -/
 inductive FpType | ps | pd | ss | sd

@@ -96,12 +96,18 @@ def roundInt (f : FpFmt) (mode : Nat) (x : BitVec f.bits) : BitVec f.bits :=
 def ofInt (f : FpFmt) (i : Int) : BitVec f.bits :=
   if i = 0 then 0 else f.round (i < 0) i.natAbs 0
 
+/-- SSE NaN rules around the result `r ()` of an operation on `args`: a NaN operand propagates
+(quieted, the first one winning), and an invalid operation gives the default NaN. -/
+def sseNaN (f : FpFmt) (args : List (BitVec f.bits)) (r : Unit → BitVec f.bits) : BitVec f.bits :=
+  match args.find? f.isNaN with
+  | some x => f.quiet x
+  | none => let v := r (); if f.isNaN v then f.defaultNaN else v
+
 /-- `±(a * b) ± c` with a single rounding (`negP`/`negC` negate the product/addend). A NaN
 operand propagates (quieted, the first of `a`, `b`, `c` winning); invalid operations (`∞ * 0`,
 `∞ - ∞`) give the default NaN. -/
 def fma (f : FpFmt) (negP negC : Bool) (a b c : BitVec f.bits) : BitVec f.bits :=
-  if f.isNaN a then f.quiet a else if f.isNaN b then f.quiet b else if f.isNaN c then f.quiet c
-  else
+  f.sseNaN [a, b, c] fun _ =>
     let (sa, va, ea) := f.decode a
     let (sb, vb, eb) := f.decode b
     let (sc, vc, ec) := f.decode c
@@ -137,3 +143,20 @@ def f16ToF32 (h : BitVec 16) : BitVec 32 := FpFmt.f16.convert .f32 0 h
 
 /-- Single precision (binary32) to half precision (binary16) conversion. -/
 def f32ToF16 (mode : Nat) (x : BitVec 32) : BitVec 16 := FpFmt.f32.convert .f16 mode x
+
+/-- An SSE single-precision operation on one lane, with the SSE NaN rules (`FpFmt.sseNaN`); Lean's
+`Float32` would instead canonicalize every NaN to `0x7fc00000`. -/
+def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 32 :=
+  FpFmt.f32.sseNaN [a, b] fun _ => (op a.toFloat32 b.toFloat32).toBitVec
+
+/-- `sseBinOp` for double precision. -/
+def sseBinOp64 (op : Float → Float → Float) (a b : BitVec 64) : BitVec 64 :=
+  FpFmt.f64.sseNaN [a, b] fun _ => (op a.toFloat b.toFloat).toBitVec
+
+/-- `sseBinOp` for a unary operation. -/
+def sseUnOp (op : Float32 → Float32) (a : BitVec 32) : BitVec 32 :=
+  FpFmt.f32.sseNaN [a] fun _ => (op a.toFloat32).toBitVec
+
+/-- `sseUnOp` for double precision. -/
+def sseUnOp64 (op : Float → Float) (a : BitVec 64) : BitVec 64 :=
+  FpFmt.f64.sseNaN [a] fun _ => (op a.toFloat).toBitVec

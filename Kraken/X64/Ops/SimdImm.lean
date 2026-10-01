@@ -98,12 +98,9 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
   | .shufpd => .ofLanes n 64 fun i =>
     (if i % 2 == 0 then a else b).lane 64 (i / 2 * 2 + (imm >>> i).toNat % 2)
   | .palignr => .map2 128 (fun a128 b128 => ((a128 ++ b128) >>> (imm.toNat * 8)).truncate 128) a b
-  | .pblendw => .ofLanes n 16 fun i =>
-    if imm.getLsbD (i % 8) then b.lane 16 i else a.lane 16 i
-  | .blendps | .pblendd => .ofLanes n 32 fun i =>
-    if imm.getLsbD i then b.lane 32 i else a.lane 32 i
-  | .blendpd => .ofLanes n 64 fun i =>
-    if imm.getLsbD i then b.lane 64 i else a.lane 64 i
+  | .pblendw | .blendps | .pblendd | .blendpd =>
+    let k := match op with | .pblendw => 16 | .blendpd => 64 | _ => 32
+    .ofLanes n k fun i => if imm.getLsbD (i % 8) then b.lane k i else a.lane k i
   | .pclmulqdq => .map2 128 (fun a128 b128 =>
     clmul64 (a128.lane 64 (if imm.getLsbD 0 then 1 else 0))
             (b128.lane 64 (if imm.getLsbD 4 then 1 else 0))) a b
@@ -133,10 +130,9 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
       else a.lane 32 i
   | .roundss => a.replaceLow (FpFmt.f32.roundInt (roundImmMode imm) (b.lane 32 0))
   | .roundsd => a.replaceLow (FpFmt.f64.roundInt (roundImmMode imm) (b.lane 64 0))
-  | .cmpps => .map2 32 (f32cmpPred imm.toNat) a b
-  | .cmppd => .map2 64 (f64cmpPred imm.toNat) a b
-  | .cmpss => .scalar 32 (f32cmpPred imm.toNat) a b
-  | .cmpsd => .scalar 64 (f64cmpPred imm.toNat) a b
+  | .cmpps | .cmppd | .cmpss | .cmpsd =>
+    let t : FpType := match op with | .cmpps => .ps | .cmppd => .pd | .cmpss => .ss | _ => .sd
+    t.cmp imm.toNat a b
   | .perm2f128 | .perm2i128 => .ofLanes n 128 fun i =>
     let ctrl := (imm.toNat >>> (i * 4))
     if (ctrl >>> 3) &&& 1 == 1 then 0#128

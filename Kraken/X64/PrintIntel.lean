@@ -263,21 +263,12 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
     s!"vcvtps2ph {dst.toStrSimd ptr addr_w}, {src}, {imm}"
   | .sseToGpr op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vexToGpr op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
-  | .sseExtract op dst src imm =>
-    let immStr := optImm imm
-    s!"{Mnemonic.name op} {dst.toStr addr_w}, {src}{immStr}"
-  | .vexExtract op dst src imm =>
-    let immStr := optImm imm
-    s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src}{immStr}"
-  | .sseInsert op dst src imm =>
-    let immStr := optImm imm
-    s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}{immStr}"
+  | .sseExtract op dst src imm => s!"{Mnemonic.name op} {dst.toStr addr_w}, {src}{optImm imm}"
+  | .vexExtract op dst src imm => s!"v{Mnemonic.name op} {dst.toStr addr_w}, {src}{optImm imm}"
+  | .sseInsert op dst src imm => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}{optImm imm}"
   | .vexInsert op dst src1 src2 imm =>
-    if op.twoOperand then
-      s!"v{Mnemonic.name op} {dst}, {src2.toStr addr_w}"
-    else
-      let immStr := optImm imm
-      s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}{immStr}"
+    if op.twoOperand then s!"v{Mnemonic.name op} {dst}, {src2.toStr addr_w}"
+    else s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}{optImm imm}"
 
 instance : ToString Instr where
   toString i := match i with

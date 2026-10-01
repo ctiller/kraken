@@ -51,9 +51,7 @@ def SimdUnOp.vexBits? : SimdUnOp → Option Nat
   | _ => none
 
 def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
-  | .pabsb => .map1 8 fun x => if x.msb then -x else x
-  | .pabsw => .map1 16 fun x => if x.msb then -x else x
-  | .pabsd => .map1 32 fun x => if x.msb then -x else x
+  | .pabsb => .map1 8 BitVec.abs | .pabsw => .map1 16 BitVec.abs | .pabsd => .map1 32 BitVec.abs
   | .pmovzxbw => fun a => .ofLanes n 16 fun i => (a.lane 8 i).zeroExtend 16
   | .pmovzxbd => fun a => .ofLanes n 32 fun i => (a.lane 8 i).zeroExtend 32
   | .pmovzxbq => fun a => .ofLanes n 64 fun i => (a.lane 8 i).zeroExtend 64

@@ -9,14 +9,11 @@ meta import Lean.Elab.Deriving.ToExpr
 
 @[expose] public section
 
+/-- The predicates of the compare pseudo-ops, in the order of their SDM codes (`ctorIdx`). -/
 inductive FpCmpPred | eq | lt | le | unord | neq | nlt | nle | ord
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic FpCmpPred := ⟨mnemonics% FpCmpPred⟩
-
-def FpCmpPred.code : FpCmpPred → Nat
-  | .eq => 0 | .lt => 1 | .le => 2 | .unord => 3
-  | .neq => 4 | .nlt => 5 | .nle => 6 | .ord => 7
 
 def fpPredicateMatch (pred : Nat) (lt eq unord : Bool) : Bool :=
   match pred % 16 with
@@ -37,19 +34,22 @@ def fpPredicateMatch (pred : Nat) (lt eq unord : Bool) : Bool :=
   | 14 => !lt && !eq && !unord
   | _ => true
 
+/-- All ones if `pred` holds for single-precision `a` and `b`, else zero. -/
 def f32cmpPred (pred : Nat) (a b : BitVec 32) : BitVec 32 :=
-  let fa := a.toFloat32; let fb := b.toFloat32
-  let unord := fa.isNaN || fb.isNaN
-  let lt := !unord && fa < fb
-  let eq := !unord && fa == fb
-  if fpPredicateMatch pred lt eq unord then 0xffffffff#32 else 0#32
+  let (unord, lt, eq) := fcmp32 a b; .mask 32 (fpPredicateMatch pred lt eq unord)
 
+/-- `f32cmpPred` for double precision. -/
 def f64cmpPred (pred : Nat) (a b : BitVec 64) : BitVec 64 :=
-  let fa := a.toFloat; let fb := b.toFloat
-  let unord := fa.isNaN || fb.isNaN
-  let lt := !unord && fa < fb
-  let eq := !unord && fa == fb
-  if fpPredicateMatch pred lt eq unord then 0xffffffffffffffff#64 else 0#64
+  let (unord, lt, eq) := fcmp64 a b; .mask 64 (fpPredicateMatch pred lt eq unord)
+
+/-- Compares elements of type `t` with predicate `pred` (scalar types: only the lowest element,
+the others coming from `a`). -/
+def FpType.cmp {n} (t : FpType) (pred : Nat) : BitVec n → BitVec n → BitVec n :=
+  match t with
+  | .ps => .map2 32 (f32cmpPred pred)
+  | .pd => .map2 64 (f64cmpPred pred)
+  | .ss => .scalar 32 (f32cmpPred pred)
+  | .sd => .scalar 64 (f64cmpPred pred)
 
 structure SimdFpCmp where
   pred : FpCmpPred
@@ -66,12 +66,7 @@ instance : Mnemonic SimdFpCmp where
 
 /-- The operation on one 128-bit lane. -/
 def SimdFpCmp.interp (op : SimdFpCmp) : BitVec 128 → BitVec 128 → BitVec 128 :=
-  let c := op.pred.code
-  match op.type with
-  | .ps => .map2 32 (f32cmpPred c)
-  | .pd => .map2 64 (f64cmpPred c)
-  | .ss => .scalar 32 (f32cmpPred c)
-  | .sd => .scalar 64 (f64cmpPred c)
+  op.type.cmp op.pred.ctorIdx
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdFpCmp.memBytes? (op : SimdFpCmp) : Option Nat := op.type.memBytes?

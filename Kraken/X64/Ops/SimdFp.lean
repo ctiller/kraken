@@ -21,25 +21,13 @@ inductive SimdFp
 
 instance : Mnemonic SimdFp := ⟨mnemonics% SimdFp⟩
 
-def sseMin32 (a b : BitVec 32) : BitVec 32 :=
-  if a.toFloat32.isNaN || b.toFloat32.isNaN then b
-  else if a.toFloat32 == 0 && b.toFloat32 == 0 then b
-  else if b.toFloat32 < a.toFloat32 then b else a
+/-- SSE `min`: `a` if `a < b`, else `b` (so `b` if either is NaN or both are zeros). -/
+def sseMin32 (a b : BitVec 32) : BitVec 32 := if a.toFloat32 < b.toFloat32 then a else b
+def sseMin64 (a b : BitVec 64) : BitVec 64 := if a.toFloat < b.toFloat then a else b
 
-def sseMin64 (a b : BitVec 64) : BitVec 64 :=
-  if a.toFloat.isNaN || b.toFloat.isNaN then b
-  else if a.toFloat == 0 && b.toFloat == 0 then b
-  else if b.toFloat < a.toFloat then b else a
-
-def sseMax32 (a b : BitVec 32) : BitVec 32 :=
-  if a.toFloat32.isNaN || b.toFloat32.isNaN then b
-  else if a.toFloat32 == 0 && b.toFloat32 == 0 then b
-  else if a.toFloat32 < b.toFloat32 then b else a
-
-def sseMax64 (a b : BitVec 64) : BitVec 64 :=
-  if a.toFloat.isNaN || b.toFloat.isNaN then b
-  else if a.toFloat == 0 && b.toFloat == 0 then b
-  else if a.toFloat < b.toFloat then b else a
+/-- SSE `max`: `a` if `a > b`, else `b` (so `b` if either is NaN or both are zeros). -/
+def sseMax32 (a b : BitVec 32) : BitVec 32 := if b.toFloat32 < a.toFloat32 then a else b
+def sseMax64 (a b : BitVec 64) : BitVec 64 := if b.toFloat < a.toFloat then a else b
 
 /-- The operation on one 128-bit lane. -/
 def SimdFp.interp : SimdFp → BitVec 128 → BitVec 128 → BitVec 128
