@@ -1575,6 +1575,15 @@ def hasRexConflict (instr : Instr) : Bool :=
     (all.any (fun r => r ∈ ["%sil", "%dil", "%bpl", "%spl"] || r.startsWith "%r" && (r.toList.getD 2 ' ').isDigit) ||
      operands.any fun r => r.length == 4 && r.startsWith "%r")
 
+/-- Whether `instr` names a register only EVEX can encode (`%zmm*`, `%xmm16`-`%xmm31`,
+`%ymm16`-`%ymm31`) without being an EVEX form of the model (`SimdMov.evex`). Read off the
+canonical AT&T text. -/
+def hasEvexOnlyReg (instr : Instr) : Bool :=
+  let evex := match instr with | .avx _ _ (.mov false op _ _) => op.evex | _ => false
+  let regs := ((ATT.instr instr).splitToList fun c => !c.isAlphanum && c != '%').filter (·.startsWith "%")
+  !evex && regs.any fun r => r.startsWith "%zmm" ||
+    (r.startsWith "%xmm" || r.startsWith "%ymm") && (r.drop 4).copy.toNat?.any (· ≥ 16)
+
 /-- Parse an instruction mnemonic and its operands. A mnemonic may name both an explicit
 instruction and family opcodes (e.g. `movq`); the first whose operands parse wins. -/
 def parseInstr : Parser Instr := do
@@ -1602,6 +1611,8 @@ def parseInstr : Parser Instr := do
     fail "instruction cannot take lock prefix"
   if hasRexConflict instr then
     fail "cannot use a high byte register in an instruction requiring REX"
+  if hasEvexOnlyReg instr then
+    fail "unsupported EVEX-only register (%zmm, %xmm16-31 or %ymm16-31)"
   return instr
 
 -- ============================================================================

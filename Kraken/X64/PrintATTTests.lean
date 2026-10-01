@@ -298,7 +298,12 @@ def rejected : List String := [
   "vbroadcasti128 %xmm1, %ymm1", "vbroadcastf128 %xmm1, %ymm1", "movlps %rax, %xmm2",
   "movhpd %eax, %xmm0", "vmovlps %xmm1, %rax", "vmovhps %rax, %xmm1, %xmm2", "movlpd %xmm1, %eax",
   -- Register-only sources
-  "pmovmskb (%rsp), %eax", "vmovmskps (%rsp), %eax", "movmskpd (%rsp), %rax"
+  "pmovmskb (%rsp), %eax", "vmovmskps (%rsp), %eax", "movmskpd (%rsp), %rax",
+  -- EVEX-only registers: the model has no EVEX forms except `vmovups`
+  "vmovdqa %zmm3, %zmm3", "vmovaps %ymm17, %ymm1", "movups %xmm16, %xmm1", "vptest %zmm1, %zmm2",
+  "vpmovzxbw (%rsp), %zmm3", "vpmovzxbw %xmm0, %zmm3", "vaddps %zmm1, %zmm2, %zmm3",
+  "vpaddb %xmm16, %xmm1, %xmm2", "vmovd %eax, %xmm16", "vpextrb $0, %xmm17, %eax",
+  "vbroadcastss %xmm16, %ymm1", "vfmadd231ps %ymm20, %ymm1, %ymm2", "vpsllw $1, %zmm1, %zmm2"
 ]
 
 /-- info: [] -/
@@ -363,7 +368,9 @@ def accepted : List String := [
   "vpsrldq $3, %ymm1, %ymm2", "psrlq %xmm2, %xmm1", "vpsllw (%rsp), %ymm3, %ymm4",
   "vbroadcasti128 (%rsp), %ymm1", "vbroadcastss %xmm1, %ymm1", "movlps (%rsp), %xmm2",
   "vmovhpd %xmm1, (%rsp)", "vmovlpd (%rsp), %xmm1, %xmm2", "pmovmskb %xmm1, %eax",
-  "vmovmskpd %ymm1, %rax", "cvtsd2si (%rsp), %eax"
+  "vmovmskpd %ymm1, %rax", "cvtsd2si (%rsp), %eax",
+  -- `vmovups` takes the EVEX-only registers
+  "vmovups (%rsp), %zmm1", "vmovups %xmm16, %xmm17", "vmovups %ymm31, %ymm0", "vmovups %zmm2, %zmm30"
 ]
 
 /-- info: [] -/

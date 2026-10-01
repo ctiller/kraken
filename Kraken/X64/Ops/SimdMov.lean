@@ -26,3 +26,7 @@ def SimdMov.memSrc? : SimdMov → Option Bool
   | .lddqu | .movntdqa => some true
   | .movntps | .movntpd | .movntdq => some false
   | .movups | .movupd | .movdqu | .movaps | .movapd | .movdqa => none
+
+/-- Whether the model has the EVEX form of the `v` instruction, which can name the registers
+`%zmm0`-`%zmm31`, `%xmm16`-`%xmm31` and `%ymm16`-`%ymm31`. -/
+def SimdMov.evex (op : SimdMov) : Bool := op == .movups
