@@ -41,3 +41,8 @@ def GprUnOp.interp {n} : GprUnOp → BitVec n → Option (BitVec n) × FlagsOut
   | .blsr, a =>
     let r := (a - 1) &&& a
     (r, { cf := a == 0, pf := .undef, af := .undef, zf := r == 0, sf := r.msb, of := false })
+
+/-- Minimum operand bit width (16 for popcnt/lzcnt/tzcnt/bsf/bsr, 32 for blsi/blsmsk/blsr). -/
+def GprUnOp.minBits : GprUnOp → Nat
+  | .blsi | .blsmsk | .blsr => 32
+  | _ => 16

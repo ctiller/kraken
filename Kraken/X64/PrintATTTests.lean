@@ -252,3 +252,43 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard match parse "pushw $42" with
   | .ok [d] => toString d == "push word ptr 42"
   | _ => false
+-- 8-bit operands rejected for popcnt/lzcnt/tzcnt/bsf/bsr
+#guard (parse "popcnt %al, %bl") matches .error _
+#guard (parse "popcntb %al, %bl") matches .error _
+#guard (parse "popcnt %ax, %bx") matches .ok _
+#guard (parse "lzcnt %al, %bl") matches .error _
+#guard (parse "tzcnt %al, %bl") matches .error _
+#guard (parse "bsf %al, %bl") matches .error _
+#guard (parse "bsr %al, %bl") matches .error _
+-- 8-bit operands rejected for bt/bts/btr/btc
+#guard (parse "bt %al, %bl") matches .error _
+#guard (parse "btb $1, (%rax)") matches .error _
+#guard (parse "bts %al, %bl") matches .error _
+#guard (parse "btr %al, %bl") matches .error _
+#guard (parse "btc %al, %bl") matches .error _
+#guard (parse "bt %ax, %bx") matches .ok _
+-- 8-bit operands rejected for cmovcc
+#guard (parse "cmove %al, %bl") matches .error _
+#guard (parse "cmovzb %al, %bl") matches .error _
+#guard (parse "cmove %ax, %bx") matches .ok _
+#guard (parse "cmovzl %eax, %ebx") matches .ok _
+-- 8- and 16-bit operands rejected for blsi/blsmsk/blsr
+#guard (parse "blsi %al, %bl") matches .error _
+#guard (parse "blsi %ax, %bx") matches .error _
+#guard (parse "blsiw %ax, %bx") matches .error _
+#guard (parse "blsi %eax, %ebx") matches .ok _
+#guard (parse "blsmsk %ax, %bx") matches .error _
+#guard (parse "blsr %ax, %bx") matches .error _
+-- 8- and 16-bit operands rejected for adcx/adox
+#guard (parse "adcx %al, %bl") matches .error _
+#guard (parse "adcx %ax, %bx") matches .error _
+#guard (parse "adcxw %ax, %bx") matches .error _
+#guard (parse "adcx %eax, %ebx") matches .ok _
+#guard (parse "adox %ax, %bx") matches .error _
+#guard (parse "adox %eax, %ebx") matches .ok _
+-- 8- and 16-bit operands rejected for bswap
+#guard (parse "bswap %al") matches .error _
+#guard (parse "bswap %ax") matches .error _
+#guard (parse "bswapw %ax") matches .error _
+#guard (parse "bswap %eax") matches .ok _
+#guard (parse "bswap %rax") matches .ok _

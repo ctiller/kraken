@@ -467,26 +467,32 @@ def parseShiftExpr: Parser ShiftCountExpr := do
 -- Condition Code Parsing
 -- ============================================================================
 
+/-- Parse a condition code from a string slice, returning `none` if not recognized. -/
+def parseCondCode? (suffix : String.Slice) : Option CondCode :=
+  match suffix.copy.toLower with
+  | "o" => some .o
+  | "no" => some .no
+  | "b" | "c" | "nae" => some .b
+  | "ae" | "nc" | "nb" => some .ae
+  | "z" | "e" => some .z
+  | "nz" | "ne" => some .nz
+  | "be" | "na" => some .be
+  | "a" | "nbe" => some .a
+  | "s" => some .s
+  | "ns" => some .ns
+  | "p" | "pe" => some .p
+  | "np" | "po" => some .np
+  | "l" | "nge" => some .l
+  | "ge" | "nl" => some .ge
+  | "le" | "ng" => some .le
+  | "g" | "nle" => some .g
+  | _ => none
+
 /-- Parse a condition code from a conditional jump mnemonic suffix. -/
 def parseCondCode (suffix : String.Slice) : Parser CondCode :=
-  match suffix.copy.toLower with
-  | "o" => .pure .o
-  | "no" => .pure .no
-  | "b" | "c" | "nae" => .pure .b
-  | "ae" | "nc" | "nb" => .pure .ae
-  | "z" | "e" => .pure .z
-  | "nz" | "ne" => .pure .nz
-  | "be" | "na" => .pure .be
-  | "a" | "nbe" => .pure .a
-  | "s" => .pure .s
-  | "ns" => .pure .ns
-  | "p" | "pe" => .pure .p
-  | "np" | "po" => .pure .np
-  | "l" | "nge" => .pure .l
-  | "ge" | "nl" => .pure .ge
-  | "le" | "ng" => .pure .le
-  | "g" | "nle" => .pure .g
-  | _ => .fail s!"unknown condition code: {suffix}"
+  match parseCondCode? suffix with
+  | some cc => .pure cc
+  | none => .fail s!"unknown condition code: {suffix}"
 
 -- ============================================================================
 -- Instruction Parsing
@@ -705,6 +711,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
   if let some (op, w?) := lookupSized GprUnOp mn then ps := ps.push do
     let (addr_w, src) ← parseRegOrMem; parseComma
     let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
+    if w.bits < op.minBits then fail s!"{mn}: expected at least {op.minBits}-bit operands"
     pure (toInstr addr_w (.un op dst (← ascribe w src)))
   if let some (op, w?) := lookupSized GprBinOp mn then ps := ps.push do
     let (addr_w1, a) ← parseRegOrMem; parseComma
@@ -717,7 +724,10 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     | .reg src1 => pure (toInstr addr_w (.bin op dst src1 (← ascribe w src2)))
     | .mem _ => fail s!"{mn}: expected a register"
   if let some (op, w?) := lookupSized BitTestOp mn then ps := ps.push do
-    commaSeparated w? parseOperand parseRegOrMem (.bt op)
+    if w? == some .W8 then fail s!"{mn}: expected 16-, 32-, or 64-bit operands"
+    let instr ← commaSeparated w? parseOperand parseRegOrMem (.bt op)
+    if instr.width? == some .W8 then fail s!"{mn}: expected 16-, 32-, or 64-bit operands"
+    pure instr
   if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
     commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.mov op)
   if let some op := Mnemonic.ofName? (α := SimdMov) v then ps := ps.push do
@@ -952,7 +962,9 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
 
   | "adcx" =>
     -- Per Intel SDM: ADCX dest must be a register (r32/r64)
-    commaSeparated .none parseRegOrMem parseRegA .adcx
+    let instr ← commaSeparated .none parseRegOrMem parseRegA .adcx
+    if instr.width? matches some .W8 | some .W16 then fail "adcx: expected 32- or 64-bit operands"
+    pure instr
 
   | "adcxq" | "adcxl" =>
     let w ← instrWidth mn
@@ -960,7 +972,9 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
 
   | "adox" =>
     -- Per Intel SDM: ADOX dest must be a register (r32/r64)
-    commaSeparated .none parseRegOrMem parseRegA .adox
+    let instr ← commaSeparated .none parseRegOrMem parseRegA .adox
+    if instr.width? matches some .W8 | some .W16 then fail "adox: expected 32- or 64-bit operands"
+    pure instr
 
   | "adoxq" | "adoxl" =>
     let w ← instrWidth mn
@@ -1341,7 +1355,8 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
 
   -- Byte swap
   | "bswap" =>
-    let ⟨ _w, dst ⟩ ← parseRegW
+    let ⟨ w, dst ⟩ ← parseRegW
+    if w matches .W8 | .W16 then fail "bswap requires 32- or 64-bit operand"
     pure (toInstr .none (.bswap dst))
 
   | "bswapq" | "bswapl" =>
@@ -1457,12 +1472,21 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
       let (addr_w, dst) ← parseRegOrMemAO .W8
       pure (toInstr addr_w (.setcc cc dst))
     else if mn.startsWith "cmov" then
-      -- TODO: are the suffixed variants really used here? do we truly need to
-      -- handle cmovzb and the like? how many are there? we could conceivably
-      -- just ignore it on the basis that the assembler will bail if there is
-      -- something inconsistent like .cmovzb %rax %rbx
-      let cc ← parseCondCode (mn.drop 4)
-      commaSeparated .none parseRegOrMem parseRegA (.cmovcc cc)
+      let rest := (mn.drop 4).copy
+      -- First try parsing condition code directly (e.g. "l" for cmovl, "ge" for cmovge).
+      -- If that fails or if a width suffix was given, strip the suffix ('w', 'l', 'q') and retry.
+      let (cc, w?) ← match parseCondCode? rest with
+        | some cc => pure (cc, none)
+        | none =>
+          match rest.back?.bind Char.toWidth? with
+          | some w =>
+            if w == .W8 then fail "cmovcc: 8-bit operands not supported"
+            let cc ← parseCondCode (rest.dropEnd 1).copy
+            pure (cc, some w)
+          | none => fail s!"unknown cmov condition code: {rest}"
+      let instr ← commaSeparated w? parseRegOrMem parseRegA (.cmovcc cc)
+      if instr.width? == some .W8 then fail "cmovcc: 8-bit operands not supported"
+      pure instr
     else
       fail s!"unsupported instruction: {mnemonic}"
 

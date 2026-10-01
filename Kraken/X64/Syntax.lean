@@ -364,6 +364,10 @@ inductive Instr
   | avx (address_size : Width) (operation_size : AvxWidth) (operation : AvxOperation operation_size)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
+def Instr.width? : Instr → Option Width
+  | .regular _ w _ => some w
+  | .avx _ _ _ => none
+
 instance [AddressSize] {w : Width} : CoeOut (Operation w) Instr where
   coe op := Instr.regular address_size w op
 
