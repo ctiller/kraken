@@ -648,6 +648,48 @@ def stringOp? (mn : String) (repPfx : RepPrefix := .none) : Option Instr := do
     | _ => none
   pure (toInstr .none (w := w) op)
 
+/-- The 24 VEX comparison pseudo-op predicates 8-31 (SDM Table 3-4). -/
+def vexCmpPred8To31? : String → Option Nat
+  | "eq_uq" => some 8
+  | "nge" => some 9
+  | "ngt" => some 10
+  | "false" => some 11
+  | "neq_oq" => some 12
+  | "ge" => some 13
+  | "gt" => some 14
+  | "true" => some 15
+  | "eq_os" => some 16
+  | "lt_oq" => some 17
+  | "le_oq" => some 18
+  | "unord_s" => some 19
+  | "neq_us" => some 20
+  | "nlt_uq" => some 21
+  | "nle_uq" => some 22
+  | "ord_s" => some 23
+  | "eq_us" => some 24
+  | "nge_uq" => some 25
+  | "ngt_uq" => some 26
+  | "false_os" => some 27
+  | "neq_os" => some 28
+  | "ge_oq" => some 29
+  | "gt_oq" => some 30
+  | "true_us" => some 31
+  | _ => none
+
+/-- Matches `vcmp{pred}{type}` for predicates 8-31 and types `ps`, `pd`, `ss`, `sd`. -/
+def parseVexCmpPseudo? (mn : String) : Option (SimdBinImmOp × Nat × Bool) := do
+  guard (mn.startsWith "vcmp")
+  let rest := (mn.drop 4).copy
+  let (op, isScalar) ←
+    if rest.endsWith "ps" then some (.cmpps, false)
+    else if rest.endsWith "pd" then some (.cmppd, false)
+    else if rest.endsWith "ss" then some (.cmpss, true)
+    else if rest.endsWith "sd" then some (.cmpsd, true)
+    else none
+  let predStr := (rest.dropEnd 2).copy
+  let code ← vexCmpPred8To31? predStr
+  some (op, code, isScalar)
+
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
 def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
   (Mnemonic.ofName? mn).map (·, none) <|> do
@@ -821,6 +863,10 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if (v == "perm2f128" || v == "perm2i128") && w != .W256 then
       fail s!"v{v}: expected 256-bit operands"
     pure (toAvxInstr addr_w (.vexImm op dst src1 src2 imm))
+  if let some (op, code, isScalar) := parseVexCmpPseudo? mn then ps := ps.push do
+    let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    if isScalar && w != .W128 then fail s!"{mn}: expected 128-bit operands"
+    pure (toAvxInstr addr_w (.vexImm op dst src1 src2 (.int64 (Int64.ofNat code))))
   if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
     let ⟨w, dst⟩ ← parseAvxRegW

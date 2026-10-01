@@ -326,3 +326,17 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard roundtrips "vcvtpd2psx (%rax), %xmm0"
 #guard roundtrips "vcvtpd2psy (%rax), %xmm0"
 #guard roundtrips "cvtpd2ps (%rax), %xmm0"
+-- VEX compare pseudo-ops for predicates 8-31
+#guard (parse "vcmpeq_uqps %xmm1, %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqps %ymm1, %ymm2, %ymm3") matches .ok _
+#guard (parse "vcmpeq_uqpd 16(%rsp), %ymm2, %ymm3") matches .ok _
+#guard (parse "vcmptrue_usps %xmm1, %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqss %xmm1, %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqsd 16(%rsp), %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqss %ymm1, %ymm2, %ymm3") matches .error _
+#guard (parse "vcmpeq_uqsd 16(%rsp), %ymm2, %ymm3") matches .error _
+#guard (parse "cmpeq_uqps %xmm1, %xmm2") matches .error _
+#guard roundtrips "vcmpeq_uqps %xmm1, %xmm2, %xmm3"
+#guard roundtrips "vcmpeq_uqps %ymm1, %ymm2, %ymm3"
+#guard roundtrips "vcmpeq_uqss %xmm1, %xmm2, %xmm3"
+#guard roundtrips "vcmptrue_uspd 16(%rsp), %ymm2, %ymm3"
