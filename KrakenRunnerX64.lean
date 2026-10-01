@@ -74,8 +74,8 @@ def stackSize := 800
 -- help us avoid disagreements with the actual machine: we will avoid over/underflow
 -- when we allocate stack memory using arithmetic instructions (which would happen
 -- if the stack were at 0), and fixing the last byte of the address at 0 means that
--- we will match PF for these operations (providing that we also align rsp on
--- hardware; fuzz_x64.py uses exactly this rsp).
+-- we will match PF for these operations. The hardware harness (`reset_state` in
+-- Kraken/X64/Test/asm_tests.py) runs with exactly this rsp and stack mapping.
 def stackLocation: UInt64 := 0x7ffecafee200
 def initStack : DataMem := (List.replicate stackSize 0xff).At (stackLocation - stackSize)
 def initData : MachineData := {regs := {rsp := stackLocation}, dmem := initStack}
@@ -93,11 +93,32 @@ def numStatusFlags : Nat := 7
 
 /-! ## Determinism checking, with Semantics.lean in the loop
 
-We track which of the seven status flags are currently undefined as a bitmask using the
-bit layout of `NondetSupportingType.from_hash` (cf, pf, af, zf, sf, of, df = bits 0..6). -/
+`Executable.eval` produces *one* possible behavior, resolving each `undefined` choice to an
+arbitrary value (a hash of the registers). The fuzzer instead needs to know whether the hardware's
+result is predictable at all, i.e. whether it is the same for *every* resolution of the `undefined`
+choices; it discards sequences for which it isn't. -/
 
-def StatusFlags.toMask (f : StatusFlags) : Nat :=
+/-- The seven status flag values as bits, in the layout of `NondetSupportingType.from_hash`
+(cf, pf, af, zf, sf, of, df = bits 0..6). -/
+def StatusFlags.toBits (f : StatusFlags) : Nat :=
   f.cf.toNat ||| f.pf.toNat <<< 1 ||| f.af.toNat <<< 2 ||| f.zf.toNat <<< 3 ||| f.sf.toNat <<< 4 ||| f.of.toNat <<< 5 ||| f.df.toNat <<< 6
+
+/-- Which status flags are currently undefined, i.e. may hold either value, as a mask in the
+`StatusFlags.toBits` layout. -/
+structure UndefFlags where
+  mask : Nat
+  deriving BEq
+
+def UndefFlags.none : UndefFlags := ⟨0⟩
+
+/-- Every assignment of the status flags that agrees with `f` on the defined flags. -/
+def UndefFlags.completions (u : UndefFlags) (f : StatusFlags) : List StatusFlags :=
+  (List.range (2^numStatusFlags)).filter (fun m => m &&& u.mask == m) |>.map fun m =>
+    NondetSupportingType.from_hash (f.toBits &&& ((2^numStatusFlags - 1) ^^^ u.mask) ||| m).toUInt64
+
+/-- The flags on which any of `fs` differs from `f`. -/
+def UndefFlags.disagreeing (f : StatusFlags) (fs : Array StatusFlags) : UndefFlags :=
+  ⟨fs.foldl (fun acc g => acc ||| (g.toBits ^^^ f.toBits)) 0⟩
 
 -- Runs `Effects` to completion, resolving every `undefined` choice with `h`. Also returns
 -- whether any `undefined` choice was made.
@@ -107,10 +128,10 @@ partial def evalEffects (h : UInt64) (sawUndef : Bool) : Effects → Option (Mac
   | @Effects.undefined _ t cont => evalEffects h true (cont (t.from_hash h))
   | _ => none
 
-/-- Executes `asmCode` (straight-line, no jumps) from `d`, where `mask` are the flags currently
-undefined. Each instruction is run under every assignment of the undefined flags, and (if it makes
-`undefined` choices) with those resolved to all-zeros and to all-ones. Fails unless registers and
-memory agree across all runs; returns the resulting state and the new mask of flags that disagree.
+/-- Executes `asmCode` (straight-line, no jumps) from `d`, where the flags in `u` are currently
+undefined. Each instruction is run under every assignment of the undefined flags, and, if it makes
+`undefined` choices, with those resolved once to all-zeros and once to all-ones. Fails unless
+registers and memory agree across all runs; returns the resulting state and the flags that disagree.
 
 Two samples suffice only because of how Semantics.lean uses `undefined` choices. All choices in
 a run are resolved from the same `h` (`NondetSupportingType.from_hash`): `h = 0` makes every Bool
@@ -121,33 +142,31 @@ two resolutions, which holds when its register- or memory-affecting choices are
 - at most one Bool, even if computed with (both values are sampled): e.g. `SimdBinOp.eval`'s
   hadd operand order, or whether a failed 32-bit `cmpxchg` writes its destination.
 Choices that only affect flags need no such argument: flags that differ become undefined
-(`mask`). The filter would miss an instruction with two register-affecting Bool choices whose
+(`u`). The filter would miss an instruction with two register-affecting Bool choices whose
 mixed assignments give a different result from both all-false and all-true, or a bit-vector
 choice used in a computation that maps zero and all-ones to the same result. None exists today;
 adding one would need a hash per choice. -/
-def stepDeterministic (d : MachineData) (mask : Nat) (asmCode : String) : Option (MachineData × Nat) := do
+def stepDeterministic (d : MachineData) (u : UndefFlags) (asmCode : String) : Option (MachineData × UndefFlags) := do
   let exe := (← (Kraken.X64.Parser.parse asmCode).toOption).fakeLayout
   let := exe.labels
-  let mut (d, mask) := (d, mask)
+  let mut (d, u) := (d, u)
   for (pc, dir, sz) in exe.withAddresses do
     let p : Std.Rco Int64 := .mk pc (pc + .ofNat sz)
-    let fixed := d.status.toMask &&& ((2^numStatusFlags - 1) ^^^ mask)
-    let run (m : Nat) (h : UInt64) : Option (MachineData × Bool) :=
-      let status : StatusFlags := NondetSupportingType.from_hash (fixed ||| m).toUInt64
+    let run (status : StatusFlags) (h : UInt64) : Option (MachineData × Bool) :=
       evalEffects h false (dir.interp { d with status } p (fun s => .done (s, p.upper)) (fun _ _ => .unimplemented "jump"))
     let mut outs : Array MachineData := #[]
-    for m in (List.range (2^numStatusFlags)).filter (fun m => m &&& mask == m) do
-      let (s, sawUndef) ← run m 0
+    for status in u.completions d.status do
+      let (s, sawUndef) ← run status 0
       outs := outs.push s
-      if sawUndef then outs := outs.push (← run m (-1)).1
+      if sawUndef then outs := outs.push (← run status (-1)).1
     let s0 ← outs[0]?
     if outs.any ({ · with status := s0.status } != s0) then failure
-    (d, mask) := (s0, outs.foldl (fun acc s => acc ||| (s.status.toMask ^^^ s0.status.toMask)) 0)
-  return (d, mask)
+    (d, u) := (s0, .disagreeing s0.status (outs.map (·.status)))
+  return (d, u)
 
 def predict (asmCode : String) : Json :=
-  match stepDeterministic initData 0 asmCode with
-  | some (s, 0) => Json.mkObj [("ok", toJson true), ("state", toJson (summarize s))]
+  match stepDeterministic initData .none asmCode with
+  | some (s, ⟨0⟩) => Json.mkObj [("ok", toJson true), ("state", toJson (summarize s))]
   | _ => Json.mkObj [("ok", toJson false), ("error", toJson "unparseable, faulting, jumping, or non-deterministic")]
 
 /-! ## Random instruction sequence generation
@@ -259,14 +278,14 @@ def genSeed : GenM String := do
 -- Four random register initializations (`genSeed`) followed by `length` instructions from `pool`, each drawn
 -- until `stepDeterministic` accepts one. A final `add` makes all flags defined.
 def genSequence (pool : Array String) (length : Nat) : StateM StdGen String := do
-  let mut (d, mask, lines) := (initData, 0, #[])
+  let mut (d, undef, lines) := (initData, UndefFlags.none, #[])
   for i in [0 : 4 + length] do
     for _ in [0 : 200] do
       let some cand ← (if i < 4 then genSeed else pick pool).run | continue
-      if let some (d', mask') := stepDeterministic d mask cand then
-        (d, mask, lines) := (d', mask', lines.push cand)
+      if let some (d', undef') := stepDeterministic d undef cand then
+        (d, undef, lines) := (d', undef', lines.push cand)
         break
-  if mask != 0 then lines := lines.push "addq %rax, %rax"
+  if undef != .none then lines := lines.push "addq %rax, %rax"
   return "\n".intercalate lines.toList
 
 public def main (args : List String) : IO UInt32 := do

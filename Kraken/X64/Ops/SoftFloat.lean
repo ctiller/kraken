@@ -23,9 +23,11 @@ def isNaN (f : FpFmt) (x : BitVec f.bits) : Bool :=
   f.expField x == 2 ^ f.e - 1 && x.extractLsb' 0 f.m != 0
 def isInf (f : FpFmt) (x : BitVec f.bits) : Bool :=
   f.expField x == 2 ^ f.e - 1 && x.extractLsb' 0 f.m == 0
-/-- The quiet version of NaN `x`. -/
+/-- The quiet version of NaN `x`: the most significant fraction bit set (bit 22, `0x400000`, in
+binary32). -/
 def quiet (f : FpFmt) (x : BitVec f.bits) : BitVec f.bits := x ||| .twoPow _ (f.m - 1)
-/-- The default NaN ("QNaN floating-point indefinite"). -/
+/-- The default NaN ("QNaN floating-point indefinite"): sign set, exponent all ones, fraction
+`100…0` (`0xffc00000` in binary32). -/
 def defaultNaN (f : FpFmt) : BitVec f.bits := .ofInt _ (-(2 ^ (f.m - 1) : Int))
 /-- Packs sign, exponent field, and mantissa field into a float BitVec. -/
 def pack (f : FpFmt) (sign : Bool) (exp mant : Nat) : BitVec f.bits :=
@@ -144,8 +146,9 @@ def f16ToF32 (h : BitVec 16) : BitVec 32 := FpFmt.f16.convert .f32 0 h
 /-- Single precision (binary32) to half precision (binary16) conversion. -/
 def f32ToF16 (mode : Nat) (x : BitVec 32) : BitVec 16 := FpFmt.f32.convert .f16 mode x
 
-/-- An SSE single-precision operation on one lane, with the SSE NaN rules (`FpFmt.sseNaN`); Lean's
-`Float32` would instead canonicalize every NaN to `0x7fc00000`. -/
+/-- An SSE single-precision operation on one lane, with the SSE NaN rules (`FpFmt.sseNaN`). Lean's
+`Float32` can't express these: its logical model has a single NaN (all NaNs are equal), so every
+NaN result reads back as `0x7fc00000`. -/
 def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 32 :=
   FpFmt.f32.sseNaN [a, b] fun _ => (op a.toFloat32 b.toFloat32).toBitVec
 
