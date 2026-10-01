@@ -121,9 +121,12 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   failing SimdUnOp (fun op mn =>
     let hasLegacy := !op matches .cvtph2ps | .broadcastss | .broadcastsd | .broadcasti128 | .broadcastf128
     let is128Only := op matches .phminposuw | .aesimc | .movq | .movd
-    let dstReg := if is128Only then "x" else "y"
+    let dstReg := if is128Only || op.isNarrowing then "x" else "y"
     (if hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++
-    [s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else dstReg}mm3, %{dstReg}mm4"]) ++
+    (if op.isNarrowing then
+      [s!"v{mn} %ymm3, %xmm4", s!"v{mn}x (%rsp), %xmm4", s!"v{mn}y (%rsp), %xmm4"]
+    else
+      [s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else dstReg}mm3, %{dstReg}mm4"])) ++
   failing SimdUnImmOp (fun op mn =>
     let is128Only := op == .aeskeygenassist
     let reg := if is128Only then "x" else "y"
@@ -305,3 +308,21 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard (parse "crc32b %ah, %ebx") matches .ok _
 #guard (parse "crc32b %ah, %rbx") matches .error _
 #guard (parse "crc32 %ah, %rbx") matches .error _
+-- vcvtpd2ps, vcvtpd2dq, vcvttpd2dq narrowing operand and suffix constraints
+#guard (parse "vcvtpd2ps %ymm1, %xmm0") matches .ok _
+#guard (parse "vcvtpd2ps %xmm1, %xmm0") matches .ok _
+#guard (parse "vcvtpd2psx (%rax), %xmm0") matches .ok _
+#guard (parse "vcvtpd2psy (%rax), %xmm0") matches .ok _
+#guard (parse "vcvtpd2ps (%rax), %xmm0") matches .error _
+#guard (parse "vcvtpd2ps %ymm1, %ymm0") matches .error _
+#guard (parse "cvtpd2ps (%rax), %xmm0") matches .ok _
+#guard (parse "cvtpd2psx (%rax), %xmm0") matches .error _
+#guard (parse "vcvtpd2dq %ymm1, %xmm0") matches .ok _
+#guard (parse "vcvtpd2dqy (%rax), %xmm0") matches .ok _
+#guard (parse "vcvttpd2dq %ymm1, %xmm0") matches .ok _
+#guard (parse "vcvttpd2dqx (%rax), %xmm0") matches .ok _
+#guard roundtrips "vcvtpd2ps %ymm1, %xmm0"
+#guard roundtrips "vcvtpd2ps %xmm1, %xmm0"
+#guard roundtrips "vcvtpd2psx (%rax), %xmm0"
+#guard roundtrips "vcvtpd2psy (%rax), %xmm0"
+#guard roundtrips "cvtpd2ps (%rax), %xmm0"

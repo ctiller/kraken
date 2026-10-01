@@ -243,7 +243,9 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .sseUn op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
-  | .vexUn op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
+  | .vexUn op dst src =>
+    let dstStr := if op.isNarrowing then ToString.toString (dst.as AvxWidth.W128) else ToString.toString dst
+    s!"v{Mnemonic.name op} {dstStr}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
   | .sseUnImm op dst src imm =>
     s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
   | .sseImm op dst src imm =>

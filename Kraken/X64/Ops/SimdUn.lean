@@ -32,6 +32,13 @@ inductive SimdUnOp
 
 instance : Mnemonic SimdUnOp := ⟨mnemonics% SimdUnOp⟩
 
+/-- Whether this SIMD unary operation narrows a 64-bit element to a 32-bit element,
+writing to an xmm destination (with upper bits zeroed for VEX.256). -/
+def SimdUnOp.isNarrowing : SimdUnOp → Bool
+  | .cvtpd2ps | .cvtpd2dq | .cvttpd2dq => true
+  | _ => false
+
+
 def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .pabsb => .map1 8 fun x => if x.msb then -x else x
   | .pabsw => .map1 16 fun x => if x.msb then -x else x

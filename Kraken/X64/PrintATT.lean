@@ -199,7 +199,14 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
   | .sseUn op d x => s!"{Mnemonic.name op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
-  | .vexUn op d x => s!"v{Mnemonic.name op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
+  | .vexUn op d x =>
+    if op.isNarrowing then
+      let (suffix, srcStr) := match x with
+        | .mem a => (if w == AvxWidth.W128 then "x" else "y", addr aw a)
+        | .avx r => ("", avxReg r)
+      s!"v{Mnemonic.name op}{suffix} {srcStr}, {avxReg (d.as AvxWidth.W128)}"
+    else
+      s!"v{Mnemonic.name op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
   | .sseUnImm op d x i | .sseImm op d x i =>
     s!"{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
   | .vexUnImm op d x i => s!"v{Mnemonic.name op} ${const i}, {avxRm aw x}, {avxReg d}"
