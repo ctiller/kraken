@@ -648,35 +648,19 @@ def stringOp? (mn : String) (repPfx : RepPrefix := .none) : Option Instr := do
     | _ => none
   pure (toInstr .none (w := w) op)
 
-/-- The 24 VEX comparison pseudo-op predicates 8-31 (SDM Table 3-4). -/
-def vexCmpPred8To31? : String → Option Nat
-  | "eq_uq" => some 8
-  | "nge" => some 9
-  | "ngt" => some 10
-  | "false" => some 11
-  | "neq_oq" => some 12
-  | "ge" => some 13
-  | "gt" => some 14
-  | "true" => some 15
-  | "eq_os" => some 16
-  | "lt_oq" => some 17
-  | "le_oq" => some 18
-  | "unord_s" => some 19
-  | "neq_us" => some 20
-  | "nlt_uq" => some 21
-  | "nle_uq" => some 22
-  | "ord_s" => some 23
-  | "eq_us" => some 24
-  | "nge_uq" => some 25
-  | "ngt_uq" => some 26
-  | "false_os" => some 27
-  | "neq_os" => some 28
-  | "ge_oq" => some 29
-  | "gt_oq" => some 30
-  | "true_us" => some 31
-  | _ => none
+/-- The VEX comparison pseudo-op predicates 0-31 (SDM Table 3-4), with alias spellings. -/
+def vexCmpPreds : Array (List String) := #[
+  ["eq", "eq_oq"], ["lt", "lt_os"], ["le", "le_os"], ["unord", "unord_q"],
+  ["neq", "neq_uq"], ["nlt", "nlt_us"], ["nle", "nle_us"], ["ord", "ord_q"],
+  ["eq_uq"], ["nge", "nge_us"], ["ngt", "ngt_us"], ["false", "false_oq"],
+  ["neq_oq"], ["ge", "ge_os"], ["gt", "gt_os"], ["true", "true_uq"],
+  ["eq_os"], ["lt_oq"], ["le_oq"], ["unord_s"],
+  ["neq_us"], ["nlt_uq"], ["nle_uq"], ["ord_s"],
+  ["eq_us"], ["nge_uq"], ["ngt_uq"], ["false_os"],
+  ["neq_os"], ["ge_oq"], ["gt_oq"], ["true_us"]
+]
 
-/-- Matches `vcmp{pred}{type}` for predicates 8-31 and types `ps`, `pd`, `ss`, `sd`. -/
+/-- Matches `vcmp{pred}{type}` for predicates 0-31 and types `ps`, `pd`, `ss`, `sd`. -/
 def parseVexCmpPseudo? (mn : String) : Option (SimdBinImmOp × Nat × Bool) := do
   guard (mn.startsWith "vcmp")
   let rest := (mn.drop 4).copy
@@ -687,8 +671,8 @@ def parseVexCmpPseudo? (mn : String) : Option (SimdBinImmOp × Nat × Bool) := d
     else if rest.endsWith "sd" then some (.cmpsd, true)
     else none
   let predStr := (rest.dropEnd 2).copy
-  let code ← vexCmpPred8To31? predStr
-  some (op, code, isScalar)
+  let idx ← vexCmpPreds.findIdx? (·.contains predStr)
+  some (op, idx, isScalar)
 
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
 def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
@@ -775,6 +759,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
   if let some op := Mnemonic.ofName? (α := SimdMov) v then ps := ps.push do
     commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op)
   if let some op := Mnemonic.ofName? (α := SimdBinOp) mn then ps := ps.push do
+    if !op.hasLegacy then fail s!"{mn}: VEX-only instruction"
     let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
     if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sse op dst src))
@@ -783,84 +768,71 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       if !cop.hasVex then fail s!"v{v} is not a valid instruction"
     let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
     if op.memBytes?.isSome && w != .W128 then fail s!"v{v}: scalar op requires 128-bit operands"
+    if (op matches .shuf .movlhps | .shuf .movhlps) && w != .W128 then
+      fail s!"v{v}: requires 128-bit operands"
     if let .perm pop := op then
       if (pop == .permd || pop == .permps) && w != .W256 then fail s!"v{v}: requires 256-bit operands"
     pure (toAvxInstr addr_w (.vex op dst src1 src2))
   for (vex, name) in [(false, mn), (true, v)] do
-    if let some op := Mnemonic.ofName? (α := SimdUnOp) name then ps := ps.push do
+    let (stem, sfx?) := if vex && (name.endsWith "x" || name.endsWith "y") then
+      ((name.dropEnd 1).copy, if name.endsWith "x" then some AvxWidth.W128 else some .W256)
+    else (name, none)
+    if let some op := Mnemonic.ofName? (α := SimdUnOp) stem then ps := ps.push do
+      if !vex && !op.hasLegacy then fail s!"{stem}: VEX-only instruction"
       if op.isNarrowing then
         if !vex then
-          -- Legacy SSE: e.g. cvtpd2ps (%rax), %xmm0 or cvtpd2ps %xmm1, %xmm0
           let (addr_w, src) ← parseAvxRegOrMem; parseComma
           let dst ← parseAvxRegW
           match dst with
-          | ⟨.W128, .xmm mm⟩ =>
-            let srcAscribed ← ascribeAvx .W128 src
-            pure (toAvxInstr addr_w (.sseUn op (.xmm mm) srcAscribed))
+          | ⟨.W128, .xmm mm⟩ => pure (toAvxInstr addr_w (.sseUn op (.xmm mm) (← ascribeAvx .W128 src)))
           | _ => fail s!"{name}: expected xmm destination"
         else
-          -- VEX unsuffixed: vcvtpd2ps %xmm1, %xmm0 or vcvtpd2ps %ymm1, %xmm0.
-          -- Memory operands require x or y suffix!
           let (addr_w, src) ← parseAvxRegOrMem; parseComma
           let dst ← parseAvxRegW
           match dst with
           | ⟨.W128, .xmm mm⟩ =>
-            match src with
-            | ⟨some .W128, .avx (.xmm r)⟩ =>
-              pure (toAvxInstr addr_w (.vexUn op (.xmm mm) (.avx (.xmm r))))
-            | ⟨some .W256, .avx (.ymm r)⟩ =>
-              pure (toAvxInstr addr_w (.vexUn op (.ymm mm) (.avx (.ymm r))))
-            | ⟨none, _⟩ =>
-              fail s!"{name}: memory operand requires x or y suffix"
-            | _ => fail s!"{name}: invalid operand"
+            let some w := sfx? <|> src.1 | fail s!"{name}: memory operand requires x or y suffix"
+            if let some sw := sfx? then
+              if src.1.any (· != sw) then fail s!"{name}: operand width contradicts suffix"
+            match w with
+            | .W128 => pure (toAvxInstr addr_w (.vexUn op (.xmm mm) (← ascribeAvx .W128 src)))
+            | .W256 => pure (toAvxInstr addr_w (.vexUn op (.ymm mm) (← ascribeAvx .W256 src)))
+            | .W512 => fail s!"{name}: unsupported width"
           | _ => fail s!"{name}: expected xmm destination"
       else
+        if sfx?.isSome then fail s!"{name}: unexpected suffix"
         let (addr_w, ⟨w, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
         if !vex then
           if w != .W128 then fail s!"{name}: expected 128-bit operands"
-          if op matches .cvtph2ps | .broadcastss | .broadcastsd | .broadcasti128 | .broadcastf128 then
-            fail s!"{name}: VEX-only instruction"
         else
           if (op matches .broadcastsd | .broadcasti128 | .broadcastf128) && w != .W256 then
             fail s!"{name}: requires 256-bit operands"
           if (op matches .phminposuw | .aesimc | .movq | .movd) && w != .W128 then
             fail s!"{name}: requires 128-bit operands"
+        if op == .movd && src matches .avx _ then fail s!"{name}: expected memory operand"
         pure (toAvxInstr addr_w (if vex then .vexUn op dst src else .sseUn op dst src))
-  -- VEX narrowing ops with memory suffix: e.g. vcvtpd2psx, vcvtpd2psy
-  if mn.startsWith "v" && (mn.endsWith "x" || mn.endsWith "y") then
-    let stem := (mn.drop 1).dropEnd 1 |>.copy
-    if let some op := Mnemonic.ofName? (α := SimdUnOp) stem then
-      if op.isNarrowing then ps := ps.push do
-        let w : AvxWidth := if mn.endsWith "x" then .W128 else .W256
-        let (addr_w, m) ← parseMemory; parseComma
-        let dst ← parseAvxRegW
-        match dst with
-        | ⟨.W128, .xmm mm⟩ =>
-          match w with
-          | .W128 => pure (toAvxInstr (some addr_w) (.vexUn op (.xmm mm) (.mem m)))
-          | .W256 => pure (toAvxInstr (some addr_w) (.vexUn op (.ymm mm) (.mem m)))
-          | .W512 => pure (toAvxInstr (some addr_w) (.vexUn op (.zmm mm) (.mem m)))
-        | _ => fail s!"{mn}: expected xmm destination"
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdUnImmOp) name then ps := ps.push do
+      if !vex && (op matches .permq | .permpd) then fail s!"{name}: VEX-only instruction"
       let imm ← parseImmComma
       let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
       if !vex && w != .W128 then fail s!"{name}: expected 128-bit operands"
-      if vex && name == "aeskeygenassist" && w != .W128 then fail s!"{name}: expected 128-bit operands"
-      if vex && (name == "permq" || name == "permpd") && w != .W256 then fail s!"{name}: expected 256-bit operands"
+      if vex && op == .aeskeygenassist && w != .W128 then fail s!"{name}: expected 128-bit operands"
+      if vex && (op matches .permq | .permpd) && w != .W256 then fail s!"{name}: expected 256-bit operands"
       pure (toAvxInstr addr_w (if vex then .vexUnImm op dst src imm else .sseUnImm op dst src imm))
   if let some op := Mnemonic.ofName? (α := SimdBinImmOp) mn then ps := ps.push do
+    if op matches .pblendd | .perm2f128 | .perm2i128 then fail s!"{mn}: VEX-only instruction"
     let imm ← parseImmComma
     let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
     if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sseImm op dst src imm))
   if let some op := Mnemonic.ofName? (α := SimdBinImmOp) v then ps := ps.push do
-    if v == "sha1rnds4" then fail "vsha1rnds4 is not a valid instruction"
+    if op == .sha1rnds4 then fail "vsha1rnds4 is not a valid instruction"
     let imm ← parseImmComma
     let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
-    if (v == "roundss" || v == "roundsd" || v == "cmpss" || v == "cmpsd" || v == "insertps" || v == "dppd") && w != .W128 then
+    if (op matches .roundss | .roundsd | .cmpss | .cmpsd | .insertps | .dppd) && w != .W128 then
       fail s!"v{v}: expected 128-bit operands"
-    if (v == "perm2f128" || v == "perm2i128") && w != .W256 then
+    if (op matches .perm2f128 | .perm2i128) && w != .W256 then
       fail s!"v{v}: expected 256-bit operands"
     pure (toAvxInstr addr_w (.vexImm op dst src1 src2 imm))
   if let some (op, code, isScalar) := parseVexCmpPseudo? mn then ps := ps.push do
@@ -880,13 +852,17 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     else fail "AVX operand widths differ"
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdTestOp) name then ps := ps.push do
+      if !vex && !op.hasLegacy then fail s!"{name}: VEX-only instruction"
       let (addr_w, ⟨w, src2, src1⟩) ← parseAvxSrcDst
       if !vex && w != .W128 then fail s!"{name}: expected 128-bit operands"
       if vex && op.memBytes?.isSome && w != .W128 then fail s!"{name}: expected 128-bit operands"
       pure (toAvxInstr addr_w (if vex then .vexTest op src1 src2 else .sseTest op src1 src2))
   if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then ps := ps.push do
-    let _ ← (attempt do skipHWs; let _ ← pstring "%xmm0"; parseComma) <|> pure ()
-    let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
+    let (addr_w, ⟨w, src, dst⟩) ←
+      (attempt do
+        skipHWs; let _ ← pstring "%xmm0"; parseComma
+        parseAvxSrcDst) <|>
+      parseAvxSrcDst
     if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sseBlendv op dst src))
   if let some op := Mnemonic.ofName? (α := SimdBlendvOp) v then ps := ps.push do
@@ -1027,12 +1003,12 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     if dst_w == .W64 then
       if w != .W8 && w != .W64 then
         fail "crc32 with 64-bit destination requires 8-bit or 64-bit source"
-      if let .reg r := src then
-        if r.isHighByte then
-          fail "cannot use high byte register with 64-bit destination in crc32"
     else -- dst_w == .W32
       if w != .W8 && w != .W16 && w != .W32 then
         fail "crc32 with 32-bit destination requires 8-, 16-, or 32-bit source"
+    if let .reg r := src then
+      if r.isHighByte && (dst_w == .W64 || dst.requiresRex) then
+        fail "cannot use high byte register in an instruction requiring REX prefix"
     pure (toInstr addr_w (.crc32 dst src))
   | "rorx", w? =>
     let cnt ← parseImmComma
@@ -1469,16 +1445,9 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
   -- Stack operations
   | "push" =>
     let ( addr_w, src ) ← parseOperand
-    match src.1 with
-    | some w =>
-      if w != .W16 && w != .W64 then fail "push requires 16- or 64-bit operand"
-      let s ← ascribe w src
-      pure (toInstr addr_w (.push s))
-    | none =>
-      let s ← ascribe .W64 src
-      match s with
-      | .imm _ => pure (toInstr addr_w (.push s))
-      | _ => fail "push memory operand requires size suffix"
+    let w := src.1.getD .W64
+    if w matches .W8 | .W32 then fail "push requires 16- or 64-bit operand"
+    pure (toInstr addr_w (.push (← ascribe w src)))
 
   | "pushq" | "pushw" =>
     let w ← instrWidth mn
@@ -1487,9 +1456,9 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
 
   | "pop" =>
     let ( addr_w, dst) ← parseRegOrMem
-    let ⟨ w, dst ⟩ ← assertW dst
-    if w != .W16 && w != .W64 then fail "pop requires 16- or 64-bit operand"
-    pure (toInstr addr_w (.pop dst))
+    let w := dst.1.getD .W64
+    if w matches .W8 | .W32 then fail "pop requires 16- or 64-bit operand"
+    pure (toInstr addr_w (.pop (← ascribe w dst)))
 
   | "popq" | "popw" =>
     let w ← instrWidth mn
@@ -1593,29 +1562,25 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
 /-- Check whether an instruction is valid with the `lock` prefix per Intel SDM:
 destination must be a memory operand, and operation must be one of:
 ADD, ADC, AND, BTC, BTR, BTS, CMPXCHG, CMPXCHG8B, CMPXCHG16B, DEC, INC, NEG, NOT, OR, SBB, SUB, XOR, XADD, XCHG. -/
-def isLockable (instr : Instr) : Bool :=
-  match instr with
-  | .regular _ _ op =>
-    match op with
-    | .add (.mem _) _ | .adc (.mem _) _ | .and (.mem _) _ | .sub (.mem _) _ | .sbb (.mem _) _
-    | .xor (.mem _) _ | .or (.mem _) _ | .not (.mem _) | .neg (.mem _) | .inc (.mem _) | .dec (.mem _)
-    | .xadd (.mem _) _ | .cmpxchg (.mem _) _ | .xchg (.mem _) _
-    | .cmpxchg8b _ | .cmpxchg16b _ => true
-    | .bt op (.mem _) _ => op != .bt
-    | _ => false
-  | .avx .. => false
+def isLockable : Instr → Bool
+  | .regular _ _ (.add (.mem _) _) | .regular _ _ (.adc (.mem _) _)
+  | .regular _ _ (.and (.mem _) _) | .regular _ _ (.sub (.mem _) _)
+  | .regular _ _ (.sbb (.mem _) _) | .regular _ _ (.xor (.mem _) _)
+  | .regular _ _ (.or (.mem _) _)  | .regular _ _ (.not (.mem _))
+  | .regular _ _ (.neg (.mem _))   | .regular _ _ (.inc (.mem _))
+  | .regular _ _ (.dec (.mem _))   | .regular _ _ (.xadd (.mem _) _)
+  | .regular _ _ (.cmpxchg (.mem _) _) | .regular _ _ (.xchg (.mem _) _)
+  | .regular _ _ (.cmpxchg8b _)    | .regular _ _ (.cmpxchg16b _) => true
+  | .regular _ _ (.bt op (.mem _) _) => op != .bt
+  | _ => false
 
 /-- Parse an instruction mnemonic and its operands. A mnemonic may name both an explicit
 instruction and family opcodes (e.g. `movq`); the first whose operands parse wins. -/
 def parseInstr : Parser Instr := do
   skipHWs
-  let mut mnemonic ← parseName
-  let mut hasLock := false
-  -- The `lock` prefix doesn't change single-threaded semantics.
-  if mnemonic.toLower == "lock" then
-    hasLock := true
-    skipHWs
-    mnemonic ← parseName
+  let rawMnemonic ← parseName
+  let hasLock := rawMnemonic.toLower == "lock"
+  let mut mnemonic ← if hasLock then (do skipHWs; parseName) else pure rawMnemonic
   let rep := match mnemonic.toLower with
     | "rep" => .rep
     | "repe" | "repz" => .repe
