@@ -36,6 +36,27 @@ def SimdBinOp.interp {n} : SimdBinOp → BitVec n → BitVec n → BitVec n
   | .crypto op => .map2 128 op.interp
   | .perm op => op.interp
 
+/-- Whether the result of `op` is undefined/implementation-dependent (e.g. horizontal NaN choice in hadd/hsub). -/
+def SimdBinOp.resultUndefined {n} (op : SimdBinOp) (a b : BitVec n) : Bool :=
+  match op with
+  | .fp .haddps | .fp .hsubps =>
+    let numLanes := n / 128
+    (List.range numLanes).any fun l =>
+      let a128 := a.lane 128 l
+      let b128 := b.lane 128 l
+      let pairsA := [(a128.lane 32 0, a128.lane 32 1), (a128.lane 32 2, a128.lane 32 3)]
+      let pairsB := [(b128.lane 32 0, b128.lane 32 1), (b128.lane 32 2, b128.lane 32 3)]
+      (pairsA ++ pairsB).any fun (x, y) => FpFmt.f32.isNaN x && FpFmt.f32.isNaN y
+  | .fp .haddpd | .fp .hsubpd =>
+    let numLanes := n / 128
+    (List.range numLanes).any fun l =>
+      let a128 := a.lane 128 l
+      let b128 := b.lane 128 l
+      let pairA := (a128.lane 64 0, a128.lane 64 1)
+      let pairB := (b128.lane 64 0, b128.lane 64 1)
+      [pairA, pairB].any fun (x, y) => FpFmt.f64.isNaN x && FpFmt.f64.isNaN y
+  | _ => false
+
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdBinOp.memBytes? : SimdBinOp → Option Nat
   | .fp op => op.memBytes?

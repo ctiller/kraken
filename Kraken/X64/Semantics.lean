@@ -223,6 +223,7 @@ def NondetSupportingType.from_hash {α} [t : NondetSupportingType α] (h : UInt6
   | .avx_bitvec w => h.toBitVec.setWidth w.bits
 
 instance (w : Width) : NondetSupportingType w.type := .bitvec w
+instance : NondetSupportingType (BitVec 64) := .bitvec .W64
 instance (w : AvxWidth) : NondetSupportingType w.type := .avx_bitvec w
 instance : NondetSupportingType Bool := .bool
 instance : NondetSupportingType StatusFlags := .statusFlags
@@ -578,7 +579,7 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
   | .popf =>
     let rsp := s.regs.get64 .rsp
     s.load rsp .W64 (fun val s =>
-    if val.getLsbD 8 then .fault "#DB: trap flag set" else
+    if val.getLsbD 8 then .unimplemented "popf: setting TF (single-step) is not modeled" else
     -- NT, AC and ID are not modeled (AC would also make misaligned accesses fault).
     if val &&& 0x244000 != 0 then .unimplemented "popf: NT/AC/ID" else
     let status := { s.status with
@@ -689,6 +690,7 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
   | .cld => next { s with status := { s.status with df := false } }
   | .std => next { s with status := { s.status with df := true } }
   | .movs rp =>
+    if rp == .repne then .unimplemented "repne on movs/stos/lods is undefined in the SDM" else
     stringLoop w rp false s next fun delta s k =>
       let rsi := s.regs.get64 .rsi
       let rdi := s.regs.get64 .rdi
@@ -696,12 +698,14 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
       s.store rdi val fun s =>
       k { s with regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
   | .stos rp =>
+    if rp == .repne then .unimplemented "repne on movs/stos/lods is undefined in the SDM" else
     stringLoop w rp false s next fun delta s k =>
       let rdi := s.regs.get64 .rdi
       let val := s.regs.get (Reg.low .rax w)
       s.store rdi val fun s =>
       k { s with regs := s.regs.set64 .rdi (rdi + delta) }
   | .lods rp =>
+    if rp == .repne then .unimplemented "repne on movs/stos/lods is undefined in the SDM" else
     stringLoop w rp false s next fun delta s k =>
       let rsi := s.regs.get64 .rsi
       s.load rsi w fun val s =>
@@ -878,7 +882,7 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
       | .shr _ _ => a.msb
       | _ /- sar -/ => false
     undefined (λ af =>
-    (λ setcf => if count < w.bits then setcf cfBit else undefined setcf) (λ cf =>
+    (λ setcf => if count < w.bits then setcf cfBit else match i with | .sar _ _ => setcf a.msb | _ => undefined setcf) (λ cf =>
     (λ setof => if count == 1 then setof ofBit else undefined setof) (λ of =>
     { s with status := .from_result s.status v { cf, af, of } }.set dst v p next))))
   | .shrd dst src count | .shld dst src count =>
@@ -889,7 +893,7 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
     let v := match i with
       | .shrd _ _ _ => (((b.append a) >>> count).take w.bits).setWidth _
       | _ /- shld -/ => (((a.append b) <<< count).drop w.bits).setWidth _
-    (λ setstatus => if count >= w.bits then s.status.update .allUndef setstatus else
+    (λ setstatus => if count > w.bits then s.status.update .allUndef setstatus else
       let cf := match i with
         | .shrd _ _ _ => a.getLsbD (count-1)
         | _ /- shld -/ => (a <<< (count-1)).msb
@@ -950,8 +954,12 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
     src.interp s p (fun a s =>
     let (r, f) := op.interp a
     s.status.update f fun status =>
-    (fun k => match r with | some r => k r | none => undefined k) fun r =>
-    next { s.setReg dst r with status })
+    match r with
+    | some r => next { s.setReg dst r with status }
+    | none =>
+      match (generalizing := false) (motive := Width → Effects) w with
+      | .W32 => undefined fun (v64 : BitVec 64) => next { s with regs := s.regs.set64 dst.base v64, status }
+      | _ => undefined fun v => next { s.setReg dst v with status })
   | .bin op dst src1 src2 =>
     src2.interp s p (fun b s =>
     let (r, f) := op.interp (s.regs.get src1) b
@@ -1018,10 +1026,18 @@ match i with
     src.interp s p (checkAlign := op.aligned) (fun v s => s.setAvx dst v p next op.aligned)
   | .sse op dst src =>
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b)))
+    let a := s.zmms.get dst
+    if op.resultUndefined a b then
+      undefined fun v => next (s.setAvxLegacyReg dst v)
+    else
+      next (s.setAvxLegacyReg dst (op.interp a b)))
   | .vex op dst src1 src2 =>
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
-    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b)))
+    let a := s.zmms.get src1
+    if op.resultUndefined a b then
+      undefined fun v => next (s.setAvxReg dst v)
+    else
+      next (s.setAvxReg dst (op.interp a b)))
   | .sseUn op dst src =>
     src.interpSimd (op.memBytes? w.bytes) s p (legacy := true) (fun a s =>
     next (s.setAvxLegacyReg dst (op.interp a)))
@@ -1029,22 +1045,28 @@ match i with
     src.interpSimd (op.memBytes? w.bytes) s p (legacy := false) (fun a s =>
     next (s.setAvxReg dst (op.interp a)))
   | .sseUnImm op dst src imm =>
+    let immVal := imm.imm8 p
+    if op.reservedImm immVal then .unimplemented "reserved imm8 bits" else
     src.interp s p (checkAlign := true) (fun a s =>
-    next (s.setAvxLegacyReg dst (op.interp a (imm.imm8 p))))
+    next (s.setAvxLegacyReg dst (op.interp a immVal)))
   | .vexUnImm op dst src imm =>
-    src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a (imm.imm8 p))))
+    let immVal := imm.imm8 p
+    if op.reservedImm immVal then .unimplemented "reserved imm8 bits" else
+    src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a immVal)))
   | .sseImm op dst src imm =>
+    let immVal := imm.imm8 p
+    if op.reservedImm immVal (legacy := true) then .unimplemented "reserved imm8 bits" else
     src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
     let a := s.zmms.get dst
-    let immVal := imm.imm8 p
     if op.resultUndefined a b immVal then
       undefined fun v => next (s.setAvxLegacyReg dst v)
     else
       next (s.setAvxLegacyReg dst (op.interp a b immVal (legacy := true) (src matches .mem _))))
   | .vexImm op dst src1 src2 imm =>
+    let immVal := imm.imm8 p
+    if op.reservedImm immVal (legacy := false) then .unimplemented "reserved imm8 bits" else
     src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
     let a := s.zmms.get src1
-    let immVal := imm.imm8 p
     if op.resultUndefined a b immVal then
       undefined fun v => next (s.setAvxReg dst v)
     else

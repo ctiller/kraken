@@ -179,3 +179,18 @@ def SimdBinImmOp.resultUndefined {n} (op : SimdBinImmOp) (a b : BitVec n) (imm :
           hasPosInf && hasNegInf
         else false
   | _ => false
+
+/-- Whether the immediate operand uses reserved bits (e.g. ROUNDPS/PD bits 7:4). -/
+def SimdUnImmOp.reservedImm (op : SimdUnImmOp) (imm : BitVec 8) : Bool :=
+  match op with
+  | .roundps | .roundpd => (imm.toNat &&& 0xf0) != 0
+  | _ => false
+
+/-- Whether the immediate operand uses reserved bits (e.g. ROUNDSS/SD bits 7:4, CMPPS/PD/SS/SD bits 7:3 or 7:5). -/
+def SimdBinImmOp.reservedImm (op : SimdBinImmOp) (imm : BitVec 8) (legacy : Bool) : Bool :=
+  match op with
+  | .roundss | .roundsd => (imm.toNat &&& 0xf0) != 0
+  | .cmpps | .cmppd | .cmpss | .cmpsd =>
+    let mask := if legacy then 0xf8 else 0xe0
+    (imm.toNat &&& mask) != 0
+  | _ => false
