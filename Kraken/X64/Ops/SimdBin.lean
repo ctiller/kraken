@@ -50,6 +50,19 @@ def SimdBinOp.memBytes? : SimdBinOp → Option Nat
   | .fpcmp op => op.memBytes?
   | _ => none
 
+/-- Whether this operation has a VEX (`v`) form. -/
+def SimdBinOp.hasVex : SimdBinOp → Bool
+  | .crypto op => op.hasVex
+  | _ => true
+
+/-- Whether the source must be a register. -/
+def SimdBinOp.regOnly (op : SimdBinOp) : Bool := op matches .shuf .movlhps | .shuf .movhlps
+
+/-- The only vector width (in bits) of the VEX form, if it has just one. -/
+def SimdBinOp.vexBits? (op : SimdBinOp) : Option Nat :=
+  if op.memBytes?.isSome || op.regOnly then some 128
+  else if op matches .perm .permd | .perm .permps then some 256 else none
+
 /-- Whether this operation has a legacy (non-VEX) SSE form. -/
 def SimdBinOp.hasLegacy : SimdBinOp → Bool
   | .perm _ => false

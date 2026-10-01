@@ -44,6 +44,12 @@ def SimdUnOp.hasLegacy : SimdUnOp → Bool
   | .pbroadcastb | .pbroadcastw | .pbroadcastd | .pbroadcastq => false
   | _ => true
 
+/-- The only vector width (in bits) of the VEX form, if it has just one. -/
+def SimdUnOp.vexBits? : SimdUnOp → Option Nat
+  | .phminposuw | .aesimc | .movq | .movd => some 128
+  | .broadcastsd | .broadcasti128 | .broadcastf128 => some 256
+  | _ => none
+
 def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .pabsb => .map1 8 fun x => if x.msb then -x else x
   | .pabsw => .map1 16 fun x => if x.msb then -x else x

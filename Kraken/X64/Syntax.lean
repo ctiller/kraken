@@ -33,7 +33,6 @@ namespace Width
   | 8 => .W8 | 16 => .W16 | 32 => .W32 | _ => .W64
 @[simp, reducible] def ofBytes : Nat → Width
   | 1 => .W8 | 2 => .W16 | 4 => .W32 | _ => .W64
-@[simp, reducible] def attSuffix : Width → String | .W8 => "b" | .W16 => "w" | .W32 => "l" | .W64 => "q"
 @[kstep] abbrev bytesv (w : Width) {n} : BitVec n := BitVec.ofNat n w.bytes
 @[kstep] abbrev type (w : Width) : Type := BitVec w.bits
 instance {w : Width} : Coe Bool w.type where coe := fun b : Bool => BitVec.ofNat _ b.toNat
@@ -99,10 +98,6 @@ inductive Reg : Width → Type
   | low (_ : Reg64) (w : Width) : Reg w
   | ah : Reg .W8 | bh : Reg .W8 | ch : Reg .W8| dh : Reg .W8
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
-
-def Reg.isHighByte : {w : Width} → Reg w → Bool
-  | .W8, .ah | .W8, .bh | .W8, .ch | .W8, .dh => true
-  | _, _ => false
 
 inductive AvxReg : AvxWidth → Type
   | xmm (_ : RegMm) : AvxReg AvxWidth.W128
@@ -227,6 +222,12 @@ def RepPrefix.toStrPrefix : RepPrefix → String
   | .repe => "repe "
   | .repne => "repne "
 
+/-- String instructions, operating on `w`-sized elements at `(%rsi)` and/or `(%rdi)`. -/
+inductive StringOp | movs | stos | lods | cmps | scas
+  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
+
+instance : Mnemonic StringOp := ⟨mnemonics% StringOp⟩
+
 inductive Operation (w : Width)
   -- Data movement
   | mov (_ : Dst w) (src : Operand w)
@@ -244,21 +245,8 @@ inductive Operation (w : Width)
   | cmpxchg (dst : Dst w) (src : Reg w)
   | cmpxchg8b (dst : AddrExpr)
   | cmpxchg16b (dst : AddrExpr)
-  | ud2
-  | int3
-  | hlt
-  | clc
-  | stc
-  | cmc
-  | lahf
-  | sahf
-  | cld
-  | std
-  | movs (rep : RepPrefix)
-  | stos (rep : RepPrefix)
-  | lods (rep : RepPrefix)
-  | cmps (rep : RepPrefix)
-  | scas (rep : RepPrefix)
+  | nullary (op : NullaryOp)
+  | str (op : StringOp) (rep : RepPrefix)
   -- Arithmetic
   | lea (_ : Reg w) (src : AddrExpr) -- {_ : 16 <= w.bits}
   | add  (_ : Dst w) (src : Operand w)
@@ -306,8 +294,8 @@ inductive Operation (w : Width)
   | bt (op : BitTestOp) (dst : Dst w) (bit : Operand w)
   -- Control flow
   | jcc (cc : CondCode) (target : Label)
+  -- `jecxz` with a 32-bit address size.
   | jrcxz (target : Label)
-  | jecxz (target : Label)
   | loop (cond : LoopCond) (target : Label)
   | jmp (target : RelRegOrMem)
   | call (target : RelRegOrMem)

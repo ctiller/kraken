@@ -372,11 +372,9 @@ def SimdCount.interp [Labels] [AddressSize] (c : SimdCount) (s : MachineData) (p
 def MachineData.setReg (s : MachineData) {w} (r : Reg w) (v : w.type) : MachineData :=
   { s with regs := s.regs.set r v }
 
-def MachineData.setAvxReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) : MachineData :=
-  { s with zmms := s.zmms.set r v }
-
-def MachineData.setAvxLegacyReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) : MachineData :=
-  { s with zmms := s.zmms.setLegacy r v }
+/-- Writes `r`; the bits above it are zeroed, or preserved by `legacy` SSE instructions. -/
+def MachineData.setAvxReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) (legacy := false) : MachineData :=
+  { s with zmms := if legacy then s.zmms.setLegacy r v else s.zmms.set r v }
 
 @[kstep]
 def MachineData.set {w} [Labels] [AddressSize] (s : MachineData) (d : Dst w) (v : w.type) (p : Std.Rco Int64) (ret : MachineData → Effects) : Effects :=
@@ -391,19 +389,10 @@ def SimdBinOp.eval {n} (op : SimdBinOp) (a b : BitVec n) (k : BitVec n → Effec
   | some f => undefined fun (swap : Bool) => k (if swap then f a b else op.interp a b)
   | none => k (op.interp a b)
 
-def MachineData.setAvx {aw} [Labels] [AddressSize] (s : MachineData) (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) : Effects :=
+def MachineData.setAvx {aw} [Labels] [AddressSize] (s : MachineData) (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) (legacy := false) : Effects :=
 match d with
-  | .avx r => ret (s.setAvxReg r v)
+  | .avx r => ret (s.setAvxReg r v legacy)
   | .mem a => s.storeAvx ((a.interp s.regs p).zeroExtend _) v ret checkAlign
-
-def MachineData.setAvxLegacy {w} [Labels] [AddressSize] (s : MachineData) (d : AvxDst w) (v : w.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) : Effects :=
-match d with
-  | .avx r => ret (s.setAvxLegacyReg r v)
-  | .mem a => s.storeAvx ((a.interp s.regs p).zeroExtend _) v ret checkAlign
-
-def MachineData.storeScalar [Labels] [AddressSize] {w : AvxWidth} (s : MachineData) (addr : BitVec 64) (op : SimdScalarMov)
-  (v : w.type) (next : MachineData → Effects) : Effects :=
-  s.store addr (w := .ofBytes op.bytes) (v.take _) next
 
 @[kstep] def Operand.interp {w} [Labels] [AddressSize]
   (o : Operand w) (s : MachineData) (p : Std.Rco Int64)
@@ -430,6 +419,15 @@ def FlagOut.apply (f : FlagOut) (old : Bool) (k : Bool → Effects) : Effects :=
 def StatusFlags.update (s : StatusFlags) (f : FlagsOut) (k : StatusFlags → Effects) : Effects :=
   f.cf.apply s.cf fun cf => f.pf.apply s.pf fun pf => f.af.apply s.af fun af =>
   f.zf.apply s.zf fun zf => f.sf.apply s.sf fun sf => f.of.apply s.of fun of => k ⟨cf, pf, af, zf, sf, of, s.df⟩
+
+/-- RFLAGS as `pushf` stores it (reserved bit 1 and IF set); `lahf` stores its low byte. -/
+@[kstep] def StatusFlags.rflags (f : StatusFlags) : BitVec 64 :=
+  let bit (b : Bool) (i : Nat) : BitVec 64 := (BitVec.ofBool b).zeroExtend 64 <<< i
+  0x202#64 ||| bit f.cf 0 ||| bit f.pf 2 ||| bit f.af 4 ||| bit f.zf 6 ||| bit f.sf 7 ||| bit f.df 10 ||| bit f.of 11
+
+/-- Loads CF, PF, AF, ZF and SF from their RFLAGS positions in `v` (`sahf`, `popf`). -/
+@[kstep] def StatusFlags.loadLow {n} (f : StatusFlags) (v : BitVec n) : StatusFlags :=
+  { f with cf := v.getLsbD 0, pf := v.getLsbD 2, af := v.getLsbD 4, zf := v.getLsbD 6, sf := v.getLsbD 7 }
 
 @[kstep] def ConstExpr.imm8 [Labels] (imm : ConstExpr) (p : Std.Rco Int64) : BitVec 8 :=
   (imm.interp p).toBitVec.take 8
@@ -528,6 +526,7 @@ decremented after each element, is nonzero; comparing instructions (`cmp`: cmps,
 when ZF is clear (repe) or set (repne). -/
 def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next : MachineData → Effects)
     (body : BitVec 64 → MachineData → (MachineData → Effects) → Effects) : Effects :=
+  if !cmp && rp == .repne then .unimplemented "repne on movs/stos/lods is undefined in the SDM" else
   let delta : BitVec 64 := if s.status.df then -w.bytesv else w.bytesv
   let rec loop (fuel : Nat) (s : MachineData) : Effects :=
     match fuel with
@@ -570,32 +569,15 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
     let s := { s with regs := (s.regs.set64 .rsp (rbp + 8)).set64 .rbp val }
     next s)
   | .pushf =>
-    let rflags_val : BitVec 64 :=
-      ((BitVec.ofNat 64 2)) |||
-      ((BitVec.ofNat 64 0x200)) |||
-      ((BitVec.ofBool s.status.cf).zeroExtend 64) |||
-      ((BitVec.ofBool s.status.pf).zeroExtend 64 <<< 2) |||
-      ((BitVec.ofBool s.status.af).zeroExtend 64 <<< 4) |||
-      ((BitVec.ofBool s.status.zf).zeroExtend 64 <<< 6) |||
-      ((BitVec.ofBool s.status.sf).zeroExtend 64 <<< 7) |||
-      ((BitVec.ofBool s.status.df).zeroExtend 64 <<< 10) |||
-      ((BitVec.ofBool s.status.of).zeroExtend 64 <<< 11)
     let rsp := s.regs.get64 .rsp - 8
-    { s with regs := s.regs.set64 .rsp rsp }.store rsp rflags_val next
+    { s with regs := s.regs.set64 .rsp rsp }.store rsp s.status.rflags next
   | .popf =>
     let rsp := s.regs.get64 .rsp
     s.load rsp .W64 (fun val s =>
     if val.getLsbD 8 then .unimplemented "popf: setting TF (single-step) is not modeled" else
     -- NT, AC and ID are not modeled (AC would also make misaligned accesses fault).
     if val &&& 0x244000 != 0 then .unimplemented "popf: NT/AC/ID" else
-    let status := { s.status with
-      cf := val.getLsbD 0
-      pf := val.getLsbD 2
-      af := val.getLsbD 4
-      zf := val.getLsbD 6
-      sf := val.getLsbD 7
-      df := val.getLsbD 10
-      of := val.getLsbD 11 }
+    let status := { s.status.loadLow val with df := val.getLsbD 10, of := val.getLsbD 11 }
     let s := { s with regs := s.regs.set64 .rsp (rsp + 8), status }
     next s)
   | .setcc cc dst =>
@@ -639,108 +621,45 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
         else next s)
   | .cmpxchg8b a =>
     let addr := (a.interp s.regs p).zeroExtend 64
-    s.load addr .W64 (fun mem_val s =>
-    let edx := s.regs.get (.low .rdx .W32)
-    let eax := s.regs.get (.low .rax .W32)
-    let edx_eax := (edx ++ eax).setWidth 64
-    if mem_val == edx_eax then
-      let ecx := s.regs.get (.low .rcx .W32)
-      let ebx := s.regs.get (.low .rbx .W32)
-      let ecx_ebx := (ecx ++ ebx).setWidth 64
-      let status := { s.status with zf := true }
-      { s with status }.store addr ecx_ebx next
-    else
-      let status := { s.status with zf := false }
-      let s := { s with status }
-      let low := (mem_val.take 32).setWidth 32
-      let high := (mem_val.drop 32).setWidth 32
-      let s := (s.setReg (.low .rax .W32) low).setReg (.low .rdx .W32) high
-      s.store addr mem_val next)
+    let pair (hi lo : Reg64) := (s.regs.get (.low hi .W32) ++ s.regs.get (.low lo .W32)).setWidth 64
+    s.load addr .W64 (fun m s =>
+    let s := { s with status.zf := m == pair .rdx .rax }
+    if s.status.zf then s.store addr (pair .rcx .rbx) next
+    else ((s.setReg (.low .rax .W32) (m.take 32)).setReg (.low .rdx .W32) ((m.drop 32).setWidth 32)).store addr m next)
   | .cmpxchg16b a =>
     let addr := (a.interp s.regs p).zeroExtend 64
     if !isAligned 16 addr then
       .gp_unaligned addr 16
     else
-      s.load addr .W64 (fun mem_low s =>
-      s.load (addr + 8) .W64 (fun mem_high s =>
-      let rdx := s.regs.get64 .rdx
-      let rax := s.regs.get64 .rax
-      if mem_low == rax && mem_high == rdx then
-        let rcx := s.regs.get64 .rcx
-        let rbx := s.regs.get64 .rbx
-        let status := { s.status with zf := true }
-        let s := { s with status }
-        s.store addr rbx (fun s =>
-        s.store (addr + 8) rcx next)
-      else
-        let status := { s.status with zf := false }
-        let s := { s with status }
-        let s := (s.setReg (.low .rax .W64) mem_low).setReg (.low .rdx .W64) mem_high
-        s.store addr mem_low (fun s =>
-        s.store (addr + 8) mem_high next)))
-  | .ud2 => Effects.fault "#UD: undefined instruction"
-  | .int3 => Effects.fault "#BP: breakpoint trap"
-  | .hlt => Effects.fault "HLT: halt instruction"
-  | .clc => next { s with status := { s.status with cf := false } }
-  | .stc => next { s with status := { s.status with cf := true } }
-  | .cmc => next { s with status := { s.status with cf := !s.status.cf } }
-  | .lahf =>
-    let ah_val : BitVec 8 :=
-      ((BitVec.ofBool s.status.sf).zeroExtend 8 <<< 7) |||
-      ((BitVec.ofBool s.status.zf).zeroExtend 8 <<< 6) |||
-      ((BitVec.ofBool s.status.af).zeroExtend 8 <<< 4) |||
-      ((BitVec.ofBool s.status.pf).zeroExtend 8 <<< 2) |||
-      (BitVec.ofNat 8 2) |||
-      (BitVec.ofBool s.status.cf).zeroExtend 8
-    next (s.setReg Reg.ah ah_val)
-  | .sahf =>
-    let ah_val := s.regs.get Reg.ah
-    let status := { s.status with
-      sf := ah_val.getLsbD 7
-      zf := ah_val.getLsbD 6
-      af := ah_val.getLsbD 4
-      pf := ah_val.getLsbD 2
-      cf := ah_val.getLsbD 0 }
-    next { s with status }
-  | .cld => next { s with status := { s.status with df := false } }
-  | .std => next { s with status := { s.status with df := true } }
-  | .movs rp =>
-    if rp == .repne then .unimplemented "repne on movs/stos/lods is undefined in the SDM" else
-    stringLoop w rp false s next fun delta s k =>
-      let rsi := s.regs.get64 .rsi
-      let rdi := s.regs.get64 .rdi
-      s.load rsi w fun val s =>
-      s.store rdi val fun s =>
-      k { s with regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
-  | .stos rp =>
-    if rp == .repne then .unimplemented "repne on movs/stos/lods is undefined in the SDM" else
-    stringLoop w rp false s next fun delta s k =>
-      let rdi := s.regs.get64 .rdi
-      let val := s.regs.get (Reg.low .rax w)
-      s.store rdi val fun s =>
-      k { s with regs := s.regs.set64 .rdi (rdi + delta) }
-  | .lods rp =>
-    if rp == .repne then .unimplemented "repne on movs/stos/lods is undefined in the SDM" else
-    stringLoop w rp false s next fun delta s k =>
-      let rsi := s.regs.get64 .rsi
-      s.load rsi w fun val s =>
-      let s := s.setReg (Reg.low .rax w) val
-      k { s with regs := s.regs.set64 .rsi (rsi + delta) }
-  | .cmps rp =>
-    stringLoop w rp true s next fun delta s k =>
-      let rsi := s.regs.get64 .rsi
-      let rdi := s.regs.get64 .rdi
-      s.load rsi w fun a s =>
-      s.load rdi w fun b s =>
-      let (_, status) := subFlags s.status a b
-      k { s with status, regs := (s.regs.set64 .rsi (rsi + delta)).set64 .rdi (rdi + delta) }
-  | .scas rp =>
-    stringLoop w rp true s next fun delta s k =>
-      let rdi := s.regs.get64 .rdi
-      let a := s.regs.get (Reg.low .rax w)
-      s.load rdi w fun b s =>
-      let (_, status) := subFlags s.status a b
-      k { s with status, regs := s.regs.set64 .rdi (rdi + delta) }
+      s.load addr .W64 (fun lo s =>
+      s.load (addr + 8) .W64 (fun hi s =>
+      let s := { s with status.zf := lo == s.regs.get64 .rax && hi == s.regs.get64 .rdx }
+      let (lo, hi, s) := if s.status.zf then (s.regs.get64 .rbx, s.regs.get64 .rcx, s)
+        else (lo, hi, (s.setReg (.low .rax .W64) lo).setReg (.low .rdx .W64) hi)
+      s.store addr lo fun s => s.store (addr + 8) hi next))
+  | .nullary op => match op with
+    | .ud2 => Effects.fault "#UD: undefined instruction"
+    | .int3 => Effects.fault "#BP: breakpoint trap"
+    | .hlt => Effects.fault "HLT: halt instruction"
+    | .clc => next { s with status.cf := false }
+    | .stc => next { s with status.cf := true }
+    | .cmc => next { s with status.cf := !s.status.cf }
+    | .lahf => next (s.setReg Reg.ah (s.status.rflags.take 8))
+    | .sahf => next { s with status := s.status.loadLow (s.regs.get Reg.ah) }
+    | .cld => next { s with status.df := false }
+    | .std => next { s with status.df := true }
+  | .str op rp =>
+    stringLoop w rp (op matches .cmps | .scas) s next fun delta s k =>
+      let (rsi, rdi, acc) := (s.regs.get64 .rsi, s.regs.get64 .rdi, Reg.low .rax w)
+      let advSi (s : MachineData) := { s with regs := s.regs.set64 .rsi (rsi + delta) }
+      let advDi (s : MachineData) := { s with regs := s.regs.set64 .rdi (rdi + delta) }
+      match op with
+      | .movs => s.load rsi w fun v s => s.store rdi v fun s => k (advDi (advSi s))
+      | .stos => s.store rdi (s.regs.get acc) fun s => k (advDi s)
+      | .lods => s.load rsi w fun v s => k (advSi (s.setReg acc v))
+      | .cmps => s.load rsi w fun a s => s.load rdi w fun b s =>
+        k (advDi (advSi { s with status := (subFlags s.status a b).2 }))
+      | .scas => s.load rdi w fun b s => k (advDi { s with status := (subFlags s.status (s.regs.get acc) b).2 })
 -- Arithmetic
   | .lea dst src => next (s.setReg dst ((src.interp s.regs p).zeroExtend _))
   | .add dst src =>
@@ -839,11 +758,11 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
   | .div src | .idiv src =>
     src.interp s p (fun b s =>
     let signed := i matches .idiv ..
-    let bVal : Int := if signed then b.signed else b.unsigned
+    let ext {n} (x : BitVec n) : Int := if signed then x.signed else x.unsigned
+    let bVal := ext b
     if bVal == 0 then .fault "#DE: divide by zero" else
-    let aVal : Int := if w == .W8
-      then (if signed then (s.regs.get (.low .rax .W16)).signed else (s.regs.get (.low .rax .W16)).unsigned)
-      else (s.regs.get (Reg.low .rax w)).unsigned + ((if signed then (s.regs.get (.low .rdx w)).signed else (s.regs.get (.low .rdx w)).unsigned) <<< w.bits)
+    let aVal : Int := if w == .W8 then ext (s.regs.get (.low .rax .W16))
+      else (s.regs.get (Reg.low .rax w)).unsigned + (ext (s.regs.get (.low .rdx w)) <<< w.bits)
     let q := aVal.tdiv bVal
     let r := aVal.tmod bVal
     let (lo, hi) : Int × Int := if signed then (-(2 ^ (w.bits - 1)), 2 ^ (w.bits - 1) - 1) else (0, 2 ^ w.bits - 1)
@@ -999,11 +918,7 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
     then jmp (label l) s
     else next s
   | .jrcxz l =>
-    if s.regs.get64 .rcx == 0#64
-    then jmp (label l) s
-    else next s
-  | .jecxz l =>
-    if s.regs.get (.low .rcx .W32) == 0#32
+    if (s.regs.get64 .rcx).toAddressSize == 0
     then jmp (label l) s
     else next s
   | .loop cond l =>
@@ -1036,53 +951,36 @@ def stringLoop (w : Width) (rp : RepPrefix) (cmp : Bool) (s : MachineData) (next
 def AvxOperation.interp [Labels] [address_size : AddressSize]
   {w} (i : AvxOperation w) (p : Std.Rco Int64) (s : MachineData)
   (next : MachineData → Effects) : Effects :=
-match i with
-  | .mov op dst src =>
-    src.interp s p (checkAlign := op.aligned) (fun v s => s.setAvxLegacy dst v p next op.aligned)
-  | .vmov op dst src =>
-    src.interp s p (checkAlign := op.aligned) (fun v s => s.setAvx dst v p next op.aligned)
-  | .sse op dst src =>
-    src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    op.eval (s.zmms.get dst) b fun r => next (s.setAvxLegacyReg dst r))
-  | .vex op dst src1 src2 =>
-    src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
-    op.eval (s.zmms.get src1) b fun r => next (s.setAvxReg dst r))
-  | .sseUn op dst src =>
-    src.interpSimd (op.memBytes? w.bytes) s p (legacy := true) (fun a s =>
-    next (s.setAvxLegacyReg dst (op.interp a)))
-  | .vexUn op dst src =>
-    src.interpSimd (op.memBytes? w.bytes) s p (legacy := false) (fun a s =>
-    next (s.setAvxReg dst (op.interp a)))
-  | .sseUnImm op dst src imm =>
+  -- The legacy SSE and VEX forms of a binary operation (in SSE, `src1` is `dst`).
+  let bin (legacy : Bool) (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) :=
+    src2.interpSimd op.memBytes? s p legacy fun b s =>
+    op.eval (s.zmms.get src1) b fun r => next (s.setAvxReg dst r legacy)
+  let binImm (legacy : Bool) (op : SimdBinImmOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) (imm : ConstExpr) :=
     let immVal := imm.imm8 p
-    if op.reservedImm immVal then .unimplemented "reserved imm8 bits" else
-    src.interp s p (checkAlign := true) (fun a s =>
-    next (s.setAvxLegacyReg dst (op.interp a immVal)))
-  | .vexUnImm op dst src imm =>
-    let immVal := imm.imm8 p
-    if op.reservedImm immVal then .unimplemented "reserved imm8 bits" else
-    src.interp s p (fun a s => next (s.setAvxReg dst (op.interp a immVal)))
-  | .sseImm op dst src imm =>
-    let immVal := imm.imm8 p
-    if op.reservedImm immVal (legacy := true) then .unimplemented "reserved imm8 bits" else
-    src.interpSimd op.memBytes? s p (legacy := true) (fun b s =>
-    let a := s.zmms.get dst
-    if op.resultUndefined a b immVal then
-      undefined fun v => next (s.setAvxLegacyReg dst v)
-    else
-      next (s.setAvxLegacyReg dst (op.interp a b immVal (legacy := true) (src matches .mem _))))
-  | .vexImm op dst src1 src2 imm =>
-    let immVal := imm.imm8 p
-    if op.reservedImm immVal (legacy := false) then .unimplemented "reserved imm8 bits" else
-    src2.interpSimd op.memBytes? s p (legacy := false) (fun b s =>
+    if op.reservedImm immVal legacy then .unimplemented "reserved imm8 bits" else
+    src2.interpSimd op.memBytes? s p legacy fun b s =>
     let a := s.zmms.get src1
-    if op.resultUndefined a b immVal then
-      undefined fun v => next (s.setAvxReg dst v)
-    else
-      next (s.setAvxReg dst (op.interp a b immVal (legacy := false) (src2 matches .mem _))))
+    if op.resultUndefined a b immVal then undefined fun v => next (s.setAvxReg dst v legacy)
+    else next (s.setAvxReg dst (op.interp a b immVal (src2 matches .mem _)) legacy)
+match i with
+  | .mov op dst src | .vmov op dst src =>
+    src.interp s p (checkAlign := op.aligned) (fun v s =>
+    s.setAvx dst v p next op.aligned (legacy := i matches .mov ..))
+  | .sse op dst src => bin true op dst dst src
+  | .vex op dst src1 src2 => bin false op dst src1 src2
+  | .sseUn op dst src | .vexUn op dst src =>
+    let legacy := i matches .sseUn ..
+    src.interpSimd (op.memBytes? w.bytes) s p legacy (fun a s => next (s.setAvxReg dst (op.interp a) legacy))
+  | .sseUnImm op dst src imm | .vexUnImm op dst src imm =>
+    let legacy := i matches .sseUnImm ..
+    let immVal := imm.imm8 p
+    if op.reservedImm immVal then .unimplemented "reserved imm8 bits" else
+    src.interp s p (checkAlign := legacy) (fun a s => next (s.setAvxReg dst (op.interp a immVal) legacy))
+  | .sseImm op dst src imm => binImm true op dst dst src imm
+  | .vexImm op dst src1 src2 imm => binImm false op dst src1 src2 imm
   | .sseShift op dst count =>
     count.interp s p (legacy := true) (fun c s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) c)))
+    next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) c)))
   | .vexShift op dst src count =>
     count.interp s p (legacy := false) (fun c s => next (s.setAvxReg dst (op.interp (s.zmms.get src) c)))
   | .sseTest op src1 src2 | .vexTest op src1 src2 =>
@@ -1090,7 +988,7 @@ match i with
     s.status.update (op.interp (s.zmms.get src1) b) fun status => next { s with status })
   | .sseBlendv op dst src =>
     src.interp s p (checkAlign := true) (fun b s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) b (s.zmms.get ((AvxReg.xmm .mm0).as w)))))
+    next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) b (s.zmms.get ((AvxReg.xmm .mm0).as w)))))
   | .vexBlendv op dst src1 src2 mask =>
     src2.interp s p (fun b s => next (s.setAvxReg dst (op.interp (s.zmms.get src1) b (s.zmms.get mask))))
   | .fma op dst src2 src3 =>
@@ -1103,19 +1001,19 @@ match i with
       let dval := (s.zmms.get d).take 128
       let sval := (s.zmms.get s_reg).take 128
       let v := dval.replaceLow (sval.take (op.bytes * 8))
-      next (s.setAvxLegacyReg d (v.zeroExtend _))
+      next (s.setAvxReg (legacy := true) d (v.zeroExtend _))
     | .avx d, .mem _ =>
       src.interpSimd (some op.bytes) s p (legacy := true) (fun v s =>
-        next (s.setAvxLegacyReg d v))
+        next (s.setAvxReg (legacy := true) d v))
     | .mem a, .avx s_reg =>
-      s.storeScalar ((a.interp s.regs p).zeroExtend 64) op (s.zmms.get s_reg) next
+      s.store ((a.interp s.regs p).zeroExtend 64) (w := .ofBytes op.bytes) ((s.zmms.get s_reg).take _) next
     | _, _ => next s
   | .vexMovs op dst src => match dst, src with
     | .avx d, .mem _ =>
       src.interpSimd (some op.bytes) s p (legacy := false) (fun v s =>
         next (s.setAvxReg d v))
     | .mem a, .avx s_reg =>
-      s.storeScalar ((a.interp s.regs p).zeroExtend 64) op (s.zmms.get s_reg) next
+      s.store ((a.interp s.regs p).zeroExtend 64) (w := .ofBytes op.bytes) ((s.zmms.get s_reg).take _) next
     | _, _ => next s
   | .vexScalar op dst src1 src2 =>
     let s1val := (s.zmms.get src1).take 128
@@ -1160,7 +1058,7 @@ match i with
     s.set dst res p next
   | .sseInsert op dst (gw := gw) src imm =>
     src.interp s p (fun v s =>
-    next (s.setAvxLegacyReg dst (op.interp (s.zmms.get dst) gw.bits v (imm.imm8 p))))
+    next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) gw.bits v (imm.imm8 p))))
   | .vexInsert op dst src1 (gw := gw) src2 imm =>
     src2.interp s p (fun v s =>
     next (s.setAvxReg dst (op.interp (s.zmms.get src1) gw.bits v (imm.imm8 p))))

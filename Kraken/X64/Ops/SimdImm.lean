@@ -51,6 +51,12 @@ def SimdUnImmOp.hasLegacy : SimdUnImmOp → Bool
   | .permq | .permpd | .permilps | .permilpd => false
   | _ => true
 
+/-- The only vector width (in bits) of the VEX form, if it has just one. -/
+def SimdUnImmOp.vexBits? : SimdUnImmOp → Option Nat
+  | .aeskeygenassist => some 128
+  | .permq | .permpd => some 256
+  | _ => none
+
 inductive SimdBinImmOp
   | shufps | shufpd
   | palignr
@@ -84,7 +90,7 @@ def dpp {k : Nat} (mulOp addOp : BitVec k → BitVec k → BitVec k) (count : Na
   let sum := if count = 2 then addOp (p 0) (p 1) else addOp (addOp (p 0) (p 1)) (addOp (p 2) (p 3))
   .ofLanes 128 k fun i => if imm.getLsbD i then sum else 0#k
 
-def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) (legacy : Bool := false)
+def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8)
     (memSrc : Bool := false) : BitVec n :=
   match op with
   | .shufps => .ofLanes n 32 fun i =>
@@ -127,10 +133,10 @@ def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8
       else a.lane 32 i
   | .roundss => a.replaceLow (FpFmt.f32.roundInt (roundImmMode imm) (b.lane 32 0))
   | .roundsd => a.replaceLow (FpFmt.f64.roundInt (roundImmMode imm) (b.lane 64 0))
-  | .cmpps => .map2 32 (f32cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
-  | .cmppd => .map2 64 (f64cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
-  | .cmpss => .scalar 32 (f32cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
-  | .cmpsd => .scalar 64 (f64cmpPred (if legacy then imm.toNat &&& 7 else imm.toNat)) a b
+  | .cmpps => .map2 32 (f32cmpPred imm.toNat) a b
+  | .cmppd => .map2 64 (f64cmpPred imm.toNat) a b
+  | .cmpss => .scalar 32 (f32cmpPred imm.toNat) a b
+  | .cmpsd => .scalar 64 (f64cmpPred imm.toNat) a b
   | .perm2f128 | .perm2i128 => .ofLanes n 128 fun i =>
     let ctrl := (imm.toNat >>> (i * 4))
     if (ctrl >>> 3) &&& 1 == 1 then 0#128
@@ -166,6 +172,14 @@ def SimdBinImmOp.resultUndefined {n} (op : SimdBinImmOp) (a b : BitVec n) (imm :
   | .dppd => imm.toNat % 4 != 0 &&
     (List.range (n / 128)).any fun l => ambiguousNaNSum .f64 (products 2 (sseBinOp64 (· * ·)) l)
   | _ => false
+
+/-- Whether this operation has a VEX (`v`) form. -/
+def SimdBinImmOp.hasVex (op : SimdBinImmOp) : Bool := op != .sha1rnds4
+
+/-- The only vector width (in bits) of the VEX form, if it has just one. -/
+def SimdBinImmOp.vexBits? (op : SimdBinImmOp) : Option Nat :=
+  if op.memBytes?.isSome || op == .dppd then some 128
+  else if op matches .perm2f128 | .perm2i128 then some 256 else none
 
 /-- Whether `imm` sets bits the SDM reserves (round: 7:4). -/
 def SimdUnImmOp.reservedImm (op : SimdUnImmOp) (imm : BitVec 8) : Bool :=

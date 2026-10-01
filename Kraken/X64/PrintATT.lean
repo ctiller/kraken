@@ -16,7 +16,7 @@ Mnemonics carry a width suffix whenever the operands may not determine the width
 -/
 namespace Kraken.X64.ATT
 
-def suffix (w : Width) : String := w.attSuffix
+def suffix : Width → String | .W8 => "b" | .W16 => "w" | .W32 => "l" | .W64 => "q"
 
 def reg {w} (r : Reg w) : String := "%" ++ r.toStr
 
@@ -96,21 +96,8 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .cmpxchg d x => s!"cmpxchg{s} {reg x}, {rm aw d}"
   | .cmpxchg8b a => s!"cmpxchg8b {addr aw a}"
   | .cmpxchg16b a => s!"cmpxchg16b {addr aw a}"
-  | .ud2 => "ud2"
-  | .int3 => "int3"
-  | .hlt => "hlt"
-  | .clc => "clc"
-  | .stc => "stc"
-  | .cmc => "cmc"
-  | .lahf => "lahf"
-  | .sahf => "sahf"
-  | .cld => "cld"
-  | .std => "std"
-  | .movs rep => s!"{rep.toStrPrefix}movs{s}"
-  | .stos rep => s!"{rep.toStrPrefix}stos{s}"
-  | .lods rep => s!"{rep.toStrPrefix}lods{s}"
-  | .cmps rep => s!"{rep.toStrPrefix}cmps{s}"
-  | .scas rep => s!"{rep.toStrPrefix}scas{s}"
+  | .nullary op => Mnemonic.name op
+  | .str op rep => s!"{rep.toStrPrefix}{Mnemonic.name op}{s}"
   | .lea d a => s!"lea {addr aw a}, {reg d}"
   | .add d x => two "add" (operand aw x) (rm aw d)
   | .adc d x => two "adc" (operand aw x) (rm aw d)
@@ -161,8 +148,7 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
     else s!"{Mnemonic.name op} {reg a}, {rm aw b}, {reg d}"
   | .bt op d b => two (Mnemonic.name op) (operand aw b) (rm aw d)
   | .jcc cc l => s!"j{cc} {l}"
-  | .jrcxz l => s!"jrcxz {l}"
-  | .jecxz l => s!"jecxz {l}"
+  | .jrcxz l => if aw == .W32 then s!"jecxz {l}" else s!"jrcxz {l}"
   | .loop .none l => s!"loop {l}"
   | .loop .e l => s!"loope {l}"
   | .loop .ne l => s!"loopne {l}"
