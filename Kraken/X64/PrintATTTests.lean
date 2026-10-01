@@ -118,15 +118,18 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
     if op.src2First then s!"{mn} 8(%rsp), %ebx, %ecx" else s!"{mn} %ebx, 8(%rsp), %ecx"]) ++
   failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++
-  failing SimdMov (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"]) ++
+  failing SimdMov (fun op mn => match op.memSrc? with
+    | some true => [s!"{mn} (%rsp), %xmm1", s!"v{mn} (%rsp), %ymm4"]
+    | some false => [s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, (%rsp)"]
+    | none => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"]) ++
   failing SimdUnOp (fun op mn =>
     let is128Only := op matches .phminposuw | .aesimc | .movq | .movd
     let dstReg := if is128Only || op.isNarrowing then "x" else "y"
     (if op.hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++
     (if op.isNarrowing then
       [s!"v{mn} %ymm3, %xmm4", s!"v{mn}x (%rsp), %xmm4", s!"v{mn}y (%rsp), %xmm4"]
-    else if op == .movd then
-      [s!"v{mn} (%rsp), %xmm4"]
+    else if op.memOnly then
+      [s!"v{mn} (%rsp), %{dstReg}mm4"]
     else
       [s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else dstReg}mm3, %{dstReg}mm4"])) ++
   failing SimdUnImmOp (fun op mn =>
@@ -139,7 +142,9 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
     let reg := if is128Only then "x" else "y"
     (if op.hasLegacy then [s!"{mn} $1, (%rsp), %xmm1"] else []) ++
     (if op == .sha1rnds4 then [] else [s!"v{mn} $2, %{reg}mm2, %{reg}mm3, %{reg}mm4"])) ++
-  failing SimdShiftOp (fun _ mn => [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++
+  failing SimdShiftOp (fun op mn =>
+    if op.immOnly then [s!"{mn} $3, %xmm1", s!"v{mn} $3, %ymm3, %ymm4"]
+    else [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++
   failing SimdTestOp (fun op mn => (if op.hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++ [s!"v{mn} %xmm3, %xmm4"]) ++
   failing SimdBlendvOp (fun op mn =>
     [s!"{mn} %xmm0, (%rsp), %xmm1"] ++
@@ -166,8 +171,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
     else [s!"{mn} %xmm1, %eax", s!"v{mn} %xmm1, %rax", s!"v{mn} %ymm1, %eax"]) ++
   failing SimdExtractOp (fun op mn =>
     let imm := if op.hasImm then "$1, " else ""
-    let dstReg := if op == .pextrd then "%eax" else "%rax"
-    [s!"{mn} {imm}%xmm1, (%rsp)", s!"v{mn} {imm}%xmm1, {dstReg}"]) ++
+    let dst := if op.memOnly then "(%rsp)" else if op == .pextrd then "%eax" else "%rax"
+    [s!"{mn} {imm}%xmm1, (%rsp)", s!"v{mn} {imm}%xmm1, {dst}"]) ++
   failing SimdInsertOp (fun op mn =>
     let imm := if op.hasImm then "$1, " else ""
     let (src_s, src_v) :=
@@ -275,7 +280,37 @@ def rejected : List String := [
   "pinsrq $0, %eax, %xmm0", "pextrd $0, %xmm0, %rax", "pextrq $0, %xmm0, %eax",
   -- movlhps/movhlps reject memory source
   "movlhps (%rax), %xmm1", "vmovlhps (%rax), %xmm1, %xmm2", "movhlps (%rax), %xmm1",
-  "vmovhlps (%rax), %xmm1, %xmm2"
+  "vmovhlps (%rax), %xmm1, %xmm2",
+  -- SIMD GPR transfers take only GNU as's `l`/`q` suffixes, and a suffix names a register (or a
+  -- `cvtsi2ss`/`cvtsi2sd` source)
+  "pinsrbl $1, (%rsp), %xmm0", "pinsrbl $1, %eax, %xmm0", "pinsrwl $1, (%rsp), %xmm0",
+  "pextrwq $1, %xmm1, (%rsp)", "pextrbl $1, %xmm1, %eax", "extractpsl $1, %xmm0, %eax",
+  "movdq %rax, %xmm0", "vmovqq %xmm0, %rax", "vmovhpdl (%rsp), %xmm1, %xmm2", "movlpsq %xmm1, (%rsp)",
+  "cvtsi2sdb (%rsp), %xmm0", "cvtsi2ssw (%rsp), %xmm0", "cvtsi2sdl %rax, %xmm0", "pextrwl $1, %xmm1, %rax",
+  -- Non-temporal stores need a memory destination, the loads `lddqu`/`movntdqa` a memory source
+  "movntps (%rsp), %xmm1", "movntpd %xmm1, %xmm2", "movntdq (%rsp), %xmm1", "vmovntps %ymm1, %ymm2",
+  "vmovntdq (%rsp), %ymm1", "movntdqa %xmm1, (%rsp)", "movntdqa %xmm1, %xmm2",
+  "vmovntdqa %ymm1, (%rsp)", "lddqu %xmm1, %xmm2", "lddqu %xmm2, (%rsp)", "vlddqu %ymm3, %ymm4",
+  -- Byte shifts take only an immediate count
+  "pslldq %xmm2, %xmm1", "psrldq (%rsp), %xmm1", "vpslldq %xmm2, %ymm3, %ymm4",
+  "vpsrldq (%rsp), %xmm3, %xmm4",
+  -- Memory-only sources and destinations
+  "vbroadcasti128 %xmm1, %ymm1", "vbroadcastf128 %xmm1, %ymm1", "movlps %rax, %xmm2",
+  "movhpd %eax, %xmm0", "vmovlps %xmm1, %rax", "vmovhps %rax, %xmm1, %xmm2", "movlpd %xmm1, %eax",
+  -- Register-only sources
+  "pmovmskb (%rsp), %eax", "vmovmskps (%rsp), %eax", "movmskpd (%rsp), %rax",
+  -- EVEX-only registers: the model has no EVEX forms except `vmovups`
+  "vmovdqa %zmm3, %zmm3", "vmovaps %ymm17, %ymm1", "movups %xmm16, %xmm1", "vptest %zmm1, %zmm2",
+  "vpmovzxbw (%rsp), %zmm3", "vpmovzxbw %xmm0, %zmm3", "vaddps %zmm1, %zmm2, %zmm3",
+  "vpaddb %xmm16, %xmm1, %xmm2", "vmovd %eax, %xmm16", "vpextrb $0, %xmm17, %eax",
+  "vbroadcastss %xmm16, %ymm1", "vfmadd231ps %ymm20, %ymm1, %ymm2", "vpsllw $1, %zmm1, %zmm2",
+  -- The bit offset of bt* is a register or an unsigned imm8; the count of rorx is an imm8
+  "bt (%rsp), %eax", "btsq 8(%rax), %rbx", "btl $256, (%rsp)", "btq $-1, %rax", "btw $300, %ax",
+  "btc foo, %eax", "rorx $256, %eax, %ebx", "rorxq $-129, %rax, %rbx",
+  -- mulx operands are 32 or 64 bits wide
+  "mulx %al, %bl, %cl", "mulx %ax, %bx, %cx",
+  -- GNU as has no `d` spellings of lods/stos/scas
+  "lodsd", "stosd", "scasd", "rep stosd"
 ]
 
 /-- info: [] -/
@@ -328,7 +363,25 @@ def accepted : List String := [
   -- SIMD GPR transfer register width restrictions
   "pinsrb $0, %eax, %xmm0", "pinsrb $0, %rax, %xmm0", "pextrb $0, %xmm0, %eax",
   "pextrb $0, %xmm0, %rax", "pinsrd $0, %eax, %xmm0", "pinsrq $0, %rax, %xmm0",
-  "pextrd $0, %xmm0, %eax", "pextrq $0, %xmm0, %rax", "movq %rax, %xmm0", "movq %xmm0, %rax"
+  "pextrd $0, %xmm0, %eax", "pextrq $0, %xmm0, %rax", "movq %rax, %xmm0", "movq %xmm0, %rax",
+  -- SIMD GPR transfer suffixes
+  "pextrwl $1, %xmm1, %eax", "vpextrwq $1, %xmm1, %rax", "pinsrwl $1, %eax, %xmm0",
+  "vpinsrwq $1, %rax, %xmm1, %xmm2", "pextrw $1, %xmm1, (%rsp)", "pinsrw $1, (%rsp), %xmm0",
+  "cvtsi2sdl (%rsp), %xmm0", "vcvtsi2ssq (%rsp), %xmm1, %xmm2", "cvtsi2sdq %rax, %xmm0",
+  "movmskpsq %xmm1, %rax", "vpmovmskbl %ymm1, %eax", "cvttsd2sil (%rsp), %eax", "vcvtss2siq %xmm1, %rax",
+  -- Operand kinds of loads, stores, byte shifts, broadcasts, mov{l,h}p{s,d} and masks
+  "movntps %xmm1, (%rsp)", "vmovntdq %ymm1, (%rsp)", "movntdqa (%rsp), %xmm1",
+  "vmovntdqa (%rsp), %ymm1", "lddqu (%rsp), %xmm1", "vlddqu (%rsp), %ymm1", "pslldq $3, %xmm1",
+  "vpsrldq $3, %ymm1, %ymm2", "psrlq %xmm2, %xmm1", "vpsllw (%rsp), %ymm3, %ymm4",
+  "vbroadcasti128 (%rsp), %ymm1", "vbroadcastss %xmm1, %ymm1", "movlps (%rsp), %xmm2",
+  "vmovhpd %xmm1, (%rsp)", "vmovlpd (%rsp), %xmm1, %xmm2", "pmovmskb %xmm1, %eax",
+  "vmovmskpd %ymm1, %rax", "cvtsd2si (%rsp), %eax",
+  -- `vmovups` takes the EVEX-only registers
+  "vmovups (%rsp), %zmm1", "vmovups %xmm16, %xmm17", "vmovups %ymm31, %ymm0", "vmovups %zmm2, %zmm30",
+  -- bt*, rorx, mulx and string operation edge cases
+  "bt %eax, (%rsp)", "btsq %rax, %rbx", "btl $255, (%rsp)", "btcw $0, %ax", "rorx $255, %eax, %ebx",
+  "rorxq $-128, %rax, %rbx", "mulx (%rsp), %eax, %ebx", "mulx %rax, %rbx, %rcx", "movsd", "cmpsd",
+  "rep movsd"
 ]
 
 /-- info: [] -/
@@ -359,3 +412,11 @@ def reprinted (s : String) : Option String := (parse s).toOption.map toATT
 #guard match parse "pushw $42" with
   | .ok [d] => toString d == "push word ptr 42"
   | _ => false
+
+-- An unsuffixed `cvtsi2ss`/`cvtsi2sd` memory source is 32 bits wide, as GNU as reads it.
+#guard [("cvtsi2sd (%rsp), %xmm1", "cvtsi2sdl (%rsp), %xmm1"),
+  ("cvtsi2ss (%rsp), %xmm1", "cvtsi2ssl (%rsp), %xmm1"),
+  ("vcvtsi2sd 8(%rax), %xmm1, %xmm2", "vcvtsi2sdl 8(%rax), %xmm1, %xmm2"),
+  ("vcvtsi2ss 8(%rax), %xmm1, %xmm2", "vcvtsi2ssl 8(%rax), %xmm1, %xmm2"),
+  ("cvtsi2sdq (%rsp), %xmm1", "cvtsi2sdq (%rsp), %xmm1")].all
+  fun (s, e) => reprinted s == some e

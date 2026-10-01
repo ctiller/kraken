@@ -50,6 +50,9 @@ def SimdUnOp.vexBits? : SimdUnOp → Option Nat
   | .broadcastsd | .broadcasti128 | .broadcastf128 => some 256
   | _ => none
 
+/-- Whether the source must be memory. -/
+def SimdUnOp.memOnly (op : SimdUnOp) : Bool := op matches .broadcasti128 | .broadcastf128 | .movd
+
 def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .pabsb => .map1 8 BitVec.abs | .pabsw => .map1 16 BitVec.abs | .pabsd => .map1 32 BitVec.abs
   | .pmovzxbw => fun a => .ofLanes n 16 fun i => (a.lane 8 i).zeroExtend 16

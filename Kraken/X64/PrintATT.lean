@@ -173,7 +173,7 @@ def optImm : Option ConstExpr → String
   | none => ""
 
 def cvtSuffix {gw : Width} (op : SimdInsertOp) (src : RegOrMem gw) : String :=
-  if (op == .cvtsi2ss || op == .cvtsi2sd) && src matches .mem .. then suffix gw else ""
+  if op.sizedMem && src matches .mem .. then suffix gw else ""
 
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"

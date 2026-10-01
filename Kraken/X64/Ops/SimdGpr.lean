@@ -40,6 +40,9 @@ def SimdToGprOp.memBytes? : SimdToGprOp → Option Nat
   | .cvtsd2si | .cvttsd2si => some 8
   | .pmovmskb | .movmskps | .movmskpd => none
 
+/-- Whether the source must be a register. -/
+def SimdToGprOp.regOnly (op : SimdToGprOp) : Bool := op matches .pmovmskb | .movmskps | .movmskpd
+
 inductive SimdExtractOp
   | pextrb | pextrw | pextrd | pextrq
   | extractps
@@ -52,6 +55,12 @@ instance : Mnemonic SimdExtractOp := ⟨mnemonics% SimdExtractOp⟩
 def SimdExtractOp.hasImm : SimdExtractOp → Bool
   | .pextrb | .pextrw | .pextrd | .pextrq | .extractps => true
   | .movd | .movq | .movlps | .movhps | .movlpd | .movhpd => false
+
+/-- Whether GNU as takes an `l` or `q` suffix, giving the width of a GPR destination. -/
+def SimdExtractOp.sized (op : SimdExtractOp) : Bool := op == .pextrw
+
+/-- Whether the destination must be memory. -/
+def SimdExtractOp.memOnly (op : SimdExtractOp) : Bool := op matches .movlps | .movhps | .movlpd | .movhpd
 
 def SimdExtractOp.memBits (op : SimdExtractOp) : Nat :=
   match op with
@@ -82,12 +91,24 @@ def SimdInsertOp.hasImm : SimdInsertOp → Bool
   | .pinsrb | .pinsrw | .pinsrd | .pinsrq => true
   | .cvtsi2ss | .cvtsi2sd | .movlps | .movhps | .movlpd | .movhpd | .movd | .movq => false
 
+/-- The width of a memory source; for `cvtsi2ss`/`cvtsi2sd`, that of an unsuffixed one, which GNU as
+reads as 32 bits (`l`). -/
 def SimdInsertOp.memBits (op : SimdInsertOp) : Nat :=
   match op with
   | .pinsrb => 8
   | .pinsrw => 16
-  | .pinsrd | .cvtsi2ss | .movd => 32
-  | .pinsrq | .cvtsi2sd | .movq | .movlps | .movhps | .movlpd | .movhpd => 64
+  | .pinsrd | .cvtsi2ss | .cvtsi2sd | .movd => 32
+  | .pinsrq | .movq | .movlps | .movhps | .movlpd | .movhpd => 64
+
+/-- Whether an `l` or `q` suffix gives the width of a memory source (else `memBits`). -/
+def SimdInsertOp.sizedMem (op : SimdInsertOp) : Bool := op matches .cvtsi2ss | .cvtsi2sd
+
+/-- Whether GNU as takes an `l` or `q` suffix, giving the width of a GPR source (or of a memory
+source if `sizedMem`). -/
+def SimdInsertOp.sized (op : SimdInsertOp) : Bool := op == .pinsrw || op.sizedMem
+
+/-- Whether the source must be memory. -/
+def SimdInsertOp.memOnly (op : SimdInsertOp) : Bool := op matches .movlps | .movhps | .movlpd | .movhpd
 
 def SimdInsertOp.twoOperand : SimdInsertOp → Bool
   | .movd | .movq => true
