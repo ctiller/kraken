@@ -131,12 +131,12 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   failing SimdUnImmOp (fun op mn =>
     let is128Only := op == .aeskeygenassist
     let reg := if is128Only then "x" else "y"
-    (if !op matches .permq | .permpd then [s!"{mn} $1, (%rsp), %xmm1"] else []) ++
+    (if op.hasLegacy then [s!"{mn} $1, (%rsp), %xmm1"] else []) ++
     [s!"v{mn} $255, %{reg}mm3, %{reg}mm4"]) ++
   failing SimdBinImmOp (fun op mn =>
     let is128Only := op matches .roundss | .roundsd | .cmpss | .cmpsd | .insertps | .dppd
     let reg := if is128Only then "x" else "y"
-    (if !op matches .pblendd | .perm2f128 | .perm2i128 then [s!"{mn} $1, (%rsp), %xmm1"] else []) ++
+    (if op.hasLegacy then [s!"{mn} $1, (%rsp), %xmm1"] else []) ++
     (if op == .sha1rnds4 then [] else [s!"v{mn} $2, %{reg}mm2, %{reg}mm3, %{reg}mm4"])) ++
   failing SimdShiftOp (fun _ mn => [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++
   failing SimdTestOp (fun op mn => (if op.hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++ [s!"v{mn} %xmm3, %xmm4"]) ++
@@ -387,6 +387,13 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 
 -- REX registers with high byte registers
 #guard (parse "crc32b %ah, %r8d") matches .error _
+#guard (parse "movb %ah, %sil") matches .error _
+#guard (parse "addb %ah, %r8b") matches .error _
+#guard (parse "movzbq %ah, %rax") matches .error _
+#guard (parse "movb %ah, (%r8)") matches .error _
+#guard (parse "movb %ah, (%rax)") matches .ok _
+#guard (parse "movb %ah, %al") matches .ok _
+#guard (parse "movzbl %ah, %eax") matches .ok _
 
 -- movd between vector registers rejected
 #guard (parse "movd %xmm1, %xmm0") matches .error _

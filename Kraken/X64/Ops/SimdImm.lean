@@ -46,6 +46,11 @@ def SimdUnImmOp.interp {n} (op : SimdUnImmOp) (a : BitVec n) (imm : BitVec 8) : 
   | .roundpd => .map1 64 (FpFmt.f64.roundInt (roundImmMode imm)) a
   | .aeskeygenassist => .map1 128 (aesKeygenAssist imm) a
 
+/-- Whether this operation has a legacy (non-VEX) SSE form. -/
+def SimdUnImmOp.hasLegacy : SimdUnImmOp → Bool
+  | .permq | .permpd => false
+  | _ => true
+
 inductive SimdBinImmOp
   | shufps | shufpd
   | palignr
@@ -61,6 +66,11 @@ inductive SimdBinImmOp
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic SimdBinImmOp := ⟨mnemonics% SimdBinImmOp⟩
+
+/-- Whether this operation has a legacy (non-VEX) SSE form. -/
+def SimdBinImmOp.hasLegacy : SimdBinImmOp → Bool
+  | .pblendd | .perm2f128 | .perm2i128 => false
+  | _ => true
 
 def clmul64 (a b : BitVec 64) : BitVec 128 :=
   (List.range 64).foldl (fun acc i =>

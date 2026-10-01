@@ -44,7 +44,6 @@ def SimdUnOp.hasLegacy : SimdUnOp → Bool
   | .pbroadcastb | .pbroadcastw | .pbroadcastd | .pbroadcastq => false
   | _ => true
 
-
 def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .pabsb => .map1 8 fun x => if x.msb then -x else x
   | .pabsw => .map1 16 fun x => if x.msb then -x else x

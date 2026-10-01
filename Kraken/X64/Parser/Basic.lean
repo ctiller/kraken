@@ -15,6 +15,7 @@ runtime and `meta` phases.
 
 public import Kraken.X64.Syntax
 import Std.Internal.Parsec.String
+import Kraken.X64.PrintATT
 
 namespace Kraken.X64.Parser
 
@@ -813,7 +814,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         pure (toAvxInstr addr_w (if vex then .vexUn op dst src else .sseUn op dst src))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdUnImmOp) name then ps := ps.push do
-      if !vex && (op matches .permq | .permpd) then fail s!"{name}: VEX-only instruction"
+      if !vex && !op.hasLegacy then fail s!"{name}: VEX-only instruction"
       let imm ← parseImmComma
       let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
       if !vex && w != .W128 then fail s!"{name}: expected 128-bit operands"
@@ -821,7 +822,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       if vex && (op matches .permq | .permpd) && w != .W256 then fail s!"{name}: expected 256-bit operands"
       pure (toAvxInstr addr_w (if vex then .vexUnImm op dst src imm else .sseUnImm op dst src imm))
   if let some op := Mnemonic.ofName? (α := SimdBinImmOp) mn then ps := ps.push do
-    if op matches .pblendd | .perm2f128 | .perm2i128 then fail s!"{mn}: VEX-only instruction"
+    if !op.hasLegacy then fail s!"{mn}: VEX-only instruction"
     let imm ← parseImmComma
     let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
     if w != .W128 then fail s!"{mn}: expected 128-bit operands"
@@ -1006,9 +1007,6 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     else -- dst_w == .W32
       if w != .W8 && w != .W16 && w != .W32 then
         fail "crc32 with 32-bit destination requires 8-, 16-, or 32-bit source"
-    if let .reg r := src then
-      if r.isHighByte && (dst_w == .W64 || dst.requiresRex) then
-        fail "cannot use high byte register in an instruction requiring REX prefix"
     pure (toInstr addr_w (.crc32 dst src))
   | "rorx", w? =>
     let cnt ← parseImmComma
@@ -1562,17 +1560,30 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
 /-- Check whether an instruction is valid with the `lock` prefix per Intel SDM:
 destination must be a memory operand, and operation must be one of:
 ADD, ADC, AND, BTC, BTR, BTS, CMPXCHG, CMPXCHG8B, CMPXCHG16B, DEC, INC, NEG, NOT, OR, SBB, SUB, XOR, XADD, XCHG. -/
-def isLockable : Instr → Bool
-  | .regular _ _ (.add (.mem _) _) | .regular _ _ (.adc (.mem _) _)
-  | .regular _ _ (.and (.mem _) _) | .regular _ _ (.sub (.mem _) _)
-  | .regular _ _ (.sbb (.mem _) _) | .regular _ _ (.xor (.mem _) _)
-  | .regular _ _ (.or (.mem _) _)  | .regular _ _ (.not (.mem _))
-  | .regular _ _ (.neg (.mem _))   | .regular _ _ (.inc (.mem _))
-  | .regular _ _ (.dec (.mem _))   | .regular _ _ (.xadd (.mem _) _)
-  | .regular _ _ (.cmpxchg (.mem _) _) | .regular _ _ (.xchg (.mem _) _)
-  | .regular _ _ (.cmpxchg8b _)    | .regular _ _ (.cmpxchg16b _) => true
-  | .regular _ _ (.bt op (.mem _) _) => op != .bt
+def isLockable (instr : Instr) : Bool :=
+  match instr with
+  | .regular _ _ op =>
+    match op with
+    | .add (.mem _) _ | .adc (.mem _) _ | .and (.mem _) _ | .sub (.mem _) _ | .sbb (.mem _) _
+    | .xor (.mem _) _ | .or (.mem _) _ | .not (.mem _) | .neg (.mem _) | .inc (.mem _) | .dec (.mem _)
+    | .xadd (.mem _) _ | .cmpxchg (.mem _) _ | .xchg (.mem _) _
+    | .cmpxchg8b _ | .cmpxchg16b _ => true
+    | .bt op (.mem _) _ => op != .bt
+    | _ => false
   | _ => false
+
+/-- Whether `instr` uses `%ah`..`%dh`, which can't be encoded with a REX prefix, alongside
+something that needs one: `%sil`/`%dil`/`%bpl`/`%spl`, `%r8`..`%r15` (also in an address), or a
+64-bit register operand (REX.W). Read off the canonical AT&T text, which shows every register. -/
+def hasRexConflict (instr : Instr) : Bool :=
+  let regs (s : String) := (s.splitToList fun c => !c.isAlphanum && c != '%').filter (·.startsWith "%")
+  -- Even-indexed parts lie outside `(...)` addresses.
+  let parts := (ATT.instr instr).splitToList (· ∈ ['(', ')'])
+  let all := parts.flatMap regs
+  let operands := (parts.zipIdx.filter (·.2 % 2 == 0)).flatMap (regs ·.1)
+  all.any (· ∈ ["%ah", "%bh", "%ch", "%dh"]) &&
+    (all.any (fun r => r ∈ ["%sil", "%dil", "%bpl", "%spl"] || r.startsWith "%r" && (r.toList.getD 2 ' ').isDigit) ||
+     operands.any fun r => r.length == 4 && r.startsWith "%r")
 
 /-- Parse an instruction mnemonic and its operands. A mnemonic may name both an explicit
 instruction and family opcodes (e.g. `movq`); the first whose operands parse wins. -/
@@ -1596,8 +1607,11 @@ def parseInstr : Parser Instr := do
     match parseFamily? mn with
     | some p => attempt p <|> parseExplicit mnemonic mn rep
     | none => parseExplicit mnemonic mn rep
+  -- The `lock` prefix doesn't change single-threaded semantics.
   if hasLock && !isLockable instr then
     fail "instruction cannot take lock prefix"
+  if hasRexConflict instr then
+    fail "cannot use a high byte register in an instruction requiring REX"
   return instr
 
 -- ============================================================================

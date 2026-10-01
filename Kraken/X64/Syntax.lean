@@ -104,14 +104,6 @@ def Reg.isHighByte : {w : Width} → Reg w → Bool
   | .W8, .ah | .W8, .bh | .W8, .ch | .W8, .dh => true
   | _, _ => false
 
-/-- Whether this register requires a REX prefix to encode in x86-64 mode:
-extended registers (r8-r15, r8d-r15d, etc.) or low byte registers (spl, bpl, sil, dil). -/
-def Reg.requiresRex : {w : Width} → Reg w → Bool
-  | _, .low .r8 _ | _, .low .r9 _ | _, .low .r10 _ | _, .low .r11 _
-  | _, .low .r12 _ | _, .low .r13 _ | _, .low .r14 _ | _, .low .r15 _ => true
-  | .W8, .low .rsp _ | .W8, .low .rbp _ | .W8, .low .rsi _ | .W8, .low .rdi _ => true
-  | _, _ => false
-
 inductive AvxReg : AvxWidth → Type
   | xmm (_ : RegMm) : AvxReg AvxWidth.W128
   | ymm (_ : RegMm) : AvxReg AvxWidth.W256
