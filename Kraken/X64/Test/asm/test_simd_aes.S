@@ -1,4 +1,7 @@
-# Test: SIMD crypto operations and variable shifts
+# Test: AES instructions (sha, gf2p8 and variable shifts are in test_simd_sha_gf2p8.S and
+# test_simd_shiftv.S). Results that a later instruction overwrites are first folded into %ymm15
+# with vaesenc (unlike xor, equal results don't cancel), so that every result reaches the final state.
+
 subq $0x80, %rsp
 
 # Set up test data
@@ -100,8 +103,10 @@ aesenclast %xmm1, %xmm0
 # Now test aesdec, aesdeclast, vaesdec, vaesdeclast
 movups %xmm0, %xmm2
 vaesenclast 16(%rsp), %xmm0, %xmm3
+vaesenc %ymm3, %ymm15, %ymm15
 aesdec %xmm1, %xmm2
 vaesdec %xmm1, %xmm2, %xmm4
+vaesenc %ymm4, %ymm15, %ymm15
 vaesdec 16(%rsp), %xmm2, %xmm5
 aesdeclast %xmm1, %xmm2
 vaesdeclast %xmm1, %xmm2, %xmm6
@@ -123,93 +128,18 @@ vaesenc 0(%rsp), %ymm9, %ymm14
 
 # aesimc, vaesimc
 aesimc %xmm0, %xmm1
+vaesenc %ymm1, %ymm15, %ymm15
 aesimc 16(%rsp), %xmm2
+vaesenc %ymm2, %ymm15, %ymm15
 vaesimc %xmm0, %xmm3
+vaesenc %ymm3, %ymm15, %ymm15
 vaesimc 16(%rsp), %xmm4
+vaesenc %ymm4, %ymm15, %ymm15
 
 # aeskeygenassist, vaeskeygenassist
 aeskeygenassist $0x55, %xmm0, %xmm1
 aeskeygenassist $0xab, 16(%rsp), %xmm2
 vaeskeygenassist $0x55, %xmm0, %xmm3
 vaeskeygenassist $0xab, 16(%rsp), %xmm4
-
-# sha1msg1, sha1msg2, sha1nexte, sha1rnds4
-movabsq $0x0123456789abcdef, %rax
-movq %rax, 32(%rsp)
-movabsq $0xfedcba9876543210, %rax
-movq %rax, 40(%rsp)
-movups 32(%rsp), %xmm5
-movabsq $0x1111111122222222, %rax
-movq %rax, 48(%rsp)
-movabsq $0x3333333344444444, %rax
-movq %rax, 56(%rsp)
-movups 48(%rsp), %xmm6
-
-sha1msg1 %xmm6, %xmm5
-sha1msg1 48(%rsp), %xmm5
-sha1msg2 %xmm6, %xmm5
-sha1msg2 48(%rsp), %xmm5
-sha1nexte %xmm6, %xmm5
-sha1nexte 48(%rsp), %xmm5
-sha1rnds4 $0, %xmm6, %xmm5
-sha1rnds4 $1, %xmm6, %xmm5
-sha1rnds4 $2, 48(%rsp), %xmm5
-sha1rnds4 $3, 48(%rsp), %xmm5
-
-# sha256msg1, sha256msg2
-sha256msg1 %xmm6, %xmm5
-sha256msg1 48(%rsp), %xmm5
-sha256msg2 %xmm6, %xmm5
-sha256msg2 48(%rsp), %xmm5
-
-# gf2p8mulb, vgf2p8mulb
-gf2p8mulb %xmm6, %xmm5
-gf2p8mulb 48(%rsp), %xmm5
-vgf2p8mulb %xmm6, %xmm5, %xmm7
-vgf2p8mulb 48(%rsp), %xmm5, %xmm7
-vgf2p8mulb %ymm9, %ymm8, %ymm15
-vgf2p8mulb 0(%rsp), %ymm9, %ymm15
-
-# gf2p8affineqb, vgf2p8affineqb
-gf2p8affineqb $0x37, %xmm6, %xmm5
-gf2p8affineqb $0x5a, 48(%rsp), %xmm5
-vgf2p8affineqb $0x37, %xmm6, %xmm5, %xmm7
-vgf2p8affineqb $0x5a, 48(%rsp), %xmm5, %xmm7
-vgf2p8affineqb $0x37, %ymm9, %ymm8, %ymm15
-vgf2p8affineqb $0x5a, 0(%rsp), %ymm9, %ymm15
-
-# gf2p8affineinvqb, vgf2p8affineinvqb
-gf2p8affineinvqb $0x37, %xmm6, %xmm5
-gf2p8affineinvqb $0x5a, 48(%rsp), %xmm5
-vgf2p8affineinvqb $0x37, %xmm6, %xmm5, %xmm7
-vgf2p8affineinvqb $0x5a, 48(%rsp), %xmm5, %xmm7
-vgf2p8affineinvqb $0x37, %ymm9, %ymm8, %ymm15
-vgf2p8affineinvqb $0x5a, 0(%rsp), %ymm9, %ymm15
-
-# Variable shifts: vpsllvd, vpsllvq, vpsrlvd, vpsrlvq, vpsravd (128-bit and 256-bit)
-vpsllvd %xmm6, %xmm5, %xmm0
-vpsllvd 48(%rsp), %xmm5, %xmm1
-vpsllvd %ymm9, %ymm8, %ymm2
-vpsllvd 0(%rsp), %ymm9, %ymm3
-
-vpsllvq %xmm6, %xmm5, %xmm0
-vpsllvq 48(%rsp), %xmm5, %xmm1
-vpsllvq %ymm9, %ymm8, %ymm2
-vpsllvq 0(%rsp), %ymm9, %ymm3
-
-vpsrlvd %xmm6, %xmm5, %xmm0
-vpsrlvd 48(%rsp), %xmm5, %xmm1
-vpsrlvd %ymm9, %ymm8, %ymm2
-vpsrlvd 0(%rsp), %ymm9, %ymm3
-
-vpsrlvq %xmm6, %xmm5, %xmm0
-vpsrlvq 48(%rsp), %xmm5, %xmm1
-vpsrlvq %ymm9, %ymm8, %ymm2
-vpsrlvq 0(%rsp), %ymm9, %ymm3
-
-vpsravd %xmm6, %xmm5, %xmm0
-vpsravd 48(%rsp), %xmm5, %xmm1
-vpsravd %ymm9, %ymm8, %ymm2
-vpsravd 0(%rsp), %ymm9, %ymm3
 
 addq $0x80, %rsp

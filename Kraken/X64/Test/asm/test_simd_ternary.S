@@ -44,8 +44,9 @@ vmovaps %xmm3, %xmm15
 vfmsub231pd %xmm3, %xmm3, %xmm15
 vmovaps %xmm3, %xmm0
 vfnmsub213sd 32(%rsp), %xmm3, %xmm0
-vmovaps %xmm1, %xmm6
-vfmadd132ss %xmm2, %xmm1, %xmm6
-vmovaps %xmm1, %xmm7
-vfmsubadd231pd %xmm2, %xmm3, %xmm7
+# (ymm4 and ymm5 are no longer needed as inputs; xmm6 and xmm7 hold the sha256rnds2 results.)
+vmovaps %xmm1, %xmm4
+vfmadd132ss %xmm2, %xmm1, %xmm4
+vmovaps %xmm1, %xmm5
+vfmsubadd231pd %xmm2, %xmm3, %xmm5
 addq $0x60, %rsp

@@ -1,6 +1,5 @@
-# Test: SIMD bitwise instructions (comparisons and 256-bit forms are in test_simd_pcmp.S,
-# test_simd_logic_256.S and test_simd_pcmp_256.S, so that every result reaches the final state)
-# Exercises: pand pandn por pxor andps andnps orps xorps andpd andnpd orpd xorpd
+# Test: SIMD integer comparisons (from test_simd_logic.S)
+# Exercises: pcmpeqb pcmpeqw pcmpeqd pcmpeqq pcmpgtb pcmpgtw pcmpgtd pcmpgtq
 
 subq $0x40, %rsp
 
@@ -23,50 +22,55 @@ movq %rcx, 32(%rsp)
 movabsq $0x0123456789abcdef, %rcx
 movq %rcx, 40(%rsp)
 
-# Load into xmm registers
-movups 0(%rsp), %xmm0
+# Equality comparisons: self comparison (should be all 1s) and distinct comparison
+movups 32(%rsp), %xmm0
 movups 16(%rsp), %xmm1
 
-# Bitwise integer ops (SSE and VEX)
 movaps %xmm0, %xmm2
-pand %xmm1, %xmm2
+pcmpeqb %xmm0, %xmm2
 
 movaps %xmm0, %xmm3
-pandn %xmm1, %xmm3
+pcmpeqw %xmm0, %xmm3
 
 movaps %xmm0, %xmm4
-por %xmm1, %xmm4
+pcmpeqd %xmm0, %xmm4
 
 movaps %xmm0, %xmm5
-pxor %xmm1, %xmm5
+pcmpeqq %xmm0, %xmm5
 
-vpand %xmm1, %xmm0, %xmm6
-vpandn %xmm1, %xmm0, %xmm7
+# Equality against different operand
+movaps %xmm0, %xmm6
+pcmpeqb %xmm1, %xmm6
 
-# Bitwise float single ops
+movaps %xmm0, %xmm7
+pcmpeqq %xmm1, %xmm7
+
+# Signed greater-than comparisons:
+# Greater-than against self (all 0s)
 movaps %xmm0, %xmm8
-andps %xmm1, %xmm8
+pcmpgtb %xmm0, %xmm8
 
 movaps %xmm0, %xmm9
-andnps %xmm1, %xmm9
+pcmpgtw %xmm0, %xmm9
 
 movaps %xmm0, %xmm10
-orps %xmm1, %xmm10
+pcmpgtd %xmm0, %xmm10
 
 movaps %xmm0, %xmm11
-xorps %xmm1, %xmm11
+pcmpgtq %xmm0, %xmm11
 
-# Bitwise float double ops
+# Greater-than with mixed signed values:
+# xmm0 vs xmm1
 movaps %xmm0, %xmm12
-andpd %xmm1, %xmm12
+pcmpgtb %xmm1, %xmm12
 
 movaps %xmm0, %xmm13
-andnpd %xmm1, %xmm13
+pcmpgtw %xmm1, %xmm13
 
 movaps %xmm0, %xmm14
-orpd %xmm1, %xmm14
+pcmpgtd %xmm1, %xmm14
 
 movaps %xmm0, %xmm15
-xorpd %xmm1, %xmm15
+pcmpgtq %xmm1, %xmm15
 
 addq $0x40, %rsp
