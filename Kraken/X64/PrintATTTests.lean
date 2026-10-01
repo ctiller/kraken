@@ -193,8 +193,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   | .error _ => false
 
 -- Printed form is canonical AT&T.
-#guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo" with
-  | .ok p => toATT p == "movq %rax, -16(%rbp,%rcx,8)\nfoo:\nimull $3, 8(%eax), %ebx\njne foo"
+#guard match parse "movq %rax, -16(%rbp,%rcx,8)\nfoo: imul $3, 8(%eax), %ebx\njne foo\nnop" with
+  | .ok p => toATT p == "movq %rax, -16(%rbp,%rcx,8)\nfoo:\nimull $3, 8(%eax), %ebx\njne foo\nnop"
   | .error _ => false
 
 #guard match parse "lock xaddq %rax, (%rsp)", parse "xaddq %rax, (%rsp)" with
