@@ -24,3 +24,6 @@ def SimdShiftOp.interp {n} : SimdShiftOp → BitVec n → Nat → BitVec n
   -- Byte shifts of each 128-bit lane.
   | .pslldq, a, c => a.map1 128 (· <<< (c * 8))
   | .psrldq, a, c => a.map1 128 (· >>> (c * 8))
+
+/-- Whether the count must be an immediate (the byte shifts). -/
+def SimdShiftOp.immOnly (op : SimdShiftOp) : Bool := op matches .pslldq | .psrldq

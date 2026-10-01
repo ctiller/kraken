@@ -19,3 +19,10 @@ instance : Mnemonic SimdMov := ⟨mnemonics% SimdMov⟩
 def SimdMov.aligned : SimdMov → Bool
   | .movups | .movupd | .movdqu | .lddqu => false
   | .movaps | .movapd | .movdqa | .movntps | .movntpd | .movntdq | .movntdqa => true
+
+/-- Whether the source is memory and the destination a register (`some true`: the loads `lddqu`
+and `movntdqa`), the other way round (`some false`: the non-temporal stores), or either. -/
+def SimdMov.memSrc? : SimdMov → Option Bool
+  | .lddqu | .movntdqa => some true
+  | .movntps | .movntpd | .movntdq => some false
+  | .movups | .movupd | .movdqu | .movaps | .movapd | .movdqa => none

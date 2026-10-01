@@ -433,6 +433,15 @@ def parseAvxRegOrMem: Parser (MaybeAddrWidth × MaybeAvxOpWidth AvxRegOrMem) := 
   else
       fail s!"expected AVX register or memory operand, got {c}"
 
+/-- `parseAvxRegOrMem`, restricted to memory if `mem? = some true` or a register if `some false`. -/
+def parseAvxRegOrMemIf (mem? : Option Bool) : Parser (MaybeAddrWidth × MaybeAvxOpWidth AvxRegOrMem) := do
+  let (addr_w, x) ← parseAvxRegOrMem
+  -- Only a register has a width.
+  match mem?, x.1 with
+  | some true, some _ => fail "expected a memory operand"
+  | some false, none => fail "expected a register operand"
+  | _, _ => pure (addr_w, x)
+
 def parseRelRegOrMem: Parser (MaybeAddrWidth × RelRegOrMem) := do
   skipHWs
   (do
@@ -782,9 +791,11 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if instr.width? == some .W8 then fail s!"{mn}: expected 16-, 32-, or 64-bit operands"
     pure instr
   if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
-    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.mov true op)
+    commaSeparatedAvx (some .W128) (parseAvxRegOrMemIf op.memSrc?)
+      (parseAvxRegOrMemIf (op.memSrc?.map (!·))) (.mov true op)
   if let some op := Mnemonic.ofName? (α := SimdMov) v then ps := ps.push do
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov false op)
+    commaSeparatedAvx .none (parseAvxRegOrMemIf op.memSrc?)
+      (parseAvxRegOrMemIf (op.memSrc?.map (!·))) (.mov false op)
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
       if !(if vex then op.hasVex else op.hasLegacy) then fail s!"{name} is not a valid instruction"
@@ -811,7 +822,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         if sfx?.isSome then fail s!"{name}: unexpected suffix"
         let (addr_w, ⟨w, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
         checkBits name (if vex then op.vexBits? else some 128) w
-        if op == .movd && src matches .avx _ then fail s!"{name}: expected memory operand"
+        if op.memOnly && src matches .avx _ then fail s!"{name}: expected memory operand"
         pure (toAvxInstr addr_w (.un (!vex) op dst src))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdUnImmOp) name then ps := ps.push do
@@ -834,11 +845,13 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       pure (toAvxInstr addr_w (if vex then .vexImm op dst src1 src2 imm else .sseImm op dst src2 imm))
   if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
+    if op.immOnly && count matches .reg _ then fail s!"{mn}: expected an immediate count"
     let ⟨w, dst⟩ ← parseAvxRegW
     if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sseShift op dst count))
   if let some op := Mnemonic.ofName? (α := SimdShiftOp) v then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
+    if op.immOnly && count matches .reg _ then fail s!"{mn}: expected an immediate count"
     let ⟨w, src⟩ ← parseAvxRegW; parseComma
     let dst ← parseAvxRegW
     if h : dst.w = w then pure (toAvxInstr addr_w (.vexShift op (h ▸ dst.reg) src count))
@@ -914,7 +927,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     | _ => fail "vcvtps2ph requires xmm or ymm source"
   for (vex, name) in [(false, mn), (true, v)] do
     if let some (op, w?) := lookupSized SimdToGprOp name then ps := ps.push do
-      let (addr_w, src) ← parseAvxRegOrMem; parseComma
+      let (addr_w, src) ← parseAvxRegOrMemIf (if op.regOnly then some false else none); parseComma
       let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
       if w != .W32 && w != .W64 then fail s!"{name}: expected 32-bit or 64-bit destination register"
       if !vex && src.1.any (· != .W128) then fail s!"{name}: expected 128-bit operand"
@@ -934,6 +947,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       -- A suffix names a register.
       let memW? := if w?.isSome then none else some (.ofBits op.memBits)
       let (addr_w, ⟨_gw, d⟩) ← parseGprRegOrMem regW? w? memW?
+      if op.memOnly && d matches .reg _ then fail s!"{name}: expected a memory operand"
       pure (toAvxInstr addr_w (.extract (!vex) op d src imm))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some (op, w?) := lookupSized SimdInsertOp name then ps := ps.push do
@@ -954,6 +968,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         -- A suffix names a register, or the width of memory if `sizedMem`.
         let memW? := if w?.isSome && !op.sizedMem then none else some (w?.getD (.ofBits op.memBits))
         let (addr_w, ⟨_gw, src2⟩) ← parseGprRegOrMem regW? w? memW?; parseComma
+        if op.memOnly && src2 matches .reg _ then fail s!"{name}: expected a memory operand"
         let ⟨w, src1⟩ ← parseAvxRegW
         let dst ← if vex then do parseComma; parseAvxRegW else pure ⟨w, src1⟩
         if w != .W128 then fail s!"{name}: expected xmm operands"
