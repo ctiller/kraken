@@ -647,7 +647,9 @@ def parseMovbe (op_w : Option Width) : Parser Instr := do
 def stringOp? (mn : String) (repPfx : RepPrefix := .none) : Option Instr := do
   guard (mn.length == 5)
   let w ← match mn.back with
-    | 'b' => some Width.W8 | 'w' => some .W16 | 'l' | 'd' => some .W32 | 'q' => some .W64
+    | 'b' => some Width.W8 | 'w' => some .W16 | 'l' => some .W32 | 'q' => some .W64
+    -- GNU as also takes the SSE mnemonics `movsd`/`cmpsd` without operands as string operations.
+    | 'd' => if mn == "movsd" || mn == "cmpsd" then some .W32 else none
     | _ => none
   pure (toInstr .none (w := w) (.str (← Mnemonic.ofName? (mn.take 4).copy) repPfx))
 
@@ -747,6 +749,23 @@ def checkBits (mn : String) (bits? : Option Nat) (w : AvxWidth) : Parser Unit :=
 def parseImmComma : Parser ConstExpr := do
   skipHWs; let i ← parseInt64; parseComma; pure i
 
+/-- `$imm` that fits in an imm8: `lo ≤ imm ≤ 255`, where `lo` is -128 if GNU as also takes a
+signed value, else 0. -/
+def parseImm8 (lo : Int) : Parser ConstExpr := do
+  skipHWs; let _ ← pchar '$'; let v ← parseInt
+  if v < lo || v > 255 then fail s!"immediate {v} out of range for imm8"
+  pure (.int64 (.ofInt v))
+
+/-- The bit offset of `bt`: a register or an unsigned imm8. -/
+def parseBitOffset : Parser (MaybeAddrWidth × MaybeOpWidth Operand) := do
+  skipHWs
+  if (← peek!) == '$' then
+    let i ← parseImm8 0
+    pure (.none, ⟨ .none, .imm i ⟩)
+  else
+    let ⟨ w, r ⟩ ← parseRegW
+    pure (.none, ⟨ w, .reg r ⟩)
+
 /-- `$imm,` or `src,` where `src` is an xmm register or memory. -/
 def parseSimdCount : Parser (MaybeAddrWidth × SimdCount) :=
   (attempt do pure (none, .imm (← parseImmComma))) <|> do
@@ -787,7 +806,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     | .mem _ => fail s!"{mn}: expected a register"
   if let some (op, w?) := lookupSized BitTestOp mn then ps := ps.push do
     if w? == some .W8 then fail s!"{mn}: expected 16-, 32-, or 64-bit operands"
-    let instr ← commaSeparated w? parseOperand parseRegOrMem (.bt op)
+    let instr ← commaSeparated w? parseBitOffset parseRegOrMem (.bt op)
     if instr.width? == some .W8 then fail s!"{mn}: expected 16-, 32-, or 64-bit operands"
     pure instr
   if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
@@ -1019,7 +1038,7 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
         fail "crc32 with 32-bit destination requires 8-, 16-, or 32-bit source"
     pure (toInstr addr_w (.crc32 dst src))
   | "rorx", w? =>
-    let cnt ← parseImmComma
+    let cnt ← parseImm8 (-128); parseComma
     let (addr_w, src) ← parseRegOrMem; parseComma
     let ⟨w, dst⟩ ← parseRegW
     checkSuffix w? w
@@ -1094,6 +1113,7 @@ def parseExplicit (mnemonic mn : String) (rep : RepPrefix := .none) : Parser Ins
     let ( addr_w, src ) ← parseRegOrMem; parseComma
     let lo ← parseRegW; parseComma
     let hi ← parseRegW
+    if hi.1 matches .W8 | .W16 then fail "mulx requires 32-bit or 64-bit operands"
     match src, lo, hi with
     | ⟨ .none, src ⟩, ⟨ w1, lo ⟩, ⟨ w2, hi ⟩ =>
       if h: w1 = w2 then

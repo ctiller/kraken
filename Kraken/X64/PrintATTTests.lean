@@ -303,7 +303,14 @@ def rejected : List String := [
   "vmovdqa %zmm3, %zmm3", "vmovaps %ymm17, %ymm1", "movups %xmm16, %xmm1", "vptest %zmm1, %zmm2",
   "vpmovzxbw (%rsp), %zmm3", "vpmovzxbw %xmm0, %zmm3", "vaddps %zmm1, %zmm2, %zmm3",
   "vpaddb %xmm16, %xmm1, %xmm2", "vmovd %eax, %xmm16", "vpextrb $0, %xmm17, %eax",
-  "vbroadcastss %xmm16, %ymm1", "vfmadd231ps %ymm20, %ymm1, %ymm2", "vpsllw $1, %zmm1, %zmm2"
+  "vbroadcastss %xmm16, %ymm1", "vfmadd231ps %ymm20, %ymm1, %ymm2", "vpsllw $1, %zmm1, %zmm2",
+  -- The bit offset of bt* is a register or an unsigned imm8; the count of rorx is an imm8
+  "bt (%rsp), %eax", "btsq 8(%rax), %rbx", "btl $256, (%rsp)", "btq $-1, %rax", "btw $300, %ax",
+  "btc foo, %eax", "rorx $256, %eax, %ebx", "rorxq $-129, %rax, %rbx",
+  -- mulx operands are 32 or 64 bits wide
+  "mulx %al, %bl, %cl", "mulx %ax, %bx, %cx",
+  -- GNU as has no `d` spellings of lods/stos/scas
+  "lodsd", "stosd", "scasd", "rep stosd"
 ]
 
 /-- info: [] -/
@@ -370,7 +377,11 @@ def accepted : List String := [
   "vmovhpd %xmm1, (%rsp)", "vmovlpd (%rsp), %xmm1, %xmm2", "pmovmskb %xmm1, %eax",
   "vmovmskpd %ymm1, %rax", "cvtsd2si (%rsp), %eax",
   -- `vmovups` takes the EVEX-only registers
-  "vmovups (%rsp), %zmm1", "vmovups %xmm16, %xmm17", "vmovups %ymm31, %ymm0", "vmovups %zmm2, %zmm30"
+  "vmovups (%rsp), %zmm1", "vmovups %xmm16, %xmm17", "vmovups %ymm31, %ymm0", "vmovups %zmm2, %zmm30",
+  -- bt*, rorx, mulx and string operation edge cases
+  "bt %eax, (%rsp)", "btsq %rax, %rbx", "btl $255, (%rsp)", "btcw $0, %ax", "rorx $255, %eax, %ebx",
+  "rorxq $-128, %rax, %rbx", "mulx (%rsp), %eax, %ebx", "mulx %rax, %rbx, %rcx", "movsd", "cmpsd",
+  "rep movsd"
 ]
 
 /-- info: [] -/
