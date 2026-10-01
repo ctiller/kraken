@@ -53,6 +53,9 @@ def SimdExtractOp.hasImm : SimdExtractOp → Bool
   | .pextrb | .pextrw | .pextrd | .pextrq | .extractps => true
   | .movd | .movq | .movlps | .movhps | .movlpd | .movhpd => false
 
+/-- Whether GNU as takes an `l` or `q` suffix, giving the width of a GPR destination. -/
+def SimdExtractOp.sized (op : SimdExtractOp) : Bool := op == .pextrw
+
 def SimdExtractOp.memBits (op : SimdExtractOp) : Nat :=
   match op with
   | .pextrb => 8
@@ -90,6 +93,13 @@ def SimdInsertOp.memBits (op : SimdInsertOp) : Nat :=
   | .pinsrw => 16
   | .pinsrd | .cvtsi2ss | .cvtsi2sd | .movd => 32
   | .pinsrq | .movq | .movlps | .movhps | .movlpd | .movhpd => 64
+
+/-- Whether an `l` or `q` suffix gives the width of a memory source (else `memBits`). -/
+def SimdInsertOp.sizedMem (op : SimdInsertOp) : Bool := op matches .cvtsi2ss | .cvtsi2sd
+
+/-- Whether GNU as takes an `l` or `q` suffix, giving the width of a GPR source (or of a memory
+source if `sizedMem`). -/
+def SimdInsertOp.sized (op : SimdInsertOp) : Bool := op == .pinsrw || op.sizedMem
 
 def SimdInsertOp.twoOperand : SimdInsertOp → Bool
   | .movd | .movq => true

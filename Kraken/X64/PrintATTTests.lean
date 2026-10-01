@@ -275,7 +275,13 @@ def rejected : List String := [
   "pinsrq $0, %eax, %xmm0", "pextrd $0, %xmm0, %rax", "pextrq $0, %xmm0, %eax",
   -- movlhps/movhlps reject memory source
   "movlhps (%rax), %xmm1", "vmovlhps (%rax), %xmm1, %xmm2", "movhlps (%rax), %xmm1",
-  "vmovhlps (%rax), %xmm1, %xmm2"
+  "vmovhlps (%rax), %xmm1, %xmm2",
+  -- SIMD GPR transfers take only GNU as's `l`/`q` suffixes, and a suffix names a register (or a
+  -- `cvtsi2ss`/`cvtsi2sd` source)
+  "pinsrbl $1, (%rsp), %xmm0", "pinsrbl $1, %eax, %xmm0", "pinsrwl $1, (%rsp), %xmm0",
+  "pextrwq $1, %xmm1, (%rsp)", "pextrbl $1, %xmm1, %eax", "extractpsl $1, %xmm0, %eax",
+  "movdq %rax, %xmm0", "vmovqq %xmm0, %rax", "vmovhpdl (%rsp), %xmm1, %xmm2", "movlpsq %xmm1, (%rsp)",
+  "cvtsi2sdb (%rsp), %xmm0", "cvtsi2ssw (%rsp), %xmm0", "cvtsi2sdl %rax, %xmm0", "pextrwl $1, %xmm1, %rax"
 ]
 
 /-- info: [] -/
@@ -328,7 +334,12 @@ def accepted : List String := [
   -- SIMD GPR transfer register width restrictions
   "pinsrb $0, %eax, %xmm0", "pinsrb $0, %rax, %xmm0", "pextrb $0, %xmm0, %eax",
   "pextrb $0, %xmm0, %rax", "pinsrd $0, %eax, %xmm0", "pinsrq $0, %rax, %xmm0",
-  "pextrd $0, %xmm0, %eax", "pextrq $0, %xmm0, %rax", "movq %rax, %xmm0", "movq %xmm0, %rax"
+  "pextrd $0, %xmm0, %eax", "pextrq $0, %xmm0, %rax", "movq %rax, %xmm0", "movq %xmm0, %rax",
+  -- SIMD GPR transfer suffixes
+  "pextrwl $1, %xmm1, %eax", "vpextrwq $1, %xmm1, %rax", "pinsrwl $1, %eax, %xmm0",
+  "vpinsrwq $1, %rax, %xmm1, %xmm2", "pextrw $1, %xmm1, (%rsp)", "pinsrw $1, (%rsp), %xmm0",
+  "cvtsi2sdl (%rsp), %xmm0", "vcvtsi2ssq (%rsp), %xmm1, %xmm2", "cvtsi2sdq %rax, %xmm0",
+  "movmskpsq %xmm1, %rax", "vpmovmskbl %ymm1, %eax", "cvttsd2sil (%rsp), %eax", "vcvtss2siq %xmm1, %rax"
 ]
 
 /-- info: [] -/
