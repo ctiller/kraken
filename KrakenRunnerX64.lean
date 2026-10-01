@@ -112,8 +112,19 @@ undefined. Each instruction is run under every assignment of the undefined flags
 `undefined` choices) with those resolved to all-zeros and to all-ones. Fails unless registers and
 memory agree across all runs; returns the resulting state and the new mask of flags that disagree.
 
-The two-sample resolution of `undefined` is sound because Semantics.lean only ever stores an
-undefined choice directly into a flag, all flags, or a destination, never computes with it. -/
+Two samples suffice only because of how Semantics.lean uses `undefined` choices. All choices in
+a run are resolved from the same `h` (`NondetSupportingType.from_hash`): `h = 0` makes every Bool
+false and every bit vector zero, `h = -1` every Bool true and every bit vector all-ones. An
+instruction's nondeterminism is therefore caught if its registers or memory differ between these
+two resolutions, which holds when its register- or memory-affecting choices are
+- bit vectors stored directly into a destination (zero and all-ones differ in every bit), and
+- at most one Bool, even if computed with (both values are sampled): e.g. `SimdBinOp.eval`'s
+  hadd operand order, or whether a failed 32-bit `cmpxchg` writes its destination.
+Choices that only affect flags need no such argument: flags that differ become undefined
+(`mask`). The filter would miss an instruction with two register-affecting Bool choices whose
+mixed assignments give a different result from both all-false and all-true, or a bit-vector
+choice used in a computation that maps zero and all-ones to the same result. None exists today;
+adding one would need a hash per choice. -/
 def stepDeterministic (d : MachineData) (mask : Nat) (asmCode : String) : Option (MachineData × Nat) := do
   let exe := (← (Kraken.X64.Parser.parse asmCode).toOption).fakeLayout
   let := exe.labels
