@@ -43,3 +43,26 @@ private def widening : List SimdUnOp :=
 -- The other sizes.
 #guard [1, 2, 4, 8, 16].all fun n => loadZmm (some n) bytes32 == some (lanes 512 8 n (· + 1))
 #guard loadZmm (some 3) bytes32 == none
+
+/-! dpps/dppd: the SDM leaves which NaNs propagate, and where they land, implementation
+dependent, so any NaN in a lane's sum makes the result undefined. -/
+
+private def f32s (xs : List Nat) : BitVec 128 := lanes 128 32 xs.length (xs.getD · 0)
+private def f64s (xs : List Nat) : BitVec 128 := lanes 128 64 xs.length (xs.getD · 0)
+private def one32 := 0x3f800000
+private def inf32 := 0x7f800000
+private def one64 := 0x3ff0000000000000
+
+-- One NaN product.
+#guard SimdBinImmOp.dpps.resultUndefined (f32s [0x7fc00001, one32, one32, one32]) (f32s [one32, one32, one32, one32]) 0xf1
+#guard SimdBinImmOp.dppd.resultUndefined (f64s [0x7ff8000000000001, one64]) (f64s [one64, one64]) 0x31
+-- No NaN product, but `+inf + -inf`.
+#guard SimdBinImmOp.dpps.resultUndefined (f32s [inf32, inf32 + 0x80000000, 0, 0]) (f32s [one32, one32, one32, one32]) 0x31
+-- `inf * 0`.
+#guard SimdBinImmOp.dppd.resultUndefined (f64s [0x7ff0000000000000, 0]) (f64s [0, 0]) 0x11
+-- In the upper 128-bit lane only.
+#guard SimdBinImmOp.dpps.resultUndefined (f32s [0x7fc00000] ++ f32s [one32]) (f32s [one32] ++ f32s [one32]) 0xf1
+-- Defined: no NaN, the NaN is not selected, or no destination element is written.
+#guard !SimdBinImmOp.dpps.resultUndefined (f32s [inf32, one32, 0, 0]) (f32s [one32, one32, one32, one32]) 0xf1
+#guard !SimdBinImmOp.dpps.resultUndefined (f32s [one32, 0x7fc00000]) (f32s [one32, one32]) 0x11
+#guard !SimdBinImmOp.dpps.resultUndefined (f32s [0x7fc00000]) (f32s [one32]) 0xf0

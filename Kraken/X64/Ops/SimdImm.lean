@@ -82,12 +82,17 @@ def clmul64 (a b : BitVec 64) : BitVec 128 :=
   (List.range 64).foldl (fun acc i =>
     if b.getLsbD i then acc ^^^ ((a.zeroExtend 128) <<< i) else acc) 0#128
 
-def dpp {k : Nat} (mulOp addOp : BitVec k → BitVec k → BitVec k) (count : Nat)
-    (imm : BitVec 8) (a b : BitVec 128) : BitVec 128 :=
+/-- The sum of the products of the `count` elements of `a` and `b` selected by `imm[7:4]`. -/
+def dppSum {k : Nat} (mulOp addOp : BitVec k → BitVec k → BitVec k) (count : Nat)
+    (imm : BitVec 8) (a b : BitVec 128) : BitVec k :=
   let p (i : Nat) : BitVec k :=
     if imm.getLsbD (4 + i) then mulOp (a.lane k i) (b.lane k i) else 0#k
   -- Summed pairwise, as the SDM specifies (this matters for rounding and the sign of zero).
-  let sum := if count = 2 then addOp (p 0) (p 1) else addOp (addOp (p 0) (p 1)) (addOp (p 2) (p 3))
+  if count = 2 then addOp (p 0) (p 1) else addOp (addOp (p 0) (p 1)) (addOp (p 2) (p 3))
+
+def dpp {k : Nat} (mulOp addOp : BitVec k → BitVec k → BitVec k) (count : Nat)
+    (imm : BitVec 8) (a b : BitVec 128) : BitVec 128 :=
+  let sum := dppSum mulOp addOp count imm a b
   .ofLanes 128 k fun i => if imm.getLsbD i then sum else 0#k
 
 def SimdBinImmOp.interp {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8)
@@ -149,24 +154,17 @@ def SimdBinImmOp.memBytes? : SimdBinImmOp → Option Nat
   | .roundsd | .cmpsd => some 8
   | _ => none
 
-/-- Whether the horizontal sum of the products `ps` could yield one of several NaNs (two NaN
-products, or one alongside an invalid `+inf + -inf`), whose choice the SDM leaves
-implementation-dependent. -/
-def ambiguousNaNSum (f : FpFmt) (ps : List (BitVec f.bits)) : Bool :=
-  let nans := (ps.filter f.isNaN).length
-  let infs := ps.filter f.isInf
-  nans ≥ 2 || (nans == 1 && infs.any (·.msb) && infs.any (!·.msb))
-
-/-- Whether the SDM leaves the result undefined (dpps/dppd, see `ambiguousNaNSum`). -/
+/-- Whether the SDM leaves the result undefined: for dpps/dppd, when some destination element is
+written and the sum in some 128-bit lane is NaN (a selected product is NaN, or a partial sum
+such as `+inf + -inf` is). The SDM leaves both which NaNs propagate and where in the destination
+they land implementation dependent (it only guarantees at least one NaN). -/
 def SimdBinImmOp.resultUndefined {n} (op : SimdBinImmOp) (a b : BitVec n) (imm : BitVec 8) : Bool :=
-  let products {k} (count : Nat) (mul : BitVec k → BitVec k → BitVec k) (l : Nat) :=
-    (List.range count).filterMap fun i => if imm.getLsbD (4 + i) then
-      some (mul (a.lane k (count * l + i)) (b.lane k (count * l + i))) else none
+  let nanSum (f : FpFmt) (count : Nat) (mul add : BitVec f.bits → BitVec f.bits → BitVec f.bits) :=
+    imm.toNat % 2 ^ count != 0 && (List.range (n / 128)).any fun l =>
+      f.isNaN (dppSum mul add count imm (a.lane 128 l) (b.lane 128 l))
   match op with
-  | .dpps => imm.toNat % 16 != 0 &&
-    (List.range (n / 128)).any fun l => ambiguousNaNSum .f32 (products 4 (sseBinOp (· * ·)) l)
-  | .dppd => imm.toNat % 4 != 0 &&
-    (List.range (n / 128)).any fun l => ambiguousNaNSum .f64 (products 2 (sseBinOp64 (· * ·)) l)
+  | .dpps => nanSum .f32 4 (sseBinOp (· * ·)) (sseBinOp (· + ·))
+  | .dppd => nanSum .f64 2 (sseBinOp64 (· * ·)) (sseBinOp64 (· + ·))
   | _ => false
 
 /-- Whether this operation has a VEX (`v`) form. -/
