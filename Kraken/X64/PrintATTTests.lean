@@ -108,19 +108,39 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 
 /-- info: [] -/
 #guard_msgs in
-#eval failing SimdBinOp (fun _ mn => [s!"{mn} 16(%rsp), %xmm1", s!"v{mn} %ymm1, %ymm2, %ymm3"]) ++
+#eval failing SimdBinOp (fun op mn =>
+    let hasVex := match op with | .crypto cop => cop.hasVex | _ => true
+    let isScalar := op.memBytes?.isSome
+    [s!"{mn} 16(%rsp), %xmm1"] ++
+    (if hasVex then [s!"v{mn} %{if isScalar then "x" else "y"}mm1, %{if isScalar then "x" else "y"}mm2, %{if isScalar then "x" else "y"}mm3"] else [])) ++
   failing GprUnOp (fun _ mn => [s!"{mn} (%rsp), %rax", s!"{mn}l %eax, %ebx"]) ++
   failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
     if op.src2First then s!"{mn} 8(%rsp), %ebx, %ecx" else s!"{mn} %ebx, 8(%rsp), %ecx"]) ++
   failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++
   failing SimdMov (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"]) ++
-  failing SimdUnOp (fun op mn => [s!"{mn} (%rsp), %xmm1",
-    s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else "y"}mm3, %ymm4"]) ++
-  failing SimdUnImmOp (fun _ mn => [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $255, %ymm3, %ymm4"]) ++
-  failing SimdBinImmOp (fun _ mn => [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $2, %ymm2, %ymm3, %ymm4"]) ++
+  failing SimdUnOp (fun op mn =>
+    let hasLegacy := !op matches .cvtph2ps | .broadcastss | .broadcastsd | .broadcasti128 | .broadcastf128
+    let is128Only := op matches .phminposuw | .aesimc | .movq | .movd
+    let dstReg := if is128Only || op.isNarrowing then "x" else "y"
+    (if hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++
+    (if op.isNarrowing then
+      [s!"v{mn} %ymm3, %xmm4", s!"v{mn}x (%rsp), %xmm4", s!"v{mn}y (%rsp), %xmm4"]
+    else
+      [s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else dstReg}mm3, %{dstReg}mm4"])) ++
+  failing SimdUnImmOp (fun op mn =>
+    let is128Only := op == .aeskeygenassist
+    let reg := if is128Only then "x" else "y"
+    [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $255, %{reg}mm3, %{reg}mm4"]) ++
+  failing SimdBinImmOp (fun op mn =>
+    let is128Only := op matches .roundss | .roundsd | .cmpss | .cmpsd | .insertps | .dppd
+    let reg := if is128Only then "x" else "y"
+    [s!"{mn} $1, (%rsp), %xmm1"] ++
+    (if op == .sha1rnds4 then [] else [s!"v{mn} $2, %{reg}mm2, %{reg}mm3, %{reg}mm4"])) ++
   failing SimdShiftOp (fun _ mn => [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++
   failing SimdTestOp (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm3, %xmm4"]) ++
-  failing SimdBlendvOp (fun _ mn => [s!"{mn} %xmm0, (%rsp), %xmm1", s!"v{mn} %ymm1, %ymm2, %ymm3, %ymm4"]) ++
+  failing SimdBlendvOp (fun op mn =>
+    [s!"{mn} %xmm0, (%rsp), %xmm1"] ++
+    (if op.hasVex then [s!"v{mn} %ymm1, %ymm2, %ymm3, %ymm4"] else [])) ++
   failing SimdFmaOp (fun _ mn => [s!"v{mn} (%rsp), %xmm1, %xmm2", s!"v{mn} %xmm1, %xmm2, %xmm3"]) ++
   failing SimdScalarMov (fun _ mn => [
     s!"{mn} %xmm1, %xmm0",
@@ -182,3 +202,163 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard (parse "rep addq %rax, %rbx") matches .error _
 -- BMI operands are 32 or 64 bits wide.
 #guard (parse "shlx %ax, %bx, %cx") matches .error _
+-- `lock` prefix requires a valid lockable instruction with memory destination.
+#guard (parse "lock addq $1, %rax") matches .error _
+#guard (parse "lock btq $1, (%rsp)") matches .error _
+#guard (parse "lock movq %rax, (%rsp)") matches .error _
+#guard (parse "lock btsq $1, (%rsp)") matches .ok _
+-- Legacy SSE instructions reject ymm operands
+#guard (parse "addps %ymm0, %ymm1") matches .error _
+#guard (parse "movdqa %ymm0, %ymm1") matches .error _
+-- VEX SHA instructions do not exist
+#guard (parse "vsha1msg1 %xmm1, %xmm2, %xmm3") matches .error _
+#guard (parse "vsha1rnds4 $1, %xmm1, %xmm2, %xmm3") matches .error _
+#guard (parse "vsha256rnds2 %xmm1, %xmm2, %xmm3") matches .error _
+-- 128-bit only VEX instructions reject ymm
+#guard (parse "vaesimc %ymm0, %ymm1") matches .error _
+#guard (parse "vaeskeygenassist $0, %ymm0, %ymm1") matches .error _
+#guard (parse "vphminposuw %ymm0, %ymm1") matches .error _
+#guard (parse "vdppd $1, %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vpextrb $0, %ymm0, %rax") matches .error _
+#guard (parse "vpinsrb $0, %rax, %ymm0, %ymm1") matches .error _
+#guard (parse "vmovd %rax, %ymm0") matches .error _
+#guard (parse "vmovq %rax, %ymm0") matches .error _
+#guard (parse "vextractps $0, %ymm0, %rax") matches .error _
+#guard (parse "vinsertps $0, %xmm0, %ymm1, %ymm2") matches .error _
+-- Scalar SIMD VEX instructions reject ymm
+#guard (parse "vaddss %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vcmpss $0, %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vroundss $0, %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vfmadd132ss %ymm0, %ymm1, %ymm2") matches .error _
+-- 256-bit only VEX instructions reject xmm
+#guard (parse "vpermq $0, %xmm0, %xmm1") matches .error _
+#guard (parse "vpermpd $0, %xmm0, %xmm1") matches .error _
+#guard (parse "vpermd %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vpermps %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vperm2f128 $0, %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vperm2i128 $0, %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vbroadcastsd (%rax), %xmm0") matches .error _
+#guard (parse "vbroadcasti128 (%rax), %xmm0") matches .error _
+#guard (parse "vbroadcastf128 (%rax), %xmm0") matches .error _
+#guard (parse "vextractf128 $0, %xmm0, (%rax)") matches .error _
+#guard (parse "vextracti128 $0, %xmm0, (%rax)") matches .error _
+#guard (parse "vinsertf128 $0, (%rax), %xmm0, %ymm1") matches .error _
+#guard (parse "vinserti128 $0, (%rax), %ymm0, %xmm1") matches .error _
+-- push/pop only allow 16- and 64-bit operands
+#guard (parse "pushb $1") matches .error _
+#guard (parse "pushl $1") matches .error _
+#guard (parse "pushl %eax") matches .error _
+#guard (parse "pushb %al") matches .error _
+#guard (parse "popl %eax") matches .error _
+#guard (parse "popb %al") matches .error _
+#guard (parse "popl (%rax)") matches .error _
+#guard (parse "popb (%rax)") matches .error _
+#guard (parse "push $42") matches .ok _
+#guard (parse "pushw $42") matches .ok _
+#guard (parse "pushq $42") matches .ok _
+#guard match parse "pushw $42" with
+  | .ok [d] => toString d == "push word ptr 42"
+  | _ => false
+-- 8-bit operands rejected for popcnt/lzcnt/tzcnt/bsf/bsr
+#guard (parse "popcnt %al, %bl") matches .error _
+#guard (parse "popcntb %al, %bl") matches .error _
+#guard (parse "popcnt %ax, %bx") matches .ok _
+#guard (parse "lzcnt %al, %bl") matches .error _
+#guard (parse "tzcnt %al, %bl") matches .error _
+#guard (parse "bsf %al, %bl") matches .error _
+#guard (parse "bsr %al, %bl") matches .error _
+-- 8-bit operands rejected for bt/bts/btr/btc
+#guard (parse "bt %al, %bl") matches .error _
+#guard (parse "btb $1, (%rax)") matches .error _
+#guard (parse "bts %al, %bl") matches .error _
+#guard (parse "btr %al, %bl") matches .error _
+#guard (parse "btc %al, %bl") matches .error _
+#guard (parse "bt %ax, %bx") matches .ok _
+-- 8-bit operands rejected for cmovcc
+#guard (parse "cmove %al, %bl") matches .error _
+#guard (parse "cmovzb %al, %bl") matches .error _
+#guard (parse "cmove %ax, %bx") matches .ok _
+#guard (parse "cmovzl %eax, %ebx") matches .ok _
+-- 8- and 16-bit operands rejected for blsi/blsmsk/blsr
+#guard (parse "blsi %al, %bl") matches .error _
+#guard (parse "blsi %ax, %bx") matches .error _
+#guard (parse "blsiw %ax, %bx") matches .error _
+#guard (parse "blsi %eax, %ebx") matches .ok _
+#guard (parse "blsmsk %ax, %bx") matches .error _
+#guard (parse "blsr %ax, %bx") matches .error _
+-- 8- and 16-bit operands rejected for adcx/adox
+#guard (parse "adcx %al, %bl") matches .error _
+#guard (parse "adcx %ax, %bx") matches .error _
+#guard (parse "adcxw %ax, %bx") matches .error _
+#guard (parse "adcx %eax, %ebx") matches .ok _
+#guard (parse "adox %ax, %bx") matches .error _
+#guard (parse "adox %eax, %ebx") matches .ok _
+-- 8- and 16-bit operands rejected for bswap
+#guard (parse "bswap %al") matches .error _
+#guard (parse "bswap %ax") matches .error _
+#guard (parse "bswapw %ax") matches .error _
+#guard (parse "bswap %eax") matches .ok _
+#guard (parse "bswap %rax") matches .ok _
+-- crc32 width constraints
+#guard (parse "crc32b %al, %ebx") matches .ok _
+#guard (parse "crc32w %ax, %ebx") matches .ok _
+#guard (parse "crc32l %eax, %ebx") matches .ok _
+#guard (parse "crc32b %al, %rbx") matches .ok _
+#guard (parse "crc32q %rax, %rbx") matches .ok _
+#guard (parse "crc32w %ax, %rbx") matches .error _
+#guard (parse "crc32l %eax, %rbx") matches .error _
+#guard (parse "crc32q %rax, %ebx") matches .error _
+#guard (parse "crc32b %al, %bx") matches .error _
+#guard (parse "crc32b %ah, %ebx") matches .ok _
+#guard (parse "crc32b %ah, %rbx") matches .error _
+#guard (parse "crc32 %ah, %rbx") matches .error _
+-- vcvtpd2ps, vcvtpd2dq, vcvttpd2dq narrowing operand and suffix constraints
+#guard (parse "vcvtpd2ps %ymm1, %xmm0") matches .ok _
+#guard (parse "vcvtpd2ps %xmm1, %xmm0") matches .ok _
+#guard (parse "vcvtpd2psx (%rax), %xmm0") matches .ok _
+#guard (parse "vcvtpd2psy (%rax), %xmm0") matches .ok _
+#guard (parse "vcvtpd2ps (%rax), %xmm0") matches .error _
+#guard (parse "vcvtpd2ps %ymm1, %ymm0") matches .error _
+#guard (parse "cvtpd2ps (%rax), %xmm0") matches .ok _
+#guard (parse "cvtpd2psx (%rax), %xmm0") matches .error _
+#guard (parse "vcvtpd2dq %ymm1, %xmm0") matches .ok _
+#guard (parse "vcvtpd2dqy (%rax), %xmm0") matches .ok _
+#guard (parse "vcvttpd2dq %ymm1, %xmm0") matches .ok _
+#guard (parse "vcvttpd2dqx (%rax), %xmm0") matches .ok _
+#guard roundtrips "vcvtpd2ps %ymm1, %xmm0"
+#guard roundtrips "vcvtpd2ps %xmm1, %xmm0"
+#guard roundtrips "vcvtpd2psx (%rax), %xmm0"
+#guard roundtrips "vcvtpd2psy (%rax), %xmm0"
+#guard roundtrips "cvtpd2ps (%rax), %xmm0"
+-- VEX compare pseudo-ops for predicates 8-31
+#guard (parse "vcmpeq_uqps %xmm1, %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqps %ymm1, %ymm2, %ymm3") matches .ok _
+#guard (parse "vcmpeq_uqpd 16(%rsp), %ymm2, %ymm3") matches .ok _
+#guard (parse "vcmptrue_usps %xmm1, %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqss %xmm1, %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqsd 16(%rsp), %xmm2, %xmm3") matches .ok _
+#guard (parse "vcmpeq_uqss %ymm1, %ymm2, %ymm3") matches .error _
+#guard (parse "vcmpeq_uqsd 16(%rsp), %ymm2, %ymm3") matches .error _
+#guard (parse "cmpeq_uqps %xmm1, %xmm2") matches .error _
+#guard roundtrips "vcmpeq_uqps %xmm1, %xmm2, %xmm3"
+#guard roundtrips "vcmpeq_uqps %ymm1, %ymm2, %ymm3"
+#guard roundtrips "vcmpeq_uqss %xmm1, %xmm2, %xmm3"
+#guard roundtrips "vcmptrue_uspd 16(%rsp), %ymm2, %ymm3"
+-- Two-operand forms with implicit %xmm0
+#guard (parse "sha256rnds2 %xmm1, %xmm2") matches .ok _
+#guard (parse "sha256rnds2 (%rax), %xmm2") matches .ok _
+#guard (parse "blendvps %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvps (%rax), %xmm2") matches .ok _
+#guard (parse "blendvpd %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvpd (%rax), %xmm2") matches .ok _
+#guard (parse "pblendvb %xmm1, %xmm2") matches .ok _
+#guard (parse "pblendvb (%rax), %xmm2") matches .ok _
+#guard (parse "sha256rnds2 %xmm0, %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvps %xmm0, %xmm1, %xmm2") matches .ok _
+#guard (parse "blendvps %xmm3, %xmm1, %xmm2") matches .error _
+#guard (parse "blendvps %ymm1, %ymm2") matches .error _
+#guard (parse "sha256rnds2 %ymm1, %ymm2") matches .error _
+#guard roundtrips "sha256rnds2 %xmm1, %xmm2"
+#guard roundtrips "blendvps %xmm1, %xmm2"
+#guard roundtrips "blendvpd (%rax), %xmm2"
+#guard roundtrips "pblendvb %xmm1, %xmm2"

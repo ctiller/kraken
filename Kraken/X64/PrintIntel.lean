@@ -127,7 +127,10 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .mov dst src => s!"mov {dst.toStr addr_w}, {src.toStr addr_w}"
   | .movsx dst src => s!"movsx {dst.toStr addr_w}, {src.toStr addr_w}"
   | .movzx dst src => s!"movzx {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .push src => s!"push {src.toStr addr_w}"
+  | .push src =>
+    match w, src with
+    | .W16, .imm v => s!"push word ptr {v}"
+    | _, _ => s!"push {src.toStr addr_w}"
   | .pop dst => s!"pop {dst.toStr addr_w}"
   | .leave => "leave"
   | .pushf => "pushfq"
@@ -240,7 +243,9 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .sseUn op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
-  | .vexUn op dst src => s!"v{Mnemonic.name op} {dst}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
+  | .vexUn op dst src =>
+    let dstStr := if op.isNarrowing then ToString.toString (dst.as AvxWidth.W128) else ToString.toString dst
+    s!"v{Mnemonic.name op} {dstStr}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
   | .sseUnImm op dst src imm =>
     s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}, {imm}"
   | .sseImm op dst src imm =>

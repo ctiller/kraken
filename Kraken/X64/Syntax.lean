@@ -100,6 +100,10 @@ inductive Reg : Width → Type
   | ah : Reg .W8 | bh : Reg .W8 | ch : Reg .W8| dh : Reg .W8
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
+def Reg.isHighByte : {w : Width} → Reg w → Bool
+  | .W8, .ah | .W8, .bh | .W8, .ch | .W8, .dh => true
+  | _, _ => false
+
 inductive AvxReg : AvxWidth → Type
   | xmm (_ : RegMm) : AvxReg AvxWidth.W128
   | ymm (_ : RegMm) : AvxReg AvxWidth.W256
@@ -363,6 +367,10 @@ inductive Instr
   | regular (address_size : Width) (operation_size : Width) (operation : Operation operation_size)
   | avx (address_size : Width) (operation_size : AvxWidth) (operation : AvxOperation operation_size)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
+
+def Instr.width? : Instr → Option Width
+  | .regular _ w _ => some w
+  | .avx _ _ _ => none
 
 instance [AddressSize] {w : Width} : CoeOut (Operation w) Instr where
   coe op := Instr.regular address_size w op

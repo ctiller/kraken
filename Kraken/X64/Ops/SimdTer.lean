@@ -32,6 +32,11 @@ def SimdBlendvOp.interp {n} (op : SimdBlendvOp) (a b mask : BitVec n) : BitVec n
     let k := match op with | .pblendvb => 8 | .blendvps => 32 | _ => 64
     .ofLanes n k fun i => if (mask.lane k i).msb then b.lane k i else a.lane k i
 
+/-- Whether this operation has a VEX-encoded form. -/
+def SimdBlendvOp.hasVex : SimdBlendvOp → Bool
+  | .sha256rnds2 => false
+  | _ => true
+
 inductive FmaKind | fmadd | fmsub | fnmadd | fnmsub | fmaddsub | fmsubadd
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 inductive FmaOrder | «132» | «213» | «231»
