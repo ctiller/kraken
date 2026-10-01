@@ -157,3 +157,8 @@ def SimdCrypto.interp : SimdCrypto → BitVec 128 → BitVec 128 → BitVec 128
       let w19 := a.lane 32 3 + sha256Sigma1 w17
       .ofLanes 128 32 fun | 0 => w16 | 1 => w17 | 2 => w18 | _ => w19
   | .gf2p8mulb => .map2 8 gf2p8Mul
+
+/-- Whether this cryptographic operation has a VEX-encoded form. -/
+def SimdCrypto.hasVex : SimdCrypto → Bool
+  | .sha1msg1 | .sha1msg2 | .sha1nexte | .sha256msg1 | .sha256msg2 => false
+  | _ => true

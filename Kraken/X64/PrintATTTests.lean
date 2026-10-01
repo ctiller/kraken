@@ -108,19 +108,36 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 
 /-- info: [] -/
 #guard_msgs in
-#eval failing SimdBinOp (fun _ mn => [s!"{mn} 16(%rsp), %xmm1", s!"v{mn} %ymm1, %ymm2, %ymm3"]) ++
+#eval failing SimdBinOp (fun op mn =>
+    let hasVex := match op with | .crypto cop => cop.hasVex | _ => true
+    let isScalar := op.memBytes?.isSome
+    [s!"{mn} 16(%rsp), %xmm1"] ++
+    (if hasVex then [s!"v{mn} %{if isScalar then "x" else "y"}mm1, %{if isScalar then "x" else "y"}mm2, %{if isScalar then "x" else "y"}mm3"] else [])) ++
   failing GprUnOp (fun _ mn => [s!"{mn} (%rsp), %rax", s!"{mn}l %eax, %ebx"]) ++
   failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
     if op.src2First then s!"{mn} 8(%rsp), %ebx, %ecx" else s!"{mn} %ebx, 8(%rsp), %ecx"]) ++
   failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++
   failing SimdMov (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"]) ++
-  failing SimdUnOp (fun op mn => [s!"{mn} (%rsp), %xmm1",
-    s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else "y"}mm3, %ymm4"]) ++
-  failing SimdUnImmOp (fun _ mn => [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $255, %ymm3, %ymm4"]) ++
-  failing SimdBinImmOp (fun _ mn => [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $2, %ymm2, %ymm3, %ymm4"]) ++
+  failing SimdUnOp (fun op mn =>
+    let hasLegacy := !op matches .cvtph2ps | .broadcastss | .broadcastsd | .broadcasti128 | .broadcastf128
+    let is128Only := op matches .phminposuw | .aesimc | .movq | .movd
+    let dstReg := if is128Only then "x" else "y"
+    (if hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++
+    [s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else dstReg}mm3, %{dstReg}mm4"]) ++
+  failing SimdUnImmOp (fun op mn =>
+    let is128Only := op == .aeskeygenassist
+    let reg := if is128Only then "x" else "y"
+    [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $255, %{reg}mm3, %{reg}mm4"]) ++
+  failing SimdBinImmOp (fun op mn =>
+    let is128Only := op matches .roundss | .roundsd | .cmpss | .cmpsd | .insertps | .dppd
+    let reg := if is128Only then "x" else "y"
+    [s!"{mn} $1, (%rsp), %xmm1"] ++
+    (if op == .sha1rnds4 then [] else [s!"v{mn} $2, %{reg}mm2, %{reg}mm3, %{reg}mm4"])) ++
   failing SimdShiftOp (fun _ mn => [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++
   failing SimdTestOp (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm3, %xmm4"]) ++
-  failing SimdBlendvOp (fun _ mn => [s!"{mn} %xmm0, (%rsp), %xmm1", s!"v{mn} %ymm1, %ymm2, %ymm3, %ymm4"]) ++
+  failing SimdBlendvOp (fun op mn =>
+    [s!"{mn} %xmm0, (%rsp), %xmm1"] ++
+    (if op.hasVex then [s!"v{mn} %ymm1, %ymm2, %ymm3, %ymm4"] else [])) ++
   failing SimdFmaOp (fun _ mn => [s!"v{mn} (%rsp), %xmm1, %xmm2", s!"v{mn} %xmm1, %xmm2, %xmm3"]) ++
   failing SimdScalarMov (fun _ mn => [
     s!"{mn} %xmm1, %xmm0",
@@ -187,3 +204,36 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard (parse "lock btq $1, (%rsp)") matches .error _
 #guard (parse "lock movq %rax, (%rsp)") matches .error _
 #guard (parse "lock btsq $1, (%rsp)") matches .ok _
+-- Legacy SSE instructions reject ymm operands
+#guard (parse "addps %ymm0, %ymm1") matches .error _
+#guard (parse "movdqa %ymm0, %ymm1") matches .error _
+-- VEX SHA instructions do not exist
+#guard (parse "vsha1msg1 %xmm1, %xmm2, %xmm3") matches .error _
+#guard (parse "vsha1rnds4 $1, %xmm1, %xmm2, %xmm3") matches .error _
+#guard (parse "vsha256rnds2 %xmm1, %xmm2, %xmm3") matches .error _
+-- 128-bit only VEX instructions reject ymm
+#guard (parse "vaesimc %ymm0, %ymm1") matches .error _
+#guard (parse "vaeskeygenassist $0, %ymm0, %ymm1") matches .error _
+#guard (parse "vphminposuw %ymm0, %ymm1") matches .error _
+#guard (parse "vdppd $1, %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vpextrb $0, %ymm0, %rax") matches .error _
+#guard (parse "vpinsrb $0, %rax, %ymm0, %ymm1") matches .error _
+#guard (parse "vmovd %rax, %ymm0") matches .error _
+#guard (parse "vmovq %rax, %ymm0") matches .error _
+#guard (parse "vextractps $0, %ymm0, %rax") matches .error _
+#guard (parse "vinsertps $0, %xmm0, %ymm1, %ymm2") matches .error _
+-- Scalar SIMD VEX instructions reject ymm
+#guard (parse "vaddss %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vcmpss $0, %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vroundss $0, %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vfmadd132ss %ymm0, %ymm1, %ymm2") matches .error _
+-- 256-bit only VEX instructions reject xmm
+#guard (parse "vpermq $0, %xmm0, %xmm1") matches .error _
+#guard (parse "vpermpd $0, %xmm0, %xmm1") matches .error _
+#guard (parse "vpermd %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vpermps %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vperm2f128 $0, %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vperm2i128 $0, %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "vbroadcastsd (%rax), %xmm0") matches .error _
+#guard (parse "vbroadcasti128 (%rax), %xmm0") matches .error _
+#guard (parse "vbroadcastf128 (%rax), %xmm0") matches .error _

@@ -719,35 +719,60 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
   if let some (op, w?) := lookupSized BitTestOp mn then ps := ps.push do
     commaSeparated w? parseOperand parseRegOrMem (.bt op)
   if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov op)
+    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.mov op)
   if let some op := Mnemonic.ofName? (α := SimdMov) v then ps := ps.push do
     commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.vmov op)
   if let some op := Mnemonic.ofName? (α := SimdBinOp) mn then ps := ps.push do
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
+    if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sse op dst src))
   if let some op := Mnemonic.ofName? (α := SimdBinOp) v then ps := ps.push do
-    let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    if let .crypto cop := op then
+      if !cop.hasVex then fail s!"v{v} is not a valid instruction"
+    let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    if op.memBytes?.isSome && w != .W128 then fail s!"v{v}: scalar op requires 128-bit operands"
+    if let .perm pop := op then
+      if (pop == .permd || pop == .permps) && w != .W256 then fail s!"v{v}: requires 256-bit operands"
     pure (toAvxInstr addr_w (.vex op dst src1 src2))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdUnOp) name then ps := ps.push do
-      let (addr_w, ⟨_, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
+      let (addr_w, ⟨w, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
+      if !vex then
+        if w != .W128 then fail s!"{name}: expected 128-bit operands"
+        if op matches .cvtph2ps | .broadcastss | .broadcastsd | .broadcasti128 | .broadcastf128 then
+          fail s!"{name}: VEX-only instruction"
+      else
+        if (op matches .broadcastsd | .broadcasti128 | .broadcastf128) && w != .W256 then
+          fail s!"{name}: requires 256-bit operands"
+        if (op matches .phminposuw | .aesimc | .movq | .movd) && w != .W128 then
+          fail s!"{name}: requires 128-bit operands"
       pure (toAvxInstr addr_w (if vex then .vexUn op dst src else .sseUn op dst src))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdUnImmOp) name then ps := ps.push do
       let imm ← parseImmComma
-      let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+      let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
+      if !vex && w != .W128 then fail s!"{name}: expected 128-bit operands"
+      if vex && name == "aeskeygenassist" && w != .W128 then fail s!"{name}: expected 128-bit operands"
+      if vex && (name == "permq" || name == "permpd") && w != .W256 then fail s!"{name}: expected 256-bit operands"
       pure (toAvxInstr addr_w (if vex then .vexUnImm op dst src imm else .sseUnImm op dst src imm))
   if let some op := Mnemonic.ofName? (α := SimdBinImmOp) mn then ps := ps.push do
     let imm ← parseImmComma
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
+    if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sseImm op dst src imm))
   if let some op := Mnemonic.ofName? (α := SimdBinImmOp) v then ps := ps.push do
+    if v == "sha1rnds4" then fail "vsha1rnds4 is not a valid instruction"
     let imm ← parseImmComma
-    let (addr_w, ⟨_, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    let (addr_w, ⟨w, src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    if (v == "roundss" || v == "roundsd" || v == "cmpss" || v == "cmpsd" || v == "insertps" || v == "dppd") && w != .W128 then
+      fail s!"v{v}: expected 128-bit operands"
+    if (v == "perm2f128" || v == "perm2i128") && w != .W256 then
+      fail s!"v{v}: expected 256-bit operands"
     pure (toAvxInstr addr_w (.vexImm op dst src1 src2 imm))
   if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
-    let ⟨_, dst⟩ ← parseAvxRegW
+    let ⟨w, dst⟩ ← parseAvxRegW
+    if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sseShift op dst count))
   if let some op := Mnemonic.ofName? (α := SimdShiftOp) v then ps := ps.push do
     let (addr_w, count) ← parseSimdCount
@@ -757,19 +782,24 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     else fail "AVX operand widths differ"
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdTestOp) name then ps := ps.push do
-      let (addr_w, ⟨_, src2, src1⟩) ← parseAvxSrcDst
+      let (addr_w, ⟨w, src2, src1⟩) ← parseAvxSrcDst
+      if !vex && w != .W128 then fail s!"{name}: expected 128-bit operands"
+      if vex && op.memBytes?.isSome && w != .W128 then fail s!"{name}: expected 128-bit operands"
       pure (toAvxInstr addr_w (if vex then .vexTest op src1 src2 else .sseTest op src1 src2))
   if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then ps := ps.push do
     skipHWs; let _ ← pstring "%xmm0"; parseComma
-    let (addr_w, ⟨_, src, dst⟩) ← parseAvxSrcDst
+    let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
+    if w != .W128 then fail s!"{mn}: expected 128-bit operands"
     pure (toAvxInstr addr_w (.sseBlendv op dst src))
   if let some op := Mnemonic.ofName? (α := SimdBlendvOp) v then ps := ps.push do
+    if !op.hasVex then fail s!"v{v} is not a valid instruction"
     let ⟨w, mask⟩ ← parseAvxRegW; parseComma
     let (addr_w, ⟨w', src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
     if h : w = w' then pure (toAvxInstr addr_w (.vexBlendv op dst src1 src2 (h ▸ mask)))
     else fail "AVX operand widths differ"
   if let some op := Mnemonic.ofName? (α := SimdFmaOp) v then ps := ps.push do
-    let (addr_w, ⟨_, src3, src2, dst⟩) ← parseAvxSrc2Src1Dst
+    let (addr_w, ⟨w, src3, src2, dst⟩) ← parseAvxSrc2Src1Dst
+    if op.scalar && w != .W128 then fail s!"{mn}: scalar FMA requires 128-bit operands"
     pure (toAvxInstr addr_w (.fma op dst src2 src3))
   if let some op := Mnemonic.ofName? (α := SimdScalarMov) mn then ps := ps.push do
     commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.sseMovs op)
@@ -819,13 +849,15 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some (op, w?) := lookupSized SimdToGprOp name then ps := ps.push do
       let (addr_w, src) ← parseAvxRegOrMem; parseComma
       let ⟨w, dst⟩ ← parseRegW; checkSuffix w? w
+      if !vex && src.1.any (· != .W128) then fail s!"{name}: expected 128-bit operand"
       let srcW := if !vex || op.memBytes?.isSome then .W128 else src.1.getD .W128
       let vsrc ← ascribeAvx srcW src
       pure (toAvxInstr addr_w (if vex then .vexToGpr op dst vsrc else .sseToGpr op dst vsrc))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdExtractOp) name then ps := ps.push do
       let imm ← parseOptImmComma op.hasImm
-      let ⟨_, src⟩ ← parseAvxRegW; parseComma
+      let ⟨w, src⟩ ← parseAvxRegW; parseComma
+      if w != .W128 then fail s!"{name}: expected xmm source"
       let (addr_w, dst) ← parseRegOrMem
       let w := dst.1.getD (.ofBits op.memBits)
       let d ← ascribe w dst
@@ -836,7 +868,8 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         let (addr_w, src) ← parseRegOrMem
         if src.1.isNone then fail s!"{name} memory loads handled by SimdUnOp"
         parseComma
-        let ⟨_, dst⟩ ← parseAvxRegW
+        let ⟨w, dst⟩ ← parseAvxRegW
+        if w != .W128 then fail s!"{name}: expected xmm destination"
         let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
         let ascribed ← ascribe srcW src
         pure (toAvxInstr addr_w (if vex then .vexInsert op dst dst ascribed none else .sseInsert op dst ascribed none))
@@ -845,6 +878,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         let (addr_w, src2) ← parseRegOrMem; parseComma
         let ⟨w, src1⟩ ← parseAvxRegW; parseComma
         let dst ← parseAvxRegW
+        if w != .W128 then fail s!"{name}: expected xmm source"
         if h : dst.w = w then
           let srcW := (w? <|> src2.1).getD (.ofBits op.memBits)
           pure (toAvxInstr addr_w (.vexInsert op (h ▸ dst.reg) src1 (← ascribe srcW src2) imm))
@@ -852,7 +886,8 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
       else
         let imm ← parseOptImmComma op.hasImm
         let (addr_w, src) ← parseRegOrMem; parseComma
-        let ⟨_, dst⟩ ← parseAvxRegW
+        let ⟨w, dst⟩ ← parseAvxRegW
+        if w != .W128 then fail s!"{name}: expected xmm destination"
         let srcW := (w? <|> src.1).getD (.ofBits op.memBits)
         pure (toAvxInstr addr_w (.sseInsert op dst (← ascribe srcW src) imm))
   return ps
