@@ -50,3 +50,9 @@ def SimdBinOp.memBytes? : SimdBinOp → Option Nat
   | .fpcmp op => op.memBytes?
   | _ => none
 
+/-- Whether this operation has a legacy (non-VEX) SSE form. -/
+def SimdBinOp.hasLegacy : SimdBinOp → Bool
+  | .perm _ => false
+  | .int .psllvd | .int .psllvq | .int .psrlvd | .int .psrlvq | .int .psravd => false
+  | _ => true
+

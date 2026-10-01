@@ -23,7 +23,7 @@ def roundtrips (s : String) : Bool :=
 /-- One line per `Operation`/`AvxOperation` constructor and operand form. -/
 def corpus : List String := [
   -- data movement, all widths and operand kinds
-  "movq $42, %rax", "movl $-1, %r9d", "movw %ax, %r15w", "movb %ah, %sil",
+  "movq $42, %rax", "movl $-1, %r9d", "movw %ax, %r15w", "movb %ah, %al",
   "movabsq $0xFFFFFFFFFFFFFFFF, %rdx", "movq $-9223372036854775808, %rdx",
   "movq sym, %rax", "movq 8(%rsp), %rax", "movq %rax, -16(%rbp,%rcx,8)",
   "movb $1, (%eax)", "movl %eax, 4(%r8d,%r9d,2)", "movq (%rax,%rbx), %rcx",
@@ -110,8 +110,8 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard_msgs in
 #eval failing SimdBinOp (fun op mn =>
     let hasVex := match op with | .crypto cop => cop.hasVex | _ => true
-    let isScalar := op.memBytes?.isSome
-    [s!"{mn} 16(%rsp), %xmm1"] ++
+    let isScalar := op.memBytes?.isSome || (op matches .shuf .movlhps | .shuf .movhlps)
+    (if op.hasLegacy then [s!"{mn} 16(%rsp), %xmm1"] else []) ++
     (if hasVex then [s!"v{mn} %{if isScalar then "x" else "y"}mm1, %{if isScalar then "x" else "y"}mm2, %{if isScalar then "x" else "y"}mm3"] else [])) ++
   failing GprUnOp (fun _ mn => [s!"{mn} (%rsp), %rax", s!"{mn}l %eax, %ebx"]) ++
   failing GprBinOp (fun op mn => [s!"{mn} %rax, %rbx, %rcx",
@@ -119,25 +119,27 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++
   failing SimdMov (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"]) ++
   failing SimdUnOp (fun op mn =>
-    let hasLegacy := !op matches .cvtph2ps | .broadcastss | .broadcastsd | .broadcasti128 | .broadcastf128
     let is128Only := op matches .phminposuw | .aesimc | .movq | .movd
     let dstReg := if is128Only || op.isNarrowing then "x" else "y"
-    (if hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++
+    (if op.hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++
     (if op.isNarrowing then
       [s!"v{mn} %ymm3, %xmm4", s!"v{mn}x (%rsp), %xmm4", s!"v{mn}y (%rsp), %xmm4"]
+    else if op == .movd then
+      [s!"v{mn} (%rsp), %xmm4"]
     else
       [s!"v{mn} %{if (op.memBytes? 32).isSome then "x" else dstReg}mm3, %{dstReg}mm4"])) ++
   failing SimdUnImmOp (fun op mn =>
     let is128Only := op == .aeskeygenassist
     let reg := if is128Only then "x" else "y"
-    [s!"{mn} $1, (%rsp), %xmm1", s!"v{mn} $255, %{reg}mm3, %{reg}mm4"]) ++
+    (if op.hasLegacy then [s!"{mn} $1, (%rsp), %xmm1"] else []) ++
+    [s!"v{mn} $255, %{reg}mm3, %{reg}mm4"]) ++
   failing SimdBinImmOp (fun op mn =>
     let is128Only := op matches .roundss | .roundsd | .cmpss | .cmpsd | .insertps | .dppd
     let reg := if is128Only then "x" else "y"
-    [s!"{mn} $1, (%rsp), %xmm1"] ++
+    (if op.hasLegacy then [s!"{mn} $1, (%rsp), %xmm1"] else []) ++
     (if op == .sha1rnds4 then [] else [s!"v{mn} $2, %{reg}mm2, %{reg}mm3, %{reg}mm4"])) ++
   failing SimdShiftOp (fun _ mn => [s!"{mn} $3, %xmm1", s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm2, %ymm3, %ymm4"]) ++
-  failing SimdTestOp (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"v{mn} %xmm3, %xmm4"]) ++
+  failing SimdTestOp (fun op mn => (if op.hasLegacy then [s!"{mn} (%rsp), %xmm1"] else []) ++ [s!"v{mn} %xmm3, %xmm4"]) ++
   failing SimdBlendvOp (fun op mn =>
     [s!"{mn} %xmm0, (%rsp), %xmm1"] ++
     (if op.hasVex then [s!"v{mn} %ymm1, %ymm2, %ymm3, %ymm4"] else [])) ++
@@ -362,3 +364,36 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
 #guard roundtrips "blendvps %xmm1, %xmm2"
 #guard roundtrips "blendvpd (%rax), %xmm2"
 #guard roundtrips "pblendvb %xmm1, %xmm2"
+#guard (parse "blendvps %xmm0, %xmm2") matches .ok _
+#guard (parse "sha256rnds2 %xmm0, %xmm2") matches .ok _
+
+-- Unsuffixed memory push/pop defaults to 64-bit
+#guard (parse "push (%rax)") matches .ok _
+#guard (parse "pop 8(%rsp)") matches .ok _
+
+-- VEX-only instructions reject legacy non-v forms
+#guard (parse "pbroadcastb %xmm0, %xmm1") matches .error _
+#guard (parse "permd %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "permps %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "psllvd %xmm0, %xmm1, %xmm2") matches .error _
+#guard (parse "permq $0, %xmm0, %xmm1") matches .error _
+#guard (parse "pblendd $1, %xmm0, %xmm1") matches .error _
+#guard (parse "testps %xmm0, %xmm1") matches .error _
+#guard (parse "testpd %xmm0, %xmm1") matches .error _
+
+-- vmovlhps/vmovhlps reject ymm
+#guard (parse "vmovlhps %ymm0, %ymm1, %ymm2") matches .error _
+#guard (parse "vmovhlps %ymm0, %ymm1, %ymm2") matches .error _
+
+-- REX registers with high byte registers
+#guard (parse "crc32b %ah, %r8d") matches .error _
+#guard (parse "movb %ah, %sil") matches .error _
+#guard (parse "addb %ah, %r8b") matches .error _
+#guard (parse "movzbq %ah, %rax") matches .error _
+#guard (parse "movb %ah, (%r8)") matches .error _
+#guard (parse "movb %ah, (%rax)") matches .ok _
+#guard (parse "movb %ah, %al") matches .ok _
+#guard (parse "movzbl %ah, %eax") matches .ok _
+
+-- movd between vector registers rejected
+#guard (parse "movd %xmm1, %xmm0") matches .error _

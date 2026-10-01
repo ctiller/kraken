@@ -38,6 +38,11 @@ def SimdUnOp.isNarrowing : SimdUnOp → Bool
   | .cvtpd2ps | .cvtpd2dq | .cvttpd2dq => true
   | _ => false
 
+/-- Whether this operation has a legacy (non-VEX) SSE form. -/
+def SimdUnOp.hasLegacy : SimdUnOp → Bool
+  | .cvtph2ps | .broadcastss | .broadcastsd | .broadcasti128 | .broadcastf128
+  | .pbroadcastb | .pbroadcastw | .pbroadcastd | .pbroadcastq => false
+  | _ => true
 
 def SimdUnOp.interp {n} : SimdUnOp → BitVec n → BitVec n
   | .pabsb => .map1 8 fun x => if x.msb then -x else x
