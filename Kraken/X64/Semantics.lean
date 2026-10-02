@@ -725,6 +725,19 @@ set_option maxHeartbeats 1000000
             ++ a.extractLsb' 32 8 ++ a.extractLsb' 40 8 ++ a.extractLsb' 48 8 ++ a.drop 56
       next (s.setReg dst (v.setWidth _))
     | _ => undefined (fun v => next (s.setReg dst v))
+  | .bt op base offset =>
+    offset.interp s p (fun off s =>
+    -- A register bit offset into memory is signed and may select a bit outside the operand.
+    let (base, i) : Dst w × Nat := match base, offset with
+      | .mem a, .regOrMem _ => (.mem { a with disp := .add a.disp (.int64 (.ofInt
+          (off.toInt.ediv w.bits * w.bytes))) }, off.toInt.emod w.bits |>.toNat)
+      | base, _ => (base, off.toNat % w.bits)
+    base.interp s p (fun v s =>
+    undefined fun of => undefined fun sf => undefined fun af => undefined fun pf =>
+    let s := { s with status := { s.status with cf := v.getLsbD i, of, sf, af, pf } }
+    match op.update (v.getLsbD i) with
+    | none => next s
+    | some b => s.set base (if b then v ||| BitVec.twoPow _ i else v &&& ~~~BitVec.twoPow _ i) p next))
   | .jcc cc l =>
     if cc.interp s.status
     then jmp (label l) s

@@ -616,9 +616,23 @@ def parseImm8 : Parser ConstExpr := do
   skipHWs; let _ ← pchar '$'; let v ← parseInt
   pure (.int64 (.ofInt v))
 
+/-- The bit offset of `bt`: a register or an unsigned imm8. -/
+def parseBitOffset : Parser (MaybeAddrWidth × MaybeOpWidth Operand) := do
+  skipHWs
+  if (← peek!) == '$' then
+    let i ← parseImm8
+    pure (.none, ⟨ .none, .imm i ⟩)
+  else
+    let ⟨ w, r ⟩ ← parseRegW
+    pure (.none, ⟨ w, .reg r ⟩)
+
 /-- The parsers for the operands of the family opcodes (see Kraken/X64/Ops) named `mn`. A mnemonic
 may belong to several families with different operand shapes. -/
-def familyParsers (_mn : String) : Array (Parser Instr) := #[]
+def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
+  let mut ps : Array (Parser Instr) := #[]
+  if let some (op, w?) := lookupSized BitTestOp mn then ps := ps.push do
+    commaSeparated w? parseBitOffset parseRegOrMem (.bt op)
+  return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
 operand shape matches. -/

@@ -4,6 +4,7 @@ import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
+public import Kraken.X64.Ops.BitTest
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -246,6 +247,7 @@ inductive Operation (w : Width)
   | rcl  (_ : Dst w) (_ : ShiftCountExpr)
   | rcr  (_ : Dst w) (_ : ShiftCountExpr)
   | bswap  (dst : Reg w) -- (_ : w = .W32 ∨ w = .W64)
+  | bt (op : BitTestOp) (base : Dst w) (offset : Operand w)
   -- Control flow
   | jcc (cc : CondCode) (target : Label)
   | jmp (target : RelRegOrMem)

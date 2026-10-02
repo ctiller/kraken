@@ -107,6 +107,7 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .rcl d c => two "rcl" (count c) (rm aw d)
   | .rcr d c => two "rcr" (count c) (rm aw d)
   | .bswap d => s!"bswap {reg d}"
+  | .bt op base off => two (Mnemonic.name op) (operand aw off) (rm aw base)
   | .jcc cc l => s!"j{cc} {l}"
   | .jmp t => s!"jmp {target aw t}"
   | .call t => s!"call {target aw t}"

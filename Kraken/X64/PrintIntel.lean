@@ -158,6 +158,7 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .rcl dst cnt => s!"rcl {dst.toStr addr_w}, {cnt}"
   | .rcr dst cnt => s!"rcr {dst.toStr addr_w}, {cnt}"
   | .bswap dst => s!"bswap {dst}"
+  | .bt op base off => s!"{Mnemonic.name op} {base.toStr addr_w}, {off.toStr addr_w}"
   | .jcc cc l => s!"j{cc} {l}"
   | .jmp tgt => s!"jmp {tgt.toStr addr_w}"
   | .call tgt => s!"call {tgt.toStr addr_w}"

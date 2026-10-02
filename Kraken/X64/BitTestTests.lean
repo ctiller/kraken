@@ -19,8 +19,16 @@ def roundtrips (s : String) : Bool :=
     | .error _ => false
   | .error _ => false
 
-def accepted : List String :=
-  (["bt", "bts", "btr", "btc"].flatMap fun mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"]) ++ [
+/-- The mnemonics of family `α` for which one of `forms` doesn't round-trip. -/
+def failing (α) [Mnemonic α] (forms : α → String → List String) : List String :=
+  (Mnemonic.names (α := α)).toList.filterMap fun (op, mn) =>
+    if (forms op mn).all roundtrips then none else some mn
+
+/-- info: [] -/
+#guard_msgs in
+#eval failing BitTestOp (fun _ mn => [s!"{mn}q $5, (%rsp)", s!"{mn} %ax, %bx"])
+
+def accepted : List String := [
   "lock btsq $1, (%rsp)",
   "bt %ax, %bx", "bt %eax, (%rsp)", "btsq %rax, %rbx", "btl $255, (%rsp)", "btcw $0, %ax"
 ]
