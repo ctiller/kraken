@@ -222,12 +222,42 @@ instance {w} : Gen (Operation w) := ⟨gen_ctors% Operation⟩
 instance {w} : Gen (AvxOperation w) := ⟨gen_ctors% AvxOperation⟩
 instance : Gen Instr := ⟨gen_ctors% Instr⟩
 
-/-- The candidates that `as` assembles without errors or warnings. APX is excluded because the
-hardware lacks it (e.g. `imul %edx, %r12d, %edi`), AVX-512 because the harness only observes
-ymm0-15. -/
+/-- `as` extension names with the `/proc/cpuinfo` flag that advertises them, for extensions that
+some hosts (notably CI runners) lack; a change that adds instructions from another such extension
+must add it here. -/
+def optionalExtensions : List (String × String) :=
+  [("gfni", "gfni"), ("vaes", "vaes"), ("vpclmulqdq", "vpclmulqdq"), ("sha", "sha_ni"),
+   ("aes", "aes"), ("pclmul", "pclmulqdq"), ("f16c", "f16c"), ("fma", "fma"),
+   ("bmi", "bmi1"), ("bmi2", "bmi2"), ("adx", "adx"), ("movbe", "movbe"), ("lzcnt", "abm"),
+   ("popcnt", "popcnt"), ("avx2", "avx2")]
+
+/-- The host's `/proc/cpuinfo` flags, or `none` when they cannot be determined (then every
+extension is assumed present). `KRAKEN_CPU_FLAGS` overrides them. -/
+def hostFeatures : IO (Option (List String)) := do
+  let words (s : String) :=
+    (s.map fun c => if c.isWhitespace then ' ' else c).splitOn " " |>.filter (· ≠ "")
+  if let some s ← IO.getEnv "KRAKEN_CPU_FLAGS" then return some (words s)
+  try
+    for line in (← IO.FS.readFile "/proc/cpuinfo").splitOn "\n" do
+      if line.startsWith "flags" then
+        return some (words (line.splitOn ":" |>.getD 1 ""))
+    return none
+  catch _ => return none
+
+/-- The `-march` for `as`: APX is excluded because the hardware lacks it (e.g.
+`imul %edx, %r12d, %edi`), AVX-512 because the harness only observes ymm0-15, and every
+`optionalExtensions` entry the host lacks because its instructions would raise #UD. -/
+def asMarch : IO String := do
+  let missing : List String := match ← hostFeatures with
+    | some flags => optionalExtensions.filterMap fun (ext, flag) =>
+        if flags.contains flag then none else some ext
+    | none => []
+  return "-march=+noapx_f+noavx512f" ++ String.join (missing.map (s!"+no{·}"))
+
+/-- The candidates that `as` assembles without errors or warnings for this host (`asMarch`). -/
 def assemblable (cands : Array String) : IO (Array String) := IO.FS.withTempFile fun h path => do
   h.putStr ("\n".intercalate cands.toList ++ "\n"); h.flush
-  let out ← IO.Process.output { cmd := "as", args := #["-march=+noapx_f+noavx512f", "-o", "/dev/null", path.toString] }
+  let out ← IO.Process.output { cmd := "as", args := #[← asMarch, "-o", "/dev/null", path.toString] }
   let pfx := path.toString ++ ":"
   let bad := out.stderr.splitOn "\n" |>.filterMap fun l =>
     (l.dropPrefix? pfx).bind (·.takeWhile Char.isDigit |>.toString.toNat?)
