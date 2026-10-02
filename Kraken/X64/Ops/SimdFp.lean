@@ -14,6 +14,7 @@ inductive SimdFp
   | addps | addpd | subps | subpd | mulps | mulpd | divps | divpd
   | minps | minpd | maxps | maxpd
 
+  | addsubps | addsubpd | haddps | haddpd | hsubps | hsubpd
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic SimdFp := ⟨mnemonics% SimdFp⟩
@@ -43,3 +44,12 @@ def SimdFp.interp : SimdFp → BitVec 128 → BitVec 128 → BitVec 128
   | .minpd => .map2 64 sseMin64
   | .maxpd => .map2 64 sseMax64
 
+  -- Asymmetric / horizontal ops
+  | .addsubps => fun a b => .ofLanes 128 32 fun i =>
+    (if i % 2 == 0 then sseBinOp (· - ·) else sseBinOp (· + ·)) (a.lane 32 i) (b.lane 32 i)
+  | .addsubpd => fun a b => .ofLanes 128 64 fun i =>
+    (if i % 2 == 0 then sseBinOp64 (· - ·) else sseBinOp64 (· + ·)) (a.lane 64 i) (b.lane 64 i)
+  | .haddps => .hop 32 (sseBinOp (· + ·))
+  | .haddpd => .hop 64 (sseBinOp64 (· + ·))
+  | .hsubps => .hop 32 (sseBinOp (· - ·))
+  | .hsubpd => .hop 64 (sseBinOp64 (· - ·))
