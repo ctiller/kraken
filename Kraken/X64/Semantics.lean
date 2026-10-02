@@ -438,10 +438,6 @@ structure StatusFlags.from_result.Remaining where
   cf : Bool
   af : Bool
   of : Bool
-  /-- The direction flag is not a status flag, so no instruction that computes a result changes it;
-  callers copy it from the previous flags by writing `{ s.status with cf, af, of }` (omitting the
-  source is a compile error). -/
-  df : Bool
   deriving Repr, BEq, DecidableEq
 
 -- TEMPORARY: definitions stolen from Lean 4.28's standard library, but with a
@@ -471,48 +467,50 @@ def StatusFlags.update (s : StatusFlags) (f : FlagsOut) (k : StatusFlags → Eff
 @[kstep] def StatusFlags.loadLow {n} (f : StatusFlags) (v : BitVec n) : StatusFlags :=
   { f with cf := v.getLsbD 0, pf := v.getLsbD 2, af := v.getLsbD 4, zf := v.getLsbD 6, sf := v.getLsbD 7 }
 
-@[kstep] def StatusFlags.from_result {w} (result : BitVec w) (f : from_result.Remaining) : StatusFlags :=
-  { f with
+@[kstep] def StatusFlags.from_result {w} (result : BitVec w) (f : from_result.Remaining) (old : StatusFlags := .mk false false false false false false false) : StatusFlags :=
+  { old with
     pf := (result.take 8).cpop_ % 2 == BitVec.zero _
     zf := result == BitVec.zero _
-    sf := result.msb }
+    sf := result.msb, cf := f.cf, af := f.af, of := f.of }
 
 @[kstep] def addFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
   let cin : BitVec w := if c then 1 else 0
   let v := a + b + cin
   let cint : Int := if c then 1 else 0
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
     cf := v.unsigned != a.unsigned + b.unsigned + cint
     af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + cint
-    of := v.signed != a.signed + b.signed + cint })
+    of := v.signed != a.signed + b.signed + cint } old)
 
 @[kstep] def subFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
   let cin : BitVec w := if c then 1 else 0
   let v := a - b - cin
   let cint : Int := if c then 1 else 0
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
     cf := v.unsigned != a.unsigned - b.unsigned - cint
     af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned - cint
-    of := v.signed != a.signed - b.signed - cint })
+    of := v.signed != a.signed - b.signed - cint } old)
 
 @[kstep] def incFlags {w} (old : StatusFlags) (a : BitVec w) : BitVec w × StatusFlags :=
   let v := a + 1
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
+    cf := old.cf
     af := (v.take 4).unsigned != (a.take 4).unsigned + 1
-    of := v.signed != a.signed + 1 })
+    of := v.signed != a.signed + 1 } old)
 
 @[kstep] def decFlags {w} (old : StatusFlags) (a : BitVec w) : BitVec w × StatusFlags :=
   let v := a - 1
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
+    cf := old.cf
     af := (v.take 4).unsigned != (a.take 4).unsigned - 1
-    of := v.signed != a.signed - 1 })
+    of := v.signed != a.signed - 1 } old)
 
 @[kstep] def negFlags {w} (old : StatusFlags) (b : BitVec w) : BitVec w × StatusFlags :=
   let v := -b
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
     cf := b != 0
     af := (b.take 4) != 0
-    of := v.signed != - b.signed })
+    of := v.signed != - b.signed } old)
 
 
 
@@ -539,6 +537,57 @@ set_option maxHeartbeats 1000000
     src.interp s p (fun src s =>
     let v := if cc.interp s.status then src else s.regs.get dst
     next (s.setReg dst v))
+  | .xchg dst src =>
+    dst.interp s p (fun dval s =>
+    let sval := s.regs.get src
+    -- Store first: `src` may be part of the address.
+    s.set dst sval p fun s => next (s.setReg src dval))
+  | .xadd dst src =>
+    dst.interp s p (fun dval s =>
+    let (v, status) := addFlags s.status dval (s.regs.get src)
+    let s := { s with status }
+    match dst with
+    -- Store first: `src` may be part of the address.
+    | .mem _ => s.set dst v p fun s => next (s.setReg src dval)
+    -- `SRC := DEST; DEST := TEMP`: the sum wins if they are the same register.
+    | .reg r => next ((s.setReg src dval).setReg r v))
+  | .cmpxchg dst src =>
+    let acc := s.regs.get (Reg.low .rax w)
+    dst.interp s p (fun dval s =>
+    let (_, status) := subFlags s.status acc dval
+    let s := { s with status }
+    if acc == dval then
+      let sval := s.regs.get src
+      s.set dst sval p next
+    else
+      let setAcc (s : MachineData) := s.setReg (Reg.low .rax w) dval
+      match dst with
+      -- Store first: the accumulator may be part of the address.
+      | .mem _ => s.set dst dval p fun s => next (setAcc s)
+      | .reg r =>
+        let s := setAcc s
+        -- The SDM writes `DEST := TEMP` here too, which would zero-extend a 32-bit register, but
+        -- Intel processors leave it unchanged: either is possible. Other widths are unaffected.
+        if w matches .W32 then undefined fun (write : Bool) => next (if write then s.setReg r dval else s)
+        else next s)
+  | .cmpxchg8b a =>
+    let addr := (a.interp s.regs p).zeroExtend 64
+    let pair (hi lo : Reg64) := (s.regs.get (.low hi .W32) ++ s.regs.get (.low lo .W32)).setWidth 64
+    s.load addr .W64 (fun m s =>
+    let s := { s with status.zf := m == pair .rdx .rax }
+    if s.status.zf then s.store addr (pair .rcx .rbx) next
+    else ((s.setReg (.low .rax .W32) (m.take 32)).setReg (.low .rdx .W32) ((m.drop 32).setWidth 32)).store addr m next)
+  | .cmpxchg16b a =>
+    let addr := (a.interp s.regs p).zeroExtend 64
+    if !isAligned 16 addr then
+      .gp_unaligned addr 16
+    else
+      s.load addr .W64 (fun lo s =>
+      s.load (addr + 8) .W64 (fun hi s =>
+      let s := { s with status.zf := lo == s.regs.get64 .rax && hi == s.regs.get64 .rdx }
+      let (lo, hi, s) := if s.status.zf then (s.regs.get64 .rbx, s.regs.get64 .rcx, s)
+        else (lo, hi, (s.setReg (.low .rax .W64) lo).setReg (.low .rdx .W64) hi)
+      s.store addr lo fun s => s.store (addr + 8) hi next))
 -- Arithmetic
   | .lea dst src => next (s.setReg dst ((src.interp s.regs p).zeroExtend _))
   | .add dst src =>
@@ -640,14 +689,14 @@ set_option maxHeartbeats 1000000
     b.interp s p (fun b s =>
     let v := a &&& b
     undefined (fun af =>
-    let status := .from_result v { s.status with cf := false, af, of := false }
+    let status := .from_result v { cf := false, af, of := false } s.status
     next { s with status})))
   | .and dst src | .or dst src | .xor dst src =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
     let v := match i with | .and _ _ => a &&& b | .or _ _ => a ||| b | _ => a ^^^ b
     undefined (fun af =>
-    let status := .from_result v { s.status with cf := false, of := false, af }
+    let status := .from_result v { cf := false, of := false, af } s.status
     { s with status }.set dst v p next)))
   | .not dst =>
     dst.interp s p (fun a s =>
@@ -691,11 +740,10 @@ set_option maxHeartbeats 1000000
       let cf := a.getLsbD (count-1)
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { s.status with cf, af, of })))) (λ (status : StatusFlags) =>
+      setstatus (.from_result v { cf, af, of})))) (λ status =>
     -- The result is undefined if the count exceeds the operand size (only possible for 16 bits).
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
-    -- Only the status flags can be undefined; DF is kept.
-    { s with status := { status with df := s.status.df } }.set dst v p next))))
+    { s with status }.set dst v p next))))
   | .shld dst src count =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
@@ -706,10 +754,9 @@ set_option maxHeartbeats 1000000
       let cf := (a <<< (count-1)).msb
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { s.status with cf, af, of })))) (λ (status : StatusFlags) =>
+      setstatus (.from_result v { cf, af, of})))) (λ status =>
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
-    -- Only the status flags can be undefined; DF is kept.
-    { s with status := { status with df := s.status.df } }.set dst v p next))))
+    { s with status }.set dst v p next))))
   | .rol dst count | .ror dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w

@@ -595,6 +595,13 @@ def parseBinaryRegOrMem (op_w : Option Width) : Parser (MaybeAddrWidth × Σ w, 
     let a ← parseRegOrMem; parseComma
     ascribeOrInfer a parseRegOrMem
 
+def parseXchg (op_w : Option Width) : Parser Instr := do
+  let (addr_w, ⟨_w, a, b⟩) ← parseBinaryRegOrMem op_w
+  match a, b with
+  | .reg r, dst => pure (toInstr addr_w (.xchg dst r))
+  | dst, .reg r => pure (toInstr addr_w (.xchg dst r))
+  | .mem _, .mem _ => fail "xchg cannot have two memory operands"
+
 def parseUnaryRegOrMem (op_w : Option Width) : Parser (MaybeAddrWidth × Σ w, RegOrMem w) := do
   match op_w with
   | some w =>
@@ -631,6 +638,15 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
 def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser Instr := do
   if repPfx != .none then
     fail "rep prefixes apply only to string instructions"
+  let (stem, w?) := splitWidthSuffix mn
+  match stem, w? with
+  | "xadd", w? =>
+    commaSeparated w? parseRegA parseRegOrMem .xadd
+  | "cmpxchg", w? =>
+    commaSeparated w? parseRegA parseRegOrMem .cmpxchg
+  | "xchg", w? =>
+    parseXchg w?
+  | _, _ =>
   -- Match on full mnemonic name (no suffix stripping)
   match mn with
   -- Arithmetic (two-operand: src, dst) - 64-bit
@@ -795,6 +811,14 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
   | "movabsq" | "movabsl" | "movabsw" | "movabsb" =>
     let w ← instrWidth mn
     commaSeparated w parseOperand parseRegOrMem .mov
+
+  | "cmpxchg8b" =>
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.cmpxchg8b a))
+
+  | "cmpxchg16b" =>
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.cmpxchg16b a))
 
   | "movsx" =>
     -- Must be a register otherwise lacking type info
