@@ -1,5 +1,6 @@
 module
 
+public import Kraken.X64.Ops.Flags
 import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Mnemonic
@@ -180,7 +181,7 @@ attribute [coe] Operand.imm
 abbrev Operand.reg {w} (r : Reg w) : Operand w := regOrMem (.reg r)
 abbrev Operand.mem {w} (m : AddrExpr) : Operand w := regOrMem (.mem m)
 
-inductive CondCode | z | nz | c | nc | a | be | l | le
+inductive CondCode | o | no | c | nc | z | nz | be | a | s | ns | p | np | l | ge | le | g
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 abbrev CondCode.e := CondCode.z
 abbrev CondCode.ne := CondCode.nz
