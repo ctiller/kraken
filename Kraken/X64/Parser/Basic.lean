@@ -618,7 +618,14 @@ def parseImm8 : Parser ConstExpr := do
 
 /-- The parsers for the operands of the family opcodes (see Kraken/X64/Ops) named `mn`. A mnemonic
 may belong to several families with different operand shapes. -/
-def familyParsers (_mn : String) : Array (Parser Instr) := #[]
+def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
+  let mut ps : Array (Parser Instr) := #[]
+  if let some op := Mnemonic.ofName? (α := HintOp) mn then ps := ps.push do
+    pure (toInstr .none (w := .W64) (.hint op))
+  if let some op := Mnemonic.ofName? (α := MemHintOp) mn then ps := ps.push do
+    let (addr_w, a) ← parseMemory
+    pure (toInstr (some addr_w) (w := .W64) (.memHint op a))
+  return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
 operand shape matches. -/
@@ -790,6 +797,11 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
 
   | "mov" | "movabs" =>
     commaSeparated .none parseOperand parseRegOrMem .mov
+
+  | "movnti" | "movntil" | "movntiq" =>
+    let ⟨w, src⟩ ← parseRegW; parseComma
+    let (addr_w, dst) ← parseMemory
+    pure (toInstr (some addr_w) (w := w) (.movnti dst src))
 
   | "movq" | "movl" | "movw" | "movb"
   | "movabsq" | "movabsl" | "movabsw" | "movabsb" =>
@@ -1059,6 +1071,11 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
       let sz ← parseHexOrDec
       pure (toInstr .none (w := .W64) (.nop sz.toNat))
     ) <|> (pure (toInstr .none (w := .W64) (.nop 1)))
+
+  | "nopw" | "nopl" | "nopq" =>
+    let w ← instrWidth mn
+    let (addr_w, src) ← parseRegOrMemAO w
+    pure (toInstr addr_w (.nopm src))
 
   -- Control flow - conditional jumps
   | _ =>

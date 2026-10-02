@@ -463,6 +463,9 @@ set_option maxHeartbeats 1000000
   (next : MachineData → Effects) (jmp : Int64 → MachineData → Effects) : Effects :=
   match (generalizing := false) (motive := Operation w → Effects) i with
   | .mov dst src => src.interp s p (fun val s => s.set dst val p next)
+  | .movnti dst src =>
+    let addr := (dst.interp s.regs p).zeroExtend 64
+    s.store addr (s.regs.get src) next
   | .movsx dst src => src.interp s p (fun val s => s.set dst (val.signExtend _) p next)
   | .movzx dst src => src.interp s p (fun val s => s.set dst (val.zeroExtend _) p next)
   | .push src =>
@@ -740,7 +743,7 @@ set_option maxHeartbeats 1000000
     let rsp := s.regs.get64 .rsp
     s.load rsp .W64 (fun ra s =>
     jmp (.ofBitVec ra) { s with regs := s.regs.set64 .rsp (rsp + 8) })
-  | nop _ | nopalign _ _ => next s
+  | nop _ | nopalign _ _ | nopm _ | memHint _ _ | hint _ => next s
 
 -- AVX Operations Interpreter
 def AvxOperation.interp [Labels] [address_size : AddressSize]

@@ -115,6 +115,10 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .nop n => s!"nop {n}"
   | .nopalign a none => s!".align {a}"
   | .nopalign a (some p) => s!".align {a}, {p}"
+  | .hint op => Mnemonic.name op
+  | .nopm x => s!"nop{s} {rm aw x}"
+  | .memHint op a => s!"{Mnemonic.name op} {addr aw a}"
+  | .movnti dst src => s!"movnti {reg src}, {addr aw dst}"
 
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
