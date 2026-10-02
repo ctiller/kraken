@@ -204,6 +204,12 @@ def RepPrefix.toStrPrefix : RepPrefix → String
   | .repe => "repe "
   | .repne => "repne "
 
+/-- String instructions, operating on `w`-sized elements at `(%rsi)` and/or `(%rdi)`. -/
+inductive StringOp | movs | stos | lods | cmps | scas
+  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
+
+instance : Mnemonic StringOp := ⟨mnemonics% StringOp⟩
+
 inductive Operation (w : Width)
   -- Data movement
   | mov (_ : Dst w) (src : Operand w)
@@ -222,6 +228,7 @@ inductive Operation (w : Width)
   | inc  (_ : RegOrMem w)
   | dec  (_ : RegOrMem w)
   | neg  (_ : RegOrMem w)
+  | str (op : StringOp) (rep : RepPrefix)
   | sub  (_ : Dst w) (src : Operand w)
   | sbb  (_ : Dst w) (src : Operand w)
   | cmp  (a : RegOrMem w) (b : Operand w)
