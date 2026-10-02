@@ -27,3 +27,11 @@ def SimdBinOp.interp {n} : SimdBinOp → BitVec n → BitVec n → BitVec n
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdBinOp.memBytes? : SimdBinOp → Option Nat
   | _ => none
+
+/-- haddps/haddpd with the operands of each addition swapped. The SDM contradicts itself on the
+order (pseudocode `SRC1[63:32] + SRC1[31:0]`, figures `xmm1[31:0] + xmm1[63:32]`), which decides
+which of two NaNs is returned, so either order is possible. -/
+def SimdBinOp.swappedInterp? {n} : SimdBinOp → Option (BitVec n → BitVec n → BitVec n)
+  | .fp .haddps => some (.map2 128 (.hop 32 fun x y => sseBinOp (· + ·) y x))
+  | .fp .haddpd => some (.map2 128 (.hop 64 fun x y => sseBinOp64 (· + ·) y x))
+  | _ => none

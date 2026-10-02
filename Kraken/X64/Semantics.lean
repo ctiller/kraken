@@ -370,6 +370,13 @@ def MachineData.set {w} [Labels] [AddressSize] (s : MachineData) (d : Dst w) (v 
   | .reg r => ret (s.setReg r v)
   | .mem a => s.store ((a.interp s.regs p).zeroExtend _) v ret
 
+/-- Passes `op.interp a b` to `k`, or either operand order where the SDM leaves it open (see
+`SimdBinOp.swappedInterp?`). -/
+def SimdBinOp.eval {n} (op : SimdBinOp) (a b : BitVec n) (k : BitVec n → Effects) : Effects :=
+  match op.swappedInterp? with
+  | some f => undefined fun (swap : Bool) => k (if swap then f a b else op.interp a b)
+  | none => k (op.interp a b)
+
 def MachineData.setAvx {aw} [Labels] [AddressSize] (s : MachineData) (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) (legacy := false) : Effects :=
 match d with
   | .avx r => ret (s.setAvxReg r v legacy)
@@ -722,7 +729,7 @@ def AvxOperation.interp [Labels] [address_size : AddressSize]
   -- The legacy SSE and VEX forms of a binary operation (in SSE, `src1` is `dst`).
   let bin (legacy : Bool) (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) :=
     src2.interpSimd op.memBytes? s p legacy fun b s =>
-    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b) legacy)
+    op.eval (s.zmms.get src1) b fun r => next (s.setAvxReg dst r legacy)
 match i with
   | .mov legacy op dst src =>
     src.interp s p (checkAlign := op.aligned) (fun v s =>
