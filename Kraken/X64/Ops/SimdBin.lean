@@ -23,4 +23,5 @@ def SimdBinOp.interp {n} : SimdBinOp → BitVec n → BitVec n → BitVec n
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/
 def SimdBinOp.memBytes? : SimdBinOp → Option Nat
+  | .fp op => op.memBytes?
   | _ => none
