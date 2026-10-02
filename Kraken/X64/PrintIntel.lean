@@ -129,8 +129,14 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
     let m := if w == .W64 && w' == .W32 then "movsxd" else "movsx"
     s!"{m} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .movzx dst src => s!"movzx {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .push src => s!"push {src.toStr addr_w}"
+  | .push src =>
+    match w, src with
+    | .W16, .imm v => s!"push word ptr {v}"
+    | _, _ => s!"push {src.toStr addr_w}"
   | .pop dst => s!"pop {dst.toStr addr_w}"
+  | .leave => "leave"
+  | .pushf => "pushfq"
+  | .popf => "popfq"
   | .setcc cc dst => s!"set{cc} {dst.toStr addr_w}"
   | .cmovcc cc dst src => s!"cmov{cc} {dst}, {src.toStr addr_w}"
   | .lea dst src => s!"lea {dst}, {src.toStr addr_w}"

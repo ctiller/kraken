@@ -211,6 +211,9 @@ inductive Operation (w : Width)
   | movzx {w'} (_ : Dst w) (src : RegOrMem w') -- {_ : w'.bits < w.bits ∧ w'.bits < 32}
   | push (src : Operand w)
   | pop  (_ : Dst w)
+  | leave
+  | pushf
+  | popf
   | setcc (_ : CondCode) (_ : Dst w) -- {_ : w = .W8}
   | cmovcc (_ : CondCode) (_ : Reg w) (src : RegOrMem w)
   -- Arithmetic
