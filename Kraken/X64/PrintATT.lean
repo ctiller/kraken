@@ -125,6 +125,12 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
+  | .un l op d x =>
+    if !l && op.isNarrowing then
+      let suffix := if x matches .mem _ then (if w == .W128 then "x" else "y") else ""
+      s!"v{Mnemonic.name op}{suffix} {avxSrc aw none x}, {avxReg (d.as .W128)}"
+    else
+      s!"{avxName l op} {avxSrc aw (op.memBytes? w.bytes) x}, {avxReg d}"
 
   | .test l op a x => s!"{avxName l op} {avxRm aw x}, {avxReg a}"
   | .mov l op d x => two (avxName l op) d x

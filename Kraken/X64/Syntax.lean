@@ -7,6 +7,7 @@ public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
+public import Kraken.X64.Ops.SimdUn
 public import Kraken.X64.Ops.SimdTest
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
@@ -262,6 +263,7 @@ inductive Operation (w : Width)
 -- forms of an instruction whose legacy SSE and `v` (VEX) forms have the same operands.
 -- TODO: AVX512 extensions (write-masking, ...)
 inductive AvxOperation (w : AvxWidth)
+  | un (legacy : Bool) (op : SimdUnOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   | test (legacy : Bool) (op : SimdTestOp) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
   -- Full-vector moves; the legacy forms preserve the upper bits of a register destination, the
   -- `v` forms zero them.

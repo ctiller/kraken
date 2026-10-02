@@ -180,6 +180,9 @@ def avxName {α} [Mnemonic α] [DecidableEq α] (legacy : Bool) (op : α) : Stri
   (if legacy then "" else "v") ++ Mnemonic.name op
 
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
+  | .un l op dst src =>
+    let dstStr := if !l && op.isNarrowing then ToString.toString (dst.as AvxWidth.W128) else ToString.toString dst
+    s!"{avxName l op} {dstStr}, {src.toStrSimd (op.memBytes? w.bytes) addr_w}"
 
   | .test l op src1 src2 => s!"{avxName l op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .mov l op dst src => s!"{avxName l op} {dst.toStr addr_w}, {src.toStr addr_w}"

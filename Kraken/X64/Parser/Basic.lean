@@ -638,6 +638,16 @@ def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) 
   let ⟨w, dst⟩ ← parseAvxRegW
   pure (addr_w, ⟨w, ← ascribeAvx w src, dst⟩)
 
+/-- `src, %dst` where the source has `memBytes? dst.bytes` bytes if that is `some`; a register
+source is then named at 128 bits (`%xmm`) whatever the destination width. -/
+def parseAvxNarrowSrcDst (memBytes? : Nat → Option Nat) :
+    Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
+  let (addr_w, src) ← parseAvxRegOrMem; parseComma
+  let ⟨w, dst⟩ ← parseAvxRegW
+  match src, memBytes? w.bytes with
+  | ⟨some _, .avx r⟩, some _ => pure (addr_w, ⟨w, .avx (r.as w), dst⟩)
+  | _, _ => pure (addr_w, ⟨w, ← ascribeAvx w src, dst⟩)
+
 /-- `src2, %src1, %dst` with AVX operands. -/
 def parseAvxSrc2Src1Dst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w × AvxReg w) := do
   let (addr_w, src2) ← parseAvxRegOrMem; parseComma
@@ -670,6 +680,21 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
       pure (toAvxInstr addr_w (if vex then .vex op dst src1 src2 else .sse op dst src2))
+  for (vex, name) in [(false, mn), (true, v)] do
+    let (stem, sfx?) := if vex && (name.endsWith "x" || name.endsWith "y") then
+      ((name.dropEnd 1).copy, if name.endsWith "x" then some AvxWidth.W128 else some .W256)
+    else (name, none)
+    if let some op := Mnemonic.ofName? (α := SimdUnOp) stem then ps := ps.push do
+      if op.isNarrowing then
+        -- An xmm destination; the source width comes from the x/y suffix or a register source.
+        let (addr_w, src) ← parseAvxRegOrMem; parseComma
+        let ⟨_, dst⟩ ← parseAvxRegW
+        let some w := if vex then sfx? <|> src.1 else some .W128
+          | fail s!"{name}: memory operand requires x or y suffix"
+        pure (toAvxInstr addr_w (.un (!vex) op (dst.as w) (← ascribeAvx w src)))
+      else
+        let (addr_w, ⟨_w, src, dst⟩) ← parseAvxNarrowSrcDst op.memBytes?
+        pure (toAvxInstr addr_w (.un (!vex) op dst src))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdTestOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1⟩) ← parseAvxSrcDst
