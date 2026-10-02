@@ -618,6 +618,49 @@ def parseImm8 : Parser ConstExpr := do
 
 -- SIMD operand and pseudo-op helpers
 
+/-- Parse the GPR or memory operand of a SIMD↔GPR transfer (SimdExtractOp, SimdInsertOp): a
+register, or memory of width `memW`. -/
+def parseGprRegOrMem (memW : Width) : Parser (MaybeAddrWidth × Σ w, RegOrMem w) := do
+  let (addr_w, x) ← parseRegOrMem
+  let w := x.1.getD memW
+  pure (addr_w, ⟨w, ← ascribe w x⟩)
+
+/-- Optional `$imm,` for extract/insert operations. -/
+def parseOptImmComma (hasImm : Bool) : Parser (Option ConstExpr) :=
+  if hasImm then do skipHWs; let i ← parseInt64; parseComma; pure (some i) else pure none
+
+/-- Parse `SimdToGprOp`, `SimdExtractOp`, and `SimdInsertOp` operand shapes. -/
+def parseSimdGpr (mn v : String) (ps : Array (Parser Instr)) : Array (Parser Instr) := Id.run do
+  let mut ps := ps
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some (op, _w?) := lookupSized SimdToGprOp name then ps := ps.push do
+      let (addr_w, src) ← parseAvxRegOrMem; parseComma
+      let ⟨_w, dst⟩ ← parseRegW
+      let vsrc ← ascribeAvx (src.1.getD .W128) src
+      pure (toAvxInstr addr_w (.toGpr (!vex) op dst vsrc))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some (op, _w?) := lookupSized SimdExtractOp name then ps := ps.push do
+      let imm ← parseOptImmComma op.hasImm
+      let ⟨_w, src⟩ ← parseAvxRegW; parseComma
+      let (addr_w, ⟨_gw, d⟩) ← parseGprRegOrMem (← Width.ofBits? op.memBits)
+      pure (toAvxInstr addr_w (.extract (!vex) op d src imm))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some (op, w?) := lookupSized SimdInsertOp name then ps := ps.push do
+      if op.twoOperand then
+        -- Memory loads are SimdUnOp.
+        let ⟨_gw, src⟩ ← parseRegW; parseComma
+        let ⟨_w, dst⟩ ← parseAvxRegW
+        pure (toAvxInstr .none (if vex then .vexInsert op dst dst (.reg src) none else .sseInsert op dst (.reg src) none))
+      else
+        let imm ← parseOptImmComma op.hasImm
+        let (addr_w, ⟨_gw, src2⟩) ← parseGprRegOrMem (← w? <|> Width.ofBits? op.memBits); parseComma
+        let ⟨w, src1⟩ ← parseAvxRegW
+        let dst ← if vex then do parseComma; parseAvxRegW else pure ⟨w, src1⟩
+        if h : dst.w = w then
+          pure (toAvxInstr addr_w (if vex then .vexInsert op (h ▸ dst.reg) src1 src2 imm else .sseInsert op src1 src2 imm))
+        else fail "AVX operand widths differ"
+  return ps
+
 /-- `src, %dst` with AVX operands. -/
 def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
   let (addr_w, src) ← parseAvxRegOrMem; parseComma
@@ -672,6 +715,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     let dst ← parseAvxRegW
     if h : dst.w = w then pure (toAvxInstr addr_w (.vexShift op (h ▸ dst.reg) src count))
     else fail "AVX operand widths differ"
+  ps := parseSimdGpr mn v ps
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose

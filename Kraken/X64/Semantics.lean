@@ -392,6 +392,9 @@ match d with
 @[kstep] def ConstExpr.imm8 [Labels] (imm : ConstExpr) (p : Std.Rco Int64) : BitVec 8 :=
   (imm.interp p).toBitVec.take 8
 
+@[kstep] def Option.imm8 [Labels] (imm : Option ConstExpr) (p : Std.Rco Int64) : BitVec 8 :=
+  match imm with | some i => i.imm8 p | none => 0
+
 @[kstep]
 def CondCode.interp (cc : CondCode) (s : StatusFlags) : Bool := match cc with
   | .z  => s.zf | .nz => !s.zf | .c  => s.cf | .nc => !s.cf
@@ -740,6 +743,19 @@ match i with
     next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) c)))
   | .vexShift op dst src count =>
     count.interp s p (legacy := false) (fun c s => next (s.setAvxReg dst (op.interp (s.zmms.get src) c)))
+
+  | .toGpr legacy op (gw := gw) dst src =>
+    src.interpSimd op.memBytes? s p legacy (fun a s =>
+    next (s.setReg dst (op.interp gw.bits a)))
+  | .extract _ op (gw := gw) dst src imm =>
+    let res := op.interp gw.bits (s.zmms.get src) (imm.imm8 p)
+    s.set dst res p next
+  | .sseInsert op dst (gw := gw) src imm =>
+    src.interp s p (fun v s =>
+    next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) gw.bits v (imm.imm8 p))))
+  | .vexInsert op dst src1 (gw := gw) src2 imm =>
+    src2.interp s p (fun v s =>
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) gw.bits v (imm.imm8 p))))
 
 @[kstep]
 def Instr.interp [Labels]

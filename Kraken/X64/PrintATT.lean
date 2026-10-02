@@ -126,6 +126,13 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .nopalign a none => s!".align {a}"
   | .nopalign a (some p) => s!".align {a}, {p}"
 
+def optImm : Option ConstExpr → String
+  | some i => s!"${const i}, "
+  | none => ""
+
+def cvtSuffix {gw : Width} (op : SimdInsertOp) (src : RegOrMem gw) : String :=
+  if op.sizedMem && src matches .mem .. then suffix gw else ""
+
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
@@ -134,6 +141,13 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
   | .sseShift op d c => s!"{Mnemonic.name op} {simdCount aw c}, {avxReg d}"
   | .vexShift op d a c => s!"v{Mnemonic.name op} {simdCount aw c}, {avxReg a}, {avxReg d}"
+
+  | .toGpr l op d x => s!"{avxName l op} {avxSrc aw op.memBytes? x}, {reg d}"
+  | .extract l op d x imm => s!"{avxName l op} {optImm imm}{avxReg x}, {rm aw d}"
+  | .sseInsert op d src imm => s!"{Mnemonic.name op}{cvtSuffix op src} {optImm imm}{rm aw src}, {avxReg d}"
+  | .vexInsert op d a src imm =>
+    if op.twoOperand then s!"v{Mnemonic.name op} {rm aw src}, {avxReg d}"
+    else s!"v{Mnemonic.name op}{cvtSuffix op src} {optImm imm}{rm aw src}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

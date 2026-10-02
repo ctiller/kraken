@@ -7,6 +7,7 @@ public import Kraken.X64.Ops.Hint
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
 public import Kraken.X64.Ops.SimdShift
+public import Kraken.X64.Ops.SimdGpr
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -274,6 +275,10 @@ inductive AvxOperation (w : AvxWidth)
   | vex (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w)
   | sseShift (op : SimdShiftOp) (dst : AvxReg w) (count : SimdCount)
   | vexShift (op : SimdShiftOp) (dst src : AvxReg w) (count : SimdCount)
+  | toGpr {gw : Width} (legacy : Bool) (op : SimdToGprOp) (dst : Reg gw) (src : AvxRegOrMem w)
+  | extract {gw : Width} (legacy : Bool) (op : SimdExtractOp) (dst : Dst gw) (src : AvxReg w) (imm : Option ConstExpr)
+  | sseInsert {gw : Width} (op : SimdInsertOp) (dst : AvxReg w) (src : RegOrMem gw) (imm : Option ConstExpr)
+  | vexInsert {gw : Width} (op : SimdInsertOp) (dst src1 : AvxReg w) (src2 : RegOrMem gw) (imm : Option ConstExpr)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr
