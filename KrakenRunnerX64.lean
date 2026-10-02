@@ -223,6 +223,7 @@ instance : Gen RelRegOrMem := ⟨gen_ctors% RelRegOrMem⟩
 instance {w} : Gen (RegOrMem w) := ⟨gen_ctors% RegOrMem⟩
 instance {w} : Gen (Operand w) := ⟨gen_ctors% Operand⟩
 instance {w} : Gen (AvxRegOrMem w) := ⟨gen_ctors% AvxRegOrMem⟩
+instance : Gen SimdCount := ⟨gen_ctors% SimdCount⟩
 instance {w} : Gen (Operation w) := ⟨gen_ctors% Operation⟩
 instance {w} : Gen (AvxOperation w) := ⟨gen_ctors% AvxOperation⟩
 instance : Gen Instr := ⟨gen_ctors% Instr⟩

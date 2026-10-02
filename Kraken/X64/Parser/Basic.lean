@@ -642,6 +642,12 @@ def parseAvxSrcs (vex : Bool) : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w ×
 def parseImmComma : Parser ConstExpr := do
   skipHWs; let i ← parseInt64; parseComma; pure i
 
+/-- `$imm,` or `src,` where `src` is an xmm register or memory. -/
+def parseSimdCount : Parser (MaybeAddrWidth × SimdCount) :=
+  (attempt do pure (none, .imm (← parseImmComma))) <|> do
+    let (addr_w, src) ← parseAvxRegOrMem; parseComma
+    pure (addr_w, .reg (← ascribeAvx .W128 src))
+
 /-- The parsers for the operands of the family opcodes (see Kraken/X64/Ops) named `mn`. A mnemonic
 may belong to several families with different operand shapes. -/
 def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
@@ -656,6 +662,16 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
       pure (toAvxInstr addr_w (if vex then .vex op dst src1 src2 else .sse op dst src2))
+  if let some op := Mnemonic.ofName? (α := SimdShiftOp) mn then ps := ps.push do
+    let (addr_w, count) ← parseSimdCount
+    let ⟨_w, dst⟩ ← parseAvxRegW
+    pure (toAvxInstr addr_w (.sseShift op dst count))
+  if let some op := Mnemonic.ofName? (α := SimdShiftOp) v then ps := ps.push do
+    let (addr_w, count) ← parseSimdCount
+    let ⟨w, src⟩ ← parseAvxRegW; parseComma
+    let dst ← parseAvxRegW
+    if h : dst.w = w then pure (toAvxInstr addr_w (.vexShift op (h ▸ dst.reg) src count))
+    else fail "AVX operand widths differ"
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose

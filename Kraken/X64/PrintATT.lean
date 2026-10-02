@@ -70,6 +70,10 @@ def target (aw : Width) : RelRegOrMem → String
   | .reg r => reg r
   | .mem a => addr aw a
 
+def simdCount (aw : Width) : SimdCount → String
+  | .imm e => "$" ++ const e
+  | .reg x => avxRm aw x
+
 def operation {w} (aw : Width) (op : Operation w) : String :=
   let s := suffix w
   let one (mn a : String) := s!"{mn}{s} {a}"
@@ -128,6 +132,8 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .mov l op d x => two (avxName l op) d x
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
+  | .sseShift op d c => s!"{Mnemonic.name op} {simdCount aw c}, {avxReg d}"
+  | .vexShift op d a c => s!"v{Mnemonic.name op} {simdCount aw c}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

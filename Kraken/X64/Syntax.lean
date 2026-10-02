@@ -6,6 +6,7 @@ public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
+public import Kraken.X64.Ops.SimdShift
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -180,6 +181,10 @@ attribute [coe] Operand.imm
 abbrev Operand.reg {w} (r : Reg w) : Operand w := regOrMem (.reg r)
 abbrev Operand.mem {w} (m : AddrExpr) : Operand w := regOrMem (.mem m)
 
+-- A SIMD shift count: an immediate, or the low 64 bits of an xmm register or memory.
+inductive SimdCount | imm (v : ConstExpr) | reg (src : AvxRegOrMem .W128)
+  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+
 inductive CondCode | z | nz | c | nc | a | be | l | le
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 abbrev CondCode.e := CondCode.z
@@ -267,6 +272,8 @@ inductive AvxOperation (w : AvxWidth)
   | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.
   | vex (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w)
+  | sseShift (op : SimdShiftOp) (dst : AvxReg w) (count : SimdCount)
+  | vexShift (op : SimdShiftOp) (dst src : AvxReg w) (count : SimdCount)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr

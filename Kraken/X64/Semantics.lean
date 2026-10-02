@@ -356,6 +356,12 @@ def AvxRegOrMem.interpSimd {w} [Labels] [AddressSize]
     | none => unimplemented s!"{n}-byte SIMD memory operand"
   | _, _ => o.interp s p ret (checkAlign := legacy)
 
+def SimdCount.interp [Labels] [AddressSize] (c : SimdCount) (s : MachineData) (p : Std.Rco Int64)
+  (legacy : Bool) (ret : Nat → MachineData → Effects) : Effects := match c with
+  | .imm v => ret ((v.interp p).toBitVec.take 8).toNat s
+  -- Counts of at least 64 all have the same effect; this caps them to keep shifts cheap.
+  | .reg src => src.interp s p (checkAlign := legacy) (fun v s => ret (min (v.take 64).toNat 64) s)
+
 @[kstep]
 def MachineData.setReg (s : MachineData) {w} (r : Reg w) (v : w.type) : MachineData :=
   { s with regs := s.regs.set r v }
@@ -729,6 +735,11 @@ match i with
     s.setAvx dst v p next op.aligned legacy)
   | .sse op dst src => bin true op dst dst src
   | .vex op dst src1 src2 => bin false op dst src1 src2
+  | .sseShift op dst count =>
+    count.interp s p (legacy := true) (fun c s =>
+    next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) c)))
+  | .vexShift op dst src count =>
+    count.interp s p (legacy := false) (fun c s => next (s.setAvxReg dst (op.interp (s.zmms.get src) c)))
 
 @[kstep]
 def Instr.interp [Labels]
