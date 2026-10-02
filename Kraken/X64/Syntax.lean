@@ -5,6 +5,7 @@ import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
+public import Kraken.X64.Ops.GprBin
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -244,6 +245,7 @@ inductive Operation (w : Width)
   | shrd (_ : Dst w) (src : Reg w) (_ : ShiftCountExpr) -- {_ : 16 <= w.bits}
   | rol  (_ : Dst w) (_ : ShiftCountExpr)
   | ror  (_ : Dst w) (_ : ShiftCountExpr)
+  | bin (op : GprBinOp) (dst src1 : Reg w) (src2 : RegOrMem w)
   | rcl  (_ : Dst w) (_ : ShiftCountExpr)
   | rcr  (_ : Dst w) (_ : ShiftCountExpr)
   | bswap  (dst : Reg w) -- (_ : w = .W32 ∨ w = .W64)

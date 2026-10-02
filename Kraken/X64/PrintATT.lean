@@ -104,6 +104,9 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .shrd d x c => s!"shrd {count c}, {reg x}, {rm aw d}"
   | .rol d c => two "rol" (count c) (rm aw d)
   | .ror d c => two "ror" (count c) (rm aw d)
+  | .bin op d a b =>
+    if op.src2First then s!"{Mnemonic.name op} {rm aw b}, {reg a}, {reg d}"
+    else s!"{Mnemonic.name op} {reg a}, {rm aw b}, {reg d}"
   | .rcl d c => two "rcl" (count c) (rm aw d)
   | .rcr d c => two "rcr" (count c) (rm aw d)
   | .bswap d => s!"bswap {reg d}"

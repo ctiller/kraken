@@ -730,6 +730,10 @@ set_option maxHeartbeats 1000000
     let (cf, v) := (t.msb, t.take w.bits)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
     { s with status := { s.status with cf, of } }.set dst v p next))
+  | .bin op dst src1 src2 =>
+    src2.interp s p (fun b s =>
+    let (r, f) := op.interp (s.regs.get src1) b
+    s.status.update f fun status => next { s.setReg dst r with status })
   | .bswap dst =>
     let a := s.regs.get dst
     match (generalizing := false) (motive := Width → Effects) w with
