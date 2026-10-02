@@ -24,6 +24,16 @@ mulq %rbx
 ```
 Note: Always consult the [instruction manual](https://www.felixcloutier.com/x86/) to identify which flags are architecturally undefined for a given instruction.
 
+### Required CPU Features
+
+Every supported host has x86-64-v3 (AVX2, FMA, BMI1/2, F16C, LZCNT, MOVBE) plus ADX, AES-NI and PCLMULQDQ, but not every host has every later extension: CI runners, for instance, lack GFNI, and some lack SHA, VAES and VPCLMULQDQ. A test whose instructions need such an extension declares it with the `/proc/cpuinfo` flag names (`gfni`, `sha_ni`, `vaes`, `vpclmulqdq`; a misspelt name skips the test everywhere), and the runner skips the test instead of dying with SIGILL on hosts that lack one:
+```
+# Requires: gfni, sha_ni
+
+gf2p8mulb %xmm1, %xmm0
+```
+Both metadata lines live in the comments before the first instruction. Set `KRAKEN_CPU_FLAGS="sse2 avx avx2 ..."` to see what a weaker host would run; the fuzzer (`fuzz_x64.py`) honours the same variable when choosing which instructions to generate, using the `optionalExtensions` table in `KrakenRunnerX64.lean`, which a change that adds instructions from a new extension must extend.
+
 ## Running Tests
 
 Ensure you have `binutils` (specifically `as` and `ld`) installed. Currently, the test suite is verified on **Ubuntu (latest)**; other platforms may produce incompatible results.

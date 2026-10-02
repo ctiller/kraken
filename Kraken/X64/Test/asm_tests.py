@@ -155,14 +155,41 @@ def run_kraken(path: Path) -> Tuple[Optional[ExecutionState], Optional[str]]:
     except Exception as e:
         return None, f"Kraken Error: {e}"
 
-# Parse the preamble for flags to be masked out because they are left undefined by the test.
-def get_undefined_flags(path: Path) -> List[str]:
-    first_line = path.read_text().splitlines()[0]
-    # TODO String parsing is brittle, a structured format for test metadata would be more sustainable long term.
-    if first_line.startswith("# Undefined flags:"):
-        raw_flags = first_line.split(":", 1)[1]
-        return [f.strip() for f in raw_flags.split(",") if f.strip()]
+# Test metadata is a `# Key: a, b, c` line among the comments before the first instruction.
+# TODO String parsing is brittle, a structured format for test metadata would be more sustainable long term.
+def get_metadata(path: Path, key: str) -> List[str]:
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        if not line.startswith("#"):
+            break
+        if line.startswith(f"# {key}:"):
+            raw = line.split(":", 1)[1]
+            return [f.strip() for f in raw.split(",") if f.strip()]
     return []
+
+# Flags to be masked out because they are left undefined by the test.
+def get_undefined_flags(path: Path) -> List[str]:
+    return get_metadata(path, "Undefined flags")
+
+# CPU features (`/proc/cpuinfo` flag names, e.g. `gfni`) the test's instructions need. Tests
+# needing a feature the host lacks are skipped instead of dying with SIGILL.
+def get_required_features(path: Path) -> List[str]:
+    return get_metadata(path, "Requires")
+
+def host_features() -> Optional[set]:
+    """The host's `/proc/cpuinfo` flags, or None when they cannot be determined (then nothing is
+    skipped). `KRAKEN_CPU_FLAGS` overrides them, e.g. to check what a weaker machine would run."""
+    override = os.environ.get("KRAKEN_CPU_FLAGS")
+    if override is not None:
+        return set(override.split())
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("flags"):
+                return set(line.split(":", 1)[1].split())
+    except OSError:
+        pass
+    return None
 
 def compare_states(real: ExecutionState, kraken: ExecutionState, undefined_flags: List[str]) -> List[str]:
     diffs = []
@@ -250,8 +277,14 @@ def test_roundtrip(asm_path: Path) -> Tuple[bool, str]:
             return False, f"assembler failed: {' '.join(str(x) for x in e.cmd)}\n{err_msg}"
     return True, ""
 
-def test_file(path: Path) -> Tuple[bool, str]:
+# Returns (success, report); report is "skipped" when the host lacks a required CPU feature.
+def test_file(path: Path, features: Optional[set]) -> Tuple[bool, str]:
     print(f"{path.name:50}", end="", flush=True)
+
+    missing = [f for f in get_required_features(path) if features is not None and f not in features]
+    if missing:
+        print(f"[{Color.CYAN}SKIP{Color.RESET}] host lacks {', '.join(missing)}")
+        return True, "skipped"
 
     roundtrip_success, roundtrip_err = test_roundtrip(path)
     if not roundtrip_success:
@@ -298,14 +331,21 @@ if __name__ == "__main__":
         print(f"Error: No .S files found at {target}")
         sys.exit(1)
 
+    features = host_features()
     errors = []
+    skipped = 0
     for f in files:
-        success, report = test_file(f)
+        success, report = test_file(f, features)
         if not success:
             errors.append((f.name, report))
+        elif report == "skipped":
+            skipped += 1
 
     print(f"\n{Color.BOLD}{'='*60}{Color.RESET}")
-    print(f"Result: {len(files) - len(errors)}/{len(files)} passed")
+    summary = f"Result: {len(files) - len(errors) - skipped}/{len(files) - skipped} passed"
+    if skipped:
+        summary += f", {skipped} skipped"
+    print(summary)
     print(f"{Color.BOLD}{'='*60}{Color.RESET}")
 
     if errors:
