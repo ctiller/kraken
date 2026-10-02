@@ -164,6 +164,9 @@ instance {w} : Coe (AvxReg w) (AvxRegOrMem w) where coe := .avx
 attribute [coe] AvxRegOrMem.avx
 abbrev AvxDst := AvxRegOrMem
 
+inductive LoopCond | none | e | ne
+  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+
 inductive Operand w | regOrMem (_ : RegOrMem w) | imm (v : ConstExpr)
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 instance {w} : Coe (RegOrMem w) (Operand w) where coe := .regOrMem
@@ -248,6 +251,10 @@ inductive Operation (w : Width)
   | bswap  (dst : Reg w) -- (_ : w = .W32 ∨ w = .W64)
   -- Control flow
   | jcc (cc : CondCode) (target : Label)
+  -- `jecxz` with a 32-bit address size.
+  | jrcxz (target : Label)
+  | loop (cond : LoopCond) (target : Label)
+  | xlat
   | jmp (target : RelRegOrMem)
   | call (target : RelRegOrMem)
   | ret

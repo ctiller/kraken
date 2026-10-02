@@ -102,6 +102,7 @@ partial def evalEffects (h : UInt64) (sawUndef : Bool) : Effects → Option (Mac
 instance : Gen Width := ⟨gen_ctors% Width⟩
 instance : Gen AvxWidth := ⟨gen_ctors% AvxWidth⟩
 instance : Gen RegMm := ⟨gen_ctors% RegMm⟩
+instance : Gen LoopCond := ⟨gen_ctors% LoopCond⟩
 instance : Gen Reg64 := ⟨gen_ctors% Reg64⟩
 instance : Gen CondCode := ⟨gen_ctors% CondCode⟩
 instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
