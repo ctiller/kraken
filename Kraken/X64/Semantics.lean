@@ -180,6 +180,12 @@ def RegZmms.setLegacy (s : RegZmms) {w} (r : AvxReg w) (v : w.type) : RegZmms :=
   | .ymm r => s.set512 r ((s.get512 r).replaceLow v)  -- impossible
   | .xmm r => s.set512 r ((s.get512 r).replaceLow v)
 
+def RegZmms.vzeroupper (s : RegZmms) : RegZmms :=
+  RegMm.low16.foldl (fun s r => s.set (.xmm r) (s.get (.xmm r))) s
+
+def RegZmms.vzeroall (s : RegZmms) : RegZmms :=
+  RegMm.low16.foldl (fun s r => s.set512 r zmmZero) s
+
 @[kstep]
 def BitVec.toAddressSize [address_size: AddressSize] (w: BitVec 64): BitVec address_size.address_size.bits :=
   w.take address_size.address_size.bits
@@ -727,6 +733,27 @@ match i with
   | .mov legacy op dst src =>
     src.interp s p (checkAlign := op.aligned) (fun v s =>
     s.setAvx dst v p next op.aligned legacy)
+  | .vzeroupper => next { s with zmms := s.zmms.vzeroupper }
+  | .vzeroall => next { s with zmms := s.zmms.vzeroall }
+  | .movs legacy op dst src => match legacy, dst, src with
+    -- (The VEX register form is `vexScalar`.)
+    | true, .avx d, .avx s_reg =>
+      let dval := (s.zmms.get d).take 128
+      let sval := (s.zmms.get s_reg).take 128
+      let v := dval.replaceLow (sval.take (op.bytes * 8))
+      next (s.setAvxReg (legacy := true) d (v.zeroExtend _))
+    | _, .avx d, .mem _ =>
+      src.interpSimd (some op.bytes) s p legacy (fun v s =>
+        next (s.setAvxReg d v legacy))
+    | _, .mem a, .avx s_reg =>
+      s.store ((a.interp s.regs p).zeroExtend 64) (w := op.width) ((s.zmms.get s_reg).take _) next
+    | _, _, _ => next s
+  | .vexScalar op dst src1 src2 =>
+    let s1val := (s.zmms.get src1).take 128
+    let s2val := (s.zmms.get src2).take 128
+    let v := s1val.replaceLow (s2val.take (op.bytes * 8))
+    next (s.setAvxReg dst (v.zeroExtend _))
+
   | .sse op dst src => bin true op dst dst src
   | .vex op dst src1 src2 => bin false op dst src1 src2
 

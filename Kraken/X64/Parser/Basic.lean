@@ -656,6 +656,26 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
       pure (toAvxInstr addr_w (if vex then .vex op dst src1 src2 else .sse op dst src2))
+  if let some op := Mnemonic.ofName? (α := SimdScalarMov) mn then ps := ps.push do
+    commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.movs true op)
+  if let some op := Mnemonic.ofName? (α := SimdScalarMov) v then ps := ps.push do
+    let (addr_w1, op1) ← parseAvxAO parseAvxRegOrMem .W128; parseComma
+    match op1 with
+    | .mem _ =>
+      let (addr_w2, dst) ← parseAvxAO parseAvxRegOrMem .W128
+      let addr_w ← mergeAddrWidths addr_w1 addr_w2
+      pure (toAvxInstr addr_w (.movs false op dst op1))
+    | .avx src2 =>
+      let (addr_w2, op2) ← parseAvxAO parseAvxRegOrMem .W128
+      match op2 with
+      | .mem _ =>
+        let addr_w ← mergeAddrWidths addr_w1 addr_w2
+        pure (toAvxInstr addr_w (.movs false op op2 op1))
+      | .avx src1 =>
+        parseComma
+        let ⟨w, dst⟩ ← parseAvxRegW
+        if h : w = .W128 then pure (toAvxInstr .none (.vexScalar op (h ▸ dst) src1 src2))
+        else fail "scalar destination must be xmm"
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
@@ -875,6 +895,9 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
       fail "inconsistency in {mn}"
     else
       pure (toInstr (some addr_w) (.lea dst src))
+
+  | "vzeroupper" => pure (toAvxInstr .none (w := .W256) .vzeroupper)
+  | "vzeroall" => pure (toAvxInstr .none (w := .W256) .vzeroall)
 
   -- Bitwise - 64-bit
   | "xor" =>

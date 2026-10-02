@@ -180,6 +180,12 @@ def avxName {α} [Mnemonic α] [DecidableEq α] (legacy : Bool) (op : α) : Stri
 
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
   | .mov l op dst src => s!"{avxName l op} {dst.toStr addr_w}, {src.toStr addr_w}"
+  | .vzeroupper => "vzeroupper"
+  | .vzeroall => "vzeroall"
+  | .movs l op dst src =>
+    s!"{avxName l op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
+  | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2}"
+
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
 

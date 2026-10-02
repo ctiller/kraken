@@ -126,6 +126,11 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
   | .mov l op d x => two (avxName l op) d x
+  | .movs l op d x => two (avxName l op) d x
+  | .vzeroupper => "vzeroupper"
+  | .vzeroall => "vzeroall"
+  | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {avxReg src2}, {avxReg src1}, {avxReg dst}"
+
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
 
