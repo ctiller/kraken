@@ -264,6 +264,7 @@ inductive Effects
   | done (a : MachineData × Int64)
   | unimplemented (msg : String)
   | gp_unaligned (addr : BitVec 64) (w : Nat)
+  | fault (exception : String)
   -- loads and stores *outside* the data memory, eg. MMIO, might still affect the data memory:
   -- for instance, MMIO reads/writes at certain device register addresses might change what
   -- data memory the process logically owns vs what memory is owned by devices
@@ -432,6 +433,10 @@ def RelRegOrMem.interp [Labels] [AddressSize]
   | .rel c => ret (p.upper + c.interp p).toBitVec s
   | .reg r => ret (s.regs.get r) s
   | .mem a => s.load ((a.interp s.regs p).zeroExtend _) .W64 ret
+
+def byteSwap {w : Width} (v : BitVec w.bits) : BitVec w.bits :=
+  (List.range w.bytes).foldl (fun acc i =>
+    acc ||| (((v >>> ((w.bytes - 1 - i) * 8)).take 8).zeroExtend w.bits <<< (i * 8))) 0
 
 structure StatusFlags.from_result.Remaining where
   cf : Bool
@@ -717,13 +722,7 @@ set_option maxHeartbeats 1000000
   | .bswap dst =>
     let a := s.regs.get dst
     match (generalizing := false) (motive := Width → Effects) w with
-    | .W32 =>
-      let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.drop 24
-      next (s.setReg dst (v.setWidth _))
-    | .W64 =>
-      let v := a.take 8 ++ a.extractLsb' 8 8 ++ a.extractLsb' 16 8 ++ a.extractLsb' 24 8
-            ++ a.extractLsb' 32 8 ++ a.extractLsb' 40 8 ++ a.extractLsb' 48 8 ++ a.drop 56
-      next (s.setReg dst (v.setWidth _))
+    | .W32 | .W64 => next (s.setReg dst (byteSwap a))
     | _ => undefined (fun v => next (s.setReg dst v))
   | .jcc cc l =>
     if cc.interp s.status
@@ -821,6 +820,7 @@ where
     | .done s => eval e s until_
     | .unimplemented msg => .error msg
     | .gp_unaligned addr w => .error s!"#GP: Memory op at {repr addr} did not have mandatory alignment of {w}"
+    | .fault exc => .error exc
     | .require_read_access _ _ ok => handleEffects (ok ())
     | .require_write_access _ _ ok => handleEffects (ok ())
     | .require_exec_access _ ok => handleEffects (ok ())
