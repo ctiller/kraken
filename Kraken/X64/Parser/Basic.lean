@@ -670,6 +670,10 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
       pure (toAvxInstr addr_w (if vex then .vex op dst src1 src2 else .sse op dst src2))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdTestOp) name then ps := ps.push do
+      let (addr_w, ⟨_w, src2, src1⟩) ← parseAvxSrcDst
+      pure (toAvxInstr addr_w (.test (!vex) op src1 src2))
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose

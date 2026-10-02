@@ -745,6 +745,10 @@ def AvxOperation.interp [Labels] [address_size : AddressSize]
     src2.interpSimd op.memBytes? s p legacy fun b s =>
     next (s.setAvxReg dst (op.interp (s.zmms.get src1) b) legacy)
 match i with
+
+  | .test legacy op src1 src2 =>
+    src2.interpSimd op.memBytes? s p legacy (fun b s =>
+    s.status.update (op.interp (s.zmms.get src1) b) fun status => next { s with status })
   | .mov legacy op dst src =>
     src.interp s p (checkAlign := op.aligned) (fun v s =>
     s.setAvx dst v p next op.aligned legacy)
