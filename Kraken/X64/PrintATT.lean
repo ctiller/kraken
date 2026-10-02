@@ -129,6 +129,9 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .test l op a x => s!"{avxName l op} {avxRm aw x}, {avxReg a}"
   | .mov l op d x => two (avxName l op) d x
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
+  | .unImm l op d s i => s!"{avxName l op} ${const i}, {avxRm aw s}, {avxReg d}"
+  | .sseImm op d s i => s!"{avxName true op} ${const i}, {avxRm aw s}, {avxReg d}"
+  | .vexImm op d s1 s2 i => s!"{avxName false op} ${const i}, {avxRm aw s2}, {avxReg s1}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String

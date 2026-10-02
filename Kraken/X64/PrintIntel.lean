@@ -184,6 +184,12 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
   | .test l op src1 src2 => s!"{avxName l op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .mov l op dst src => s!"{avxName l op} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
+  | .unImm legacy op dst src imm =>
+    s!"{avxName legacy op} {dst}, {src.toStr addr_w}, {imm}"
+  | .sseImm op dst src imm =>
+    s!"{avxName true op} {dst}, {src.toStrSimd op.memBytes? addr_w}, {imm}"
+  | .vexImm op dst src1 src2 imm =>
+    s!"{avxName false op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}, {imm}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
 
 instance : ToString Instr where

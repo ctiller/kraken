@@ -740,6 +740,13 @@ set_option maxHeartbeats 1000000
 def AvxOperation.interp [Labels] [address_size : AddressSize]
   {w} (i : AvxOperation w) (p : Std.Rco Int64) (s : MachineData)
   (next : MachineData → Effects) : Effects :=
+  let binImm (legacy : Bool) (op : SimdBinImmOp) (dst : AvxReg w) (src2 : AvxRegOrMem w)
+      (imm : ConstExpr) (a : w.type) :=
+    src2.interpSimd op.memBytes? s p legacy fun b s =>
+      let i := imm.imm8 p
+      if op.reservedImm i legacy || op.resultUndefined a b i then .undefined fun v =>
+        next (s.setAvxReg dst v legacy)
+      else next (s.setAvxReg dst (op.interp a b i (src2 matches .mem _)) legacy)
   -- The legacy SSE and VEX forms of a binary operation (in SSE, `src1` is `dst`).
   let bin (legacy : Bool) (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) :=
     src2.interpSimd op.memBytes? s p legacy fun b s =>
@@ -753,6 +760,12 @@ match i with
     src.interp s p (checkAlign := op.aligned) (fun v s =>
     s.setAvx dst v p next op.aligned legacy)
   | .sse op dst src => bin true op dst dst src
+  | .unImm legacy op dst src imm => src.interpSimd none s p legacy fun a s =>
+    let i := imm.imm8 p
+    if op.reservedImm i then .undefined fun v => next (s.setAvxReg dst v legacy)
+    else next (s.setAvxReg dst (op.interp a i) legacy)
+  | .sseImm op dst src imm => binImm true op dst src imm (s.zmms.get dst)
+  | .vexImm op dst src1 src2 imm => binImm false op dst src2 imm (s.zmms.get src1)
   | .vex op dst src1 src2 => bin false op dst src1 src2
 
 @[kstep]

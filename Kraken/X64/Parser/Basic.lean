@@ -631,6 +631,30 @@ def parseImm8 : Parser ConstExpr := do
   pure (.int64 (.ofInt v))
 
 -- SIMD operand and pseudo-op helpers
+/-- The predicates 0-31 of the compare pseudo-ops (SDM Table 3-4), with alias spellings. Legacy SSE
+has only predicates 0-7, in their first spelling. -/
+public def cmpPreds : Array (List String) := #[
+  ["eq", "eq_oq"], ["lt", "lt_os"], ["le", "le_os"], ["unord", "unord_q"],
+  ["neq", "neq_uq"], ["nlt", "nlt_us"], ["nle", "nle_us"], ["ord", "ord_q"],
+  ["eq_uq"], ["nge", "nge_us"], ["ngt", "ngt_us"], ["false", "false_oq"],
+  ["neq_oq"], ["ge", "ge_os"], ["gt", "gt_os"], ["true", "true_uq"],
+  ["eq_os"], ["lt_oq"], ["le_oq"], ["unord_s"],
+  ["neq_us"], ["nlt_uq"], ["nle_uq"], ["ord_s"],
+  ["eq_us"], ["nge_uq"], ["ngt_uq"], ["false_os"],
+  ["neq_os"], ["ge_oq"], ["gt_oq"], ["true_us"]
+]
+
+/-- Matches the compare pseudo-op `cmp{pred}{type}` (`type` is `ps`, `pd`, `ss` or `sd`), which
+stands for `cmp{type} $pred`. If `vex`, `name` is the `v` form without its `v`. -/
+def parseCmpPseudo? (vex : Bool) (name : String) : Option (SimdBinImmOp × Nat) := do
+  guard (name.startsWith "cmp")
+  let rest := (name.drop 3).copy
+  let op ← if rest.endsWith "ps" then some .cmpps else if rest.endsWith "pd" then some .cmppd
+    else if rest.endsWith "ss" then some .cmpss else if rest.endsWith "sd" then some .cmpsd else none
+  let pred := (rest.dropEnd 2).copy
+  let idx ← cmpPreds.findIdx? fun ps => if vex then ps.contains pred else ps.head? == some pred
+  guard (vex || idx < 8)
+  some (op, idx)
 
 /-- `src, %dst` with AVX operands. -/
 def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
@@ -670,6 +694,20 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
       pure (toAvxInstr addr_w (if vex then .vex op dst src1 src2 else .sse op dst src2))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdUnImmOp) name then ps := ps.push do
+      let imm ← parseImmComma
+      let (addr_w, ⟨_w, src, dst⟩) ← parseAvxSrcDst
+      pure (toAvxInstr addr_w (.unImm (!vex) op dst src imm))
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdBinImmOp) name then ps := ps.push do
+      let imm ← parseImmComma
+      let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
+      pure (toAvxInstr addr_w (if vex then .vexImm op dst src1 src2 imm else .sseImm op dst src2 imm))
+    if let some (op, pred) := parseCmpPseudo? vex name then ps := ps.push do
+      let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
+      let imm := .int64 (.ofNat pred)
+      pure (toAvxInstr addr_w (if vex then .vexImm op dst src1 src2 imm else .sseImm op dst src2 imm))
   for (vex, name) in [(false, mn), (true, v)] do
     if let some op := Mnemonic.ofName? (α := SimdTestOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1⟩) ← parseAvxSrcDst
