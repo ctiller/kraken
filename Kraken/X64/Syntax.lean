@@ -6,6 +6,7 @@ public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
+public import Kraken.X64.Ops.SimdScalarMov
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -42,6 +43,9 @@ unif_hint (w : Width) where
 unif_hint (w : Width) where
   w =?= Width.W64 |- Width.type w =?= BitVec 64
 
+/-- The width of the memory operand of `movss`/`movsd`. -/
+def SimdScalarMov.width : SimdScalarMov → Width | .movss => .W32 | .movsd => .W64
+
 inductive AvxWidth | W128 | W256 | W512 deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
 instance : ToString AvxWidth where
@@ -74,6 +78,10 @@ inductive RegMm
   | mm24 | mm25 | mm26 | mm27
   | mm28 | mm29 | mm30 | mm31
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
+
+def RegMm.low16 : List RegMm :=
+  [.mm0, .mm1, .mm2, .mm3, .mm4, .mm5, .mm6, .mm7,
+   .mm8, .mm9, .mm10, .mm11, .mm12, .mm13, .mm14, .mm15]
 
 inductive Reg64
   | rax | rbx | rcx | rdx
@@ -263,6 +271,10 @@ inductive AvxOperation (w : AvxWidth)
   -- Full-vector moves; the legacy forms preserve the upper bits of a register destination, the
   -- `v` forms zero them.
   | mov (legacy : Bool) (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
+  | vzeroupper
+  | vzeroall
+  | movs (legacy : Bool) (op : SimdScalarMov) (dst : AvxRegOrMem w) (src : AvxRegOrMem w)
+  | vexScalar (op : SimdScalarMov) (dst src1 src2 : AvxReg w)
   -- `dst := op dst src` on xmm registers, preserving the upper bits.
   | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.
