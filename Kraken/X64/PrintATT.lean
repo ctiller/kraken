@@ -49,6 +49,12 @@ def avxRm {w} (aw : Width) : AvxRegOrMem w → String
   | .avx r => avxReg r
   | .mem a => addr aw a
 
+/-- A source operand of `bytes?` bytes if `some` (narrower than the vector): a register is then
+named at 128 bits. -/
+def avxSrc {w} (aw : Width) (bytes? : Option Nat) : AvxRegOrMem w → String
+  | .avx r => if bytes?.isSome then avxReg (r.as .W128) else avxReg r
+  | .mem a => addr aw a
+
 def operand {w} (aw : Width) : Operand w → String
   | .regOrMem x => rm aw x
   | .imm (.label l) => l
@@ -119,11 +125,9 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
-  | .movups d x => two "movups" d x
-  | .vmovups d x => two "vmovups" d x
-  | .movaps d x => two "movaps" d x
-  | .subps d x => two "subps" d x
-  | .addps d x => two "addps" d x
+  | .mov l op d x => two (avxName l op) d x
+  | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
+  | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
 
 def instr : Instr → String
   | .regular aw _ op => operation aw op

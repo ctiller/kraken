@@ -616,9 +616,47 @@ def parseImm8 : Parser ConstExpr := do
   skipHWs; let _ ← pchar '$'; let v ← parseInt
   pure (.int64 (.ofInt v))
 
+-- SIMD operand and pseudo-op helpers
+
+/-- `src, %dst` with AVX operands. -/
+def parseAvxSrcDst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w) := do
+  let (addr_w, src) ← parseAvxRegOrMem; parseComma
+  let ⟨w, dst⟩ ← parseAvxRegW
+  pure (addr_w, ⟨w, ← ascribeAvx w src, dst⟩)
+
+/-- `src2, %src1, %dst` with AVX operands. -/
+def parseAvxSrc2Src1Dst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w × AvxReg w) := do
+  let (addr_w, src2) ← parseAvxRegOrMem; parseComma
+  let ⟨w, src1⟩ ← parseAvxRegW; parseComma
+  let dst ← parseAvxRegW
+  if h : dst.w = w then pure (addr_w, ⟨w, ← ascribeAvx w src2, src1, h ▸ dst.reg⟩)
+  else fail "AVX operand widths differ"
+
+/-- `src2, %dst` (legacy SSE: `src1` is `dst`) or `src2, %src1, %dst` (VEX). -/
+def parseAvxSrcs (vex : Bool) : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w × AvxReg w) :=
+  if vex then parseAvxSrc2Src1Dst else do
+    let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
+    pure (addr_w, ⟨w, src, dst, dst⟩)
+
+/-- `$imm,` -/
+def parseImmComma : Parser ConstExpr := do
+  skipHWs; let i ← parseInt64; parseComma; pure i
+
 /-- The parsers for the operands of the family opcodes (see Kraken/X64/Ops) named `mn`. A mnemonic
 may belong to several families with different operand shapes. -/
-def familyParsers (_mn : String) : Array (Parser Instr) := #[]
+def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
+  -- The base name of a `v` form.
+  let v := if mn.startsWith "v" then (mn.drop 1).copy else ""
+  let mut ps : Array (Parser Instr) := #[]
+  if let some op := Mnemonic.ofName? (α := SimdMov) mn then ps := ps.push do
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov true op)
+  if let some op := Mnemonic.ofName? (α := SimdMov) v then ps := ps.push do
+    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem (.mov false op)
+  for (vex, name) in [(false, mn), (true, v)] do
+    if let some op := Mnemonic.ofName? (α := SimdBinOp) name then ps := ps.push do
+      let (addr_w, ⟨_w, src2, src1, dst⟩) ← parseAvxSrcs vex
+      pure (toAvxInstr addr_w (if vex then .vex op dst src1 src2 else .sse op dst src2))
+  return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
 operand shape matches. -/
@@ -837,21 +875,6 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
       fail "inconsistency in {mn}"
     else
       pure (toInstr (some addr_w) (.lea dst src))
-
-  | "movups" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .movups
-
-  | "vmovups" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .vmovups
-
-  | "movaps" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .movaps
-
-  | "addps" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .addps
-
-  | "subps" =>
-    commaSeparatedAvx .none parseAvxRegOrMem parseAvxRegOrMem .subps
 
   -- Bitwise - 64-bit
   | "xor" =>
@@ -1082,10 +1105,10 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
       fail s!"unsupported instruction: {mnemonic}"
 
 /-- Whether `instr` names a register only EVEX can encode (`%zmm*`, `%xmm16`-`%xmm31`,
-`%ymm16`-`%ymm31`) without being an EVEX form of the model (`vmovups`). Read off the
+`%ymm16`-`%ymm31`) without being an EVEX form of the model (`SimdMov.evex`). Read off the
 canonical AT&T text. -/
 def hasEvexOnlyReg (instr : Instr) : Bool :=
-  let evex := match instr with | .avx _ _ (.vmovups _ _) => true | _ => false
+  let evex := match instr with | .avx _ _ (.mov false op _ _) => op.evex | _ => false
   let regs := ((ATT.instr instr).splitToList fun c => !c.isAlphanum && c != '%').filter (·.startsWith "%")
   !evex && regs.any fun r => r.startsWith "%zmm" ||
     (r.startsWith "%xmm" || r.startsWith "%ymm") && (r.drop 4).copy.toNat?.any (· ≥ 16)

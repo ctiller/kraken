@@ -4,6 +4,8 @@ import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
+public import Kraken.X64.Ops.SimdBin
+public import Kraken.X64.Ops.SimdMov
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -91,6 +93,11 @@ inductive AvxReg : AvxWidth → Type
   | zmm (_ : RegMm) : AvxReg AvxWidth.W512
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 
+/-- The same register at width `w'` (e.g. the `%xmm` part of a `%ymm` register). -/
+def AvxReg.as {w} (w' : AvxWidth) (r : AvxReg w) : AvxReg w' :=
+  let n := match r with | .xmm n | .ymm n | .zmm n => n
+  match w' with | .W128 => .xmm n | .W256 => .ymm n | .W512 => .zmm n
+
 abbrev Label := String
 
 inductive ConstExpr
@@ -173,14 +180,6 @@ attribute [coe] Operand.imm
 abbrev Operand.reg {w} (r : Reg w) : Operand w := regOrMem (.reg r)
 abbrev Operand.mem {w} (m : AddrExpr) : Operand w := regOrMem (.mem m)
 
--- TODO: We could remove this and use AvxRegOrMem directly.
-inductive AvxOperand (w : AvxWidth) | regOrMem (_ : AvxRegOrMem w)
-  deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
-instance {w} : Coe (AvxRegOrMem w) (AvxOperand w) where coe := .regOrMem
-attribute [coe] AvxOperand.regOrMem
-abbrev AvxOperand.avx {w} (r : AvxReg w) : AvxOperand w := regOrMem (.avx r)
-abbrev AvxOperand.mem {w} (m : AddrExpr) : AvxOperand w := regOrMem (.mem m)
-
 inductive CondCode | z | nz | c | nc | a | be | l | le
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 abbrev CondCode.e := CondCode.z
@@ -257,14 +256,17 @@ inductive Operation (w : Width)
   | nopalign (alignment : Nat) (pad : Option Nat)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
--- The non-v* variants take SSE registers only.
+-- The non-v* variants take SSE registers only. A constructor with a `legacy` field covers both
+-- forms of an instruction whose legacy SSE and `v` (VEX) forms have the same operands.
 -- TODO: AVX512 extensions (write-masking, ...)
 inductive AvxOperation (w : AvxWidth)
-  | movups (_ : AvxDst w) (src : AvxRegOrMem w)
-  | vmovups (_ : AvxDst w) (src : AvxRegOrMem w)
-  | movaps (_ : AvxDst w) (src : AvxRegOrMem w)
-  | subps (_ : AvxDst w) (src : AvxRegOrMem w)
-  | addps (_ : AvxDst w) (src : AvxRegOrMem w)
+  -- Full-vector moves; the legacy forms preserve the upper bits of a register destination, the
+  -- `v` forms zero them.
+  | mov (legacy : Bool) (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
+  -- `dst := op dst src` on xmm registers, preserving the upper bits.
+  | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
+  -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.
+  | vex (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 inductive Instr

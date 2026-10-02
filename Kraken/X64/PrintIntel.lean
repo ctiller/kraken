@@ -101,10 +101,6 @@ def Operand.toStr {w} (op : Operand w) (addr_w : Width := .W64) : String := matc
   | .imm v => toString v
 instance {w} : ToString (Operand w) where toString op := op.toStr
 
-def AvxOperand.toStr {w} (op : AvxOperand w) (addr_w : Width := .W64) : String := match op with
-  | .regOrMem rm => rm.toStr addr_w
-instance {w} : ToString (AvxOperand w) where toString op := op.toStr
-
 def RelRegOrMem.toStr (rel : RelRegOrMem) (addr_w : Width := .W64) : String := match rel with
   | .rel (.sub e .after_current_instruction) => toString e
   | .rel c => toString c
@@ -167,13 +163,25 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .nopalign a (some p) => s!".align {a}, {p}"
 instance {w} : ToString (Operation w) where toString op := op.toStr
 
+def AvxRegOrMem.toStrSimd {w} (memBytes? : Option Nat) (rm : AvxRegOrMem w) (addr_w : Width := .W64) : String :=
+  match rm, memBytes? with
+  | .avx r, some _ => ToString.toString (r.as .W128)
+  | .avx r, none => ToString.toString r
+  | .mem a, some 16 => "XMMWORD PTR " ++ a.toStr addr_w
+  | .mem a, some 32 => "YMMWORD PTR " ++ a.toStr addr_w
+  | .mem a, some n => match Width.ofBytes? n with
+    | some w => s!"{w.ptrName} PTR {a.toStr addr_w}"
+    | none => rm.toStr addr_w
+  | .mem _, _ => rm.toStr addr_w
+
+/-- The mnemonic of `op`, `v`-prefixed unless `legacy`. -/
+def avxName {α} [Mnemonic α] [DecidableEq α] (legacy : Bool) (op : α) : String :=
+  (if legacy then "" else "v") ++ Mnemonic.name op
+
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
-  | .movups dst src => s!"movups {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .vmovups dst src => s!"vmovups {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .movaps dst src => s!"movaps {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .subps dst src => s!"subps {dst.toStr addr_w}, {src.toStr addr_w}"
-  | .addps dst src => s!"addps {dst.toStr addr_w}, {src.toStr addr_w}"
-instance {w} : ToString (Operation w) where toString op := op.toStr
+  | .mov l op dst src => s!"{avxName l op} {dst.toStr addr_w}, {src.toStr addr_w}"
+  | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
+  | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
 
 instance : ToString Instr where
   toString i := match i with

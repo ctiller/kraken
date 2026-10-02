@@ -7,6 +7,7 @@ import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.Mem
 meta import Kraken.Mem
+public import Kraken.X64.Ops.Lanes
 public import Kraken.X64.Syntax
 meta import Kraken.X64.Syntax
 public import Lean.ToExpr
@@ -31,8 +32,6 @@ attribute [kstep]
   BitVec.ofInt_toInt
   BitVec.signed
   BitVec.truncate
-def BitVec.replaceLow {w n} (old : BitVec w) (new : BitVec n) : BitVec w :=
-  (BitVec.append (old.drop n) new).setWidth _
 
 namespace Reg
 @[kstep] def base {w} (r : Reg w) : Reg64 := match r with
@@ -184,44 +183,6 @@ def RegZmms.setLegacy (s : RegZmms) {w} (r : AvxReg w) (v : w.type) : RegZmms :=
 @[kstep]
 def BitVec.toAddressSize [address_size: AddressSize] (w: BitVec 64): BitVec address_size.address_size.bits :=
   w.take address_size.address_size.bits
-
--- TODO: consider adding a `split` helper to switch representations between
--- u128, 4xu32, etc.
-def BitVec.packedBinOp {w : Nat} (c : Nat) (op : BitVec c → BitVec c → BitVec c) (a b : BitVec w) : BitVec w :=
-  if _ : c = 0 ∨ w < c then
-    a -- Fallback/Base case (w = 0 or invalid chunk size)
-  else
-    -- Extract the lowest chunk
-    let a_low := a.take c
-    let b_low := b.take c
-    let res_low := op a_low b_low
-
-    -- Recursively process the remaining high bits
-    let a_high := a.drop c
-    let b_high := b.drop c
-    let res_high := BitVec.packedBinOp c op a_high b_high
-
-    -- Recombine: res_high is the high part, res_low is the low part
-    (BitVec.append res_high res_low).setWidth _
-termination_by w
-decreasing_by omega
-
-def BitVec.toFloat32 (v : BitVec 32) : Float32 :=
-  Float32.ofBits (UInt32.ofBitVec v)
-
-def Float32.toBitVec (f : Float32) : BitVec 32 :=
-  UInt32.toBitVec (Float32.toBits f)
-
-/-- An SSE single-precision operation on one lane: a NaN operand propagates (quieted, the first
-operand winning), and an invalid operation gives the default NaN ("QNaN floating-point
-indefinite"). In binary32, `0x400000` is bit 22, the most significant fraction bit, which makes a
-NaN quiet; `0xffc00000` (sign set, exponent all ones, fraction `100…0`) is the default NaN.
-Lean's `Float32` can't express this: its logical model has a single NaN (all NaNs are equal), so
-every NaN result reads back as `0x7fc00000`. -/
-def sseBinOp (op : Float32 → Float32 → Float32) (a b : BitVec 32) : BitVec 32 :=
-  if a.toFloat32.isNaN then a ||| 0x400000#32
-  else if b.toFloat32.isNaN then b ||| 0x400000#32
-  else let r := op a.toFloat32 b.toFloat32; if r.isNaN then 0xffc00000#32 else r.toBitVec
 
 structure StatusFlags where
   cf : Bool
@@ -381,15 +342,27 @@ match o with
   | .avx r => ret (s.zmms.get r) s
   | .mem a => s.loadAvx ((a.interp s.regs p).zeroExtend _) w ret checkAlign
 
+/-- A SIMD source operand: a register, or memory holding `bytes?` bytes (zero-extended) or the whole
+vector. Legacy SSE instructions fault on unaligned whole-vector memory operands. -/
+def AvxRegOrMem.interpSimd {w} [Labels] [AddressSize]
+  (o : AvxRegOrMem w) (bytes? : Option Nat) (s : MachineData) (p : Std.Rco Int64) (legacy : Bool)
+  (ret : w.type → MachineData → Effects) : Effects :=
+  let addr (a : AddrExpr) := (a.interp s.regs p).zeroExtend 64
+  match o, bytes? with
+  | .mem a, some 16 => s.loadAvx (addr a) .W128 (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some 32 => s.loadAvx (addr a) .W256 (fun v s => ret (v.zeroExtend _) s)
+  | .mem a, some n => match Width.ofBytes? n with
+    | some w => s.load (addr a) w (fun v s => ret (v.zeroExtend _) s)
+    | none => unimplemented s!"{n}-byte SIMD memory operand"
+  | _, _ => o.interp s p ret (checkAlign := legacy)
+
 @[kstep]
 def MachineData.setReg (s : MachineData) {w} (r : Reg w) (v : w.type) : MachineData :=
   { s with regs := s.regs.set r v }
 
-def MachineData.setAvxReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) : MachineData :=
-  { s with zmms := s.zmms.set r v }
-
-def MachineData.setAvxLegacyReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) : MachineData :=
-  { s with zmms := s.zmms.setLegacy r v }
+/-- Writes `r`; the bits above it are zeroed, or preserved by `legacy` SSE instructions. -/
+def MachineData.setAvxReg (s : MachineData) {w : AvxWidth} (r : AvxReg w) (v : w.type) (legacy := false) : MachineData :=
+  { s with zmms := if legacy then s.zmms.setLegacy r v else s.zmms.set r v }
 
 @[kstep]
 def MachineData.set {w} [Labels] [AddressSize] (s : MachineData) (d : Dst w) (v : w.type) (p : Std.Rco Int64) (ret : MachineData → Effects) : Effects :=
@@ -397,14 +370,9 @@ def MachineData.set {w} [Labels] [AddressSize] (s : MachineData) (d : Dst w) (v 
   | .reg r => ret (s.setReg r v)
   | .mem a => s.store ((a.interp s.regs p).zeroExtend _) v ret
 
-def MachineData.setAvx {aw} [Labels] [AddressSize] (s : MachineData) (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) : Effects :=
+def MachineData.setAvx {aw} [Labels] [AddressSize] (s : MachineData) (d : AvxDst aw) (v : aw.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) (legacy := false) : Effects :=
 match d with
-  | .avx r => ret (s.setAvxReg r v)
-  | .mem a => s.storeAvx ((a.interp s.regs p).zeroExtend _) v ret checkAlign
-
-def MachineData.setAvxLegacy {w} [Labels] [AddressSize] (s : MachineData) (d : AvxDst w) (v : w.type) (p : Std.Rco Int64) (ret : MachineData → Effects) (checkAlign : Bool := false) : Effects :=
-match d with
-  | .avx r => ret (s.setAvxLegacyReg r v)
+  | .avx r => ret (s.setAvxReg r v legacy)
   | .mem a => s.storeAvx ((a.interp s.regs p).zeroExtend _) v ret checkAlign
 
 @[kstep] def Operand.interp {w} [Labels] [AddressSize]
@@ -415,11 +383,8 @@ match d with
   | .imm v => ret ((v.interp p).toBitVec.truncate _) s
   -- we rely on assemblers erroring out on too-large immediates in uniform ops
 
-def AvxOperand.interp {aw} [Labels] [AddressSize]
-  (o : AvxOperand aw) (s : MachineData) (p : Std.Rco Int64)
-  (ret : aw.type → MachineData → Effects) (checkAlign : Bool := false) :=
-match o with
-  | regOrMem rm => rm.interp s p ret checkAlign
+@[kstep] def ConstExpr.imm8 [Labels] (imm : ConstExpr) (p : Std.Rco Int64) : BitVec 8 :=
+  (imm.interp p).toBitVec.take 8
 
 @[kstep]
 def CondCode.interp (cc : CondCode) (s : StatusFlags) : Bool := match cc with
@@ -754,21 +719,16 @@ set_option maxHeartbeats 1000000
 def AvxOperation.interp [Labels] [address_size : AddressSize]
   {w} (i : AvxOperation w) (p : Std.Rco Int64) (s : MachineData)
   (next : MachineData → Effects) : Effects :=
+  -- The legacy SSE and VEX forms of a binary operation (in SSE, `src1` is `dst`).
+  let bin (legacy : Bool) (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w) :=
+    src2.interpSimd op.memBytes? s p legacy fun b s =>
+    next (s.setAvxReg dst (op.interp (s.zmms.get src1) b) legacy)
 match i with
-  | .movups dst src => src.interp s p (fun val s => s.setAvxLegacy dst val p next)
-  | .vmovups dst src => src.interp s p (fun val s => s.setAvx dst val p next)
-  | .movaps dst src =>
-    src.interp s p (checkAlign := true)
-      (fun val s => s.setAvxLegacy dst val p (checkAlign := true) next)
-  -- TODO: MXCSR
-  | .subps dst src =>
-    src.interp s p (checkAlign := true) (fun a s =>
-    dst.interp s p (fun b s =>
-      s.setAvxLegacy dst (BitVec.packedBinOp 32 (sseBinOp (· - ·)) b a) p next))
-  | .addps dst src =>
-    src.interp s p (checkAlign := true) (fun a s =>
-    dst.interp s p (fun b s =>
-      s.setAvxLegacy dst (BitVec.packedBinOp 32 (sseBinOp (· + ·)) b a) p next))
+  | .mov legacy op dst src =>
+    src.interp s p (checkAlign := op.aligned) (fun v s =>
+    s.setAvx dst v p next op.aligned legacy)
+  | .sse op dst src => bin true op dst dst src
+  | .vex op dst src1 src2 => bin false op dst src1 src2
 
 @[kstep]
 def Instr.interp [Labels]

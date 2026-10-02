@@ -77,6 +77,13 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   (Mnemonic.names (α := α)).toList.filterMap fun (op, mn) =>
     if (forms op mn).all roundtrips then none else some mn
 
+#guard let ns := (Mnemonic.names (α := SimdBinOp)).toList.map (·.2); ns.eraseDups == ns
+
+/-- info: [] -/
+#guard_msgs in
+#eval failing SimdBinOp (fun _ mn => [s!"{mn} 16(%rsp), %xmm1", s!"v{mn} %ymm1, %ymm2, %ymm3"]) ++
+  failing SimdMov (fun _ mn => [s!"{mn} (%rsp), %xmm1", s!"{mn} %xmm2, (%rsp)", s!"v{mn} %ymm3, %ymm4"])
+
 /-- Programs the parser rejects. -/
 def rejected : List String := [
   -- `rep` prefixes only apply to string instructions.

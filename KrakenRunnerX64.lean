@@ -186,6 +186,7 @@ elab "gen_ctors% " t:ident : term <= ty => do
   elabTerm (← `(oneOf #[$alts,*])) ty
 
 instance {α : Type} [Gen α] : Gen (Option α) := ⟨gen_ctors% Option⟩
+instance : Gen Bool := ⟨gen_ctors% Bool⟩
 instance : Gen Width := ⟨gen_ctors% Width⟩
 instance : Gen AvxWidth := ⟨gen_ctors% AvxWidth⟩
 instance : Gen RegMm := ⟨gen_ctors% RegMm⟩
@@ -255,11 +256,11 @@ def genSeed : GenM String := do
     do return s!"leaq -{(← nextNat (stackSize - 300)) + 300}(%rsp), {r}",
     -- A small count (for rep, loop, and shifts by %cl).
     do return s!"movq ${← nextNat 16}, {r}",
-    -- Also copy a random value into one of xmm0-15 via the stack; they start zeroed, so SSE ops
-    -- would otherwise see only zeros.
+    -- A random value that is also spread over one of ymm0-15 as four distinct qwords via the
+    -- stack; they start zeroed, so vector ops would otherwise see only zeros.
     do
-      let m ← movabs
-      return s!"{m}\nmovq {r}, -16(%rsp)\nmovq {r}, -8(%rsp)\nmovups -16(%rsp), %xmm{← nextNat 16}"]
+      let qs ← [32, 24, 16, 8].mapM fun o => do return s!"{← movabs}\nmovq {r}, -{o}(%rsp)"
+      return "\n".intercalate qs ++ s!"\nvmovdqu -32(%rsp), %ymm{← nextNat 16}"]
 
 -- Four random register initializations (`genSeed`) followed by `length` instructions from `pool`, each drawn
 -- until `stepDeterministic` accepts one. A final `add` makes all flags defined.
