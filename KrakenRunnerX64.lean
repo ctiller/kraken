@@ -6,9 +6,10 @@ KrakenRunnerX64 - Run assembly instructions through Kraken Semantics and obtain 
 At this point this expects a file only containing a list of assembly instructions, no data block or similar.
 
 Usage: krakenrunner_x64 <assembly.S>
-       krakenrunner_x64 --generate <seed> <count> <length> [prefix...]  (random sequences that Kraken deems
-        deterministic, optionally drawing only instructions starting with one of the prefixes)
-       krakenrunner_x64 --batch < sequences.json              (predict final states for a JSON array of sequences)
+       krakenrunner_x64 --generate <seed> <count> <length> [prefix...]  (random sequences that Kraken can run,
+        optionally drawing only instructions starting with one of the prefixes)
+       krakenrunner_x64 --observe < runs.json   (for each hardware run, the oracle under which Kraken
+        reproduces it, as a Lean statement; or why it cannot)
 
 Arguments:
 - assembly.S: Assembly source file
@@ -78,76 +79,186 @@ def runKraken (asmCode : String)
   let initState: MachineState := (initData, prog.fakeLayout.labels.label _start)
   prog.fakeLayout.eval initState (finishCriterion prog)
 
-def numStatusFlags : Nat := 7
+/-! ## Oracle extraction from hardware runs
 
-/-! ## Determinism checking, with Semantics.lean in the loop
+The hardware harness (Kraken/X64/Test/fuzz_x64.py) records the observable state after every
+instruction of a sequence, and the signal if one faults. `findOracle` recovers, instruction by
+instruction, the values of the `undefined` choices under which Semantics.lean reproduces those states;
+`observeHardware` chains them into the witness of `∃ o : Oracle, observe o asm = result`
+(Kraken/X64/Observe.lean), or explains the first instruction Kraken gets differently. -/
 
-`Executable.eval` produces *one* possible behavior, resolving each `undefined` choice to an
-arbitrary value (a hash of the registers). The fuzzer instead needs to know whether the hardware's
-result is predictable at all, i.e. whether it is the same for *every* resolution of the `undefined`
-choices; it discards sequences for which it isn't. -/
+def NondetSupportingType.width {α} : NondetSupportingType α → Nat
+  | .bool => 1 | .statusFlags => 6 | .bitvec w => w.bits | .avx_bitvec w => w.bits
 
-/-- The seven status flag values as bits, in the layout of `NondetSupportingType.from_hash`
-(cf, pf, af, zf, sf, of, df = bits 0..6). -/
-def StatusFlags.toBits (f : StatusFlags) : Nat :=
-  f.cf.toNat ||| f.pf.toNat <<< 1 ||| f.af.toNat <<< 2 ||| f.zf.toNat <<< 3 ||| f.sf.toNat <<< 4 ||| f.of.toNat <<< 5 ||| f.df.toNat <<< 6
+/-- The bit widths of the `undefined` choices `e` makes along the path that `o` resolves. -/
+def Effects.choiceWidths (o : Oracle) : Effects → List Nat
+  | @Effects.undefined _ t cont => match o with
+    | v :: o => t.width :: (cont (t.decode v)).choiceWidths o
+    | [] => []
+  | .require_read_access _ _ ok | .require_write_access _ _ ok | .require_exec_access _ ok =>
+    (ok ()).choiceWidths o
+  | _ => []
 
-/-- Which status flags are currently undefined, i.e. may hold either value, as a mask in the
-`StatusFlags.toBits` layout. -/
-structure UndefFlags where
-  mask : Nat
-  deriving BEq
+/-- `x` as a bit string in a fixed order (GPRs, flags, ymms, stack), to locate where a choice lands. -/
+def Observation.bits (x : Observation) : Array Bool := Id.run do
+  let r := x.regs
+  let mut bits : Array Bool := #[]
+  for v in [r.rax, r.rbx, r.rcx, r.rdx, r.rsi, r.rdi, r.rsp, r.rbp,
+            r.r8, r.r9, r.r10, r.r11, r.r12, r.r13, r.r14, r.r15] do
+    for i in [0:64] do bits := bits.push (v.toBitVec.getLsbD i)
+  let f := x.status
+  bits := bits ++ #[f.cf, f.pf, f.af, f.zf, f.sf, f.of, f.df]
+  for i in [0:observedYmms.length] do
+    let v := (x.ymms.lookup i).getD 0
+    for j in [0:256] do bits := bits.push (v.getLsbD j)
+  for i in [0:stackSize] do
+    let b := (x.mem.lookup i).getD 0xff
+    for j in [0:8] do bits := bits.push (b.toBitVec.getLsbD j)
+  return bits
 
-def UndefFlags.none : UndefFlags := ⟨0⟩
+/-- Where Kraken's `k` and the hardware's `h` differ, for reports. -/
+def Observation.diff (k h : Observation) : List String := Id.run do
+  let mut out := []
+  let field (name : String) (a b : Nat) := if a != b then [s!"{name}: Kraken {hex a}, hardware {hex b}"] else []
+  for (name, a, b) in List.zip ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rsp", "rbp", "r8", "r9", "r10", "r11",
+      "r12", "r13", "r14", "r15"] (List.zip (regsOf k.regs) (regsOf h.regs)) do
+    out := out ++ field name a.toNat b.toNat
+  for (name, a, b) in List.zip ["cf", "pf", "af", "zf", "sf", "of", "df"] (List.zip (flagsOf k.status) (flagsOf h.status)) do
+    out := out ++ field name a.toNat b.toNat
+  for i in [0:observedYmms.length] do
+    out := out ++ field s!"ymm{i}" ((k.ymms.lookup i).getD 0).toNat ((h.ymms.lookup i).getD 0).toNat
+  for i in [0:stackSize] do
+    out := out ++ field s!"stack[{i}]" ((k.mem.lookup i).getD 0xff).toNat ((h.mem.lookup i).getD 0xff).toNat
+  return out
+where
+  regsOf (r : Reg64s) := [r.rax, r.rbx, r.rcx, r.rdx, r.rsi, r.rdi, r.rsp, r.rbp,
+    r.r8, r.r9, r.r10, r.r11, r.r12, r.r13, r.r14, r.r15]
+  flagsOf (f : StatusFlags) := [f.cf, f.pf, f.af, f.zf, f.sf, f.of, f.df]
 
-/-- Every assignment of the status flags that agrees with `f` on the defined flags. -/
-def UndefFlags.completions (u : UndefFlags) (f : StatusFlags) : List StatusFlags :=
-  (List.range (2^numStatusFlags)).filter (fun m => m &&& u.mask == m) |>.map fun m =>
-    let b := f.toBits &&& ((2^numStatusFlags - 1) ^^^ u.mask) ||| m
-    { (NondetSupportingType.from_hash b.toUInt64 : StatusFlags) with df := b.testBit 6 }
+/-- Long enough for any one instruction's choices; all zeros. -/
+def zeroOracle : Oracle := List.replicate 64 0
 
-/-- The flags on which any of `fs` differs from `f`. -/
-def UndefFlags.disagreeing (f : StatusFlags) (fs : Array StatusFlags) : UndefFlags :=
-  ⟨fs.foldl (fun acc g => acc ||| (g.toBits ^^^ f.toBits)) 0⟩
+/-- An oracle under which `dir` takes `s` to the hardware's `hw`, with the resulting state. Each
+`undefined` choice is located by setting all its bits and seeing which bits of the state move, and
+is then read off `hw` there; that is exact because Semantics.lean stores a choice directly into
+flags, a register or memory. Should it ever not reproduce `hw`, up to 2^12 assignments are tried
+outright. -/
+def findOracle [Labels] (dir : Directive) (p : Std.Rco Int64) (s : MachineData) (hw : Observation) :
+    Option (Oracle × MachineData) := do
+  let e := effectsOf dir p s
+  let run (o : Oracle) : Option MachineData := match e.run 0 o with
+    | (.ok s, _) => some s | _ => none
+  let reproduces (o : Oracle) (s : MachineData) : Option (Oracle × MachineData) := do
+    guard (Observation.of s == hw); return (o, s)
+  let s0 ← run zeroOracle
+  let widths := e.choiceWidths zeroOracle
+  if widths.isEmpty then return ← reproduces [] s0
+  let base := (Observation.of s0).bits
+  let hwBits := hw.bits
+  let mut o : Oracle := []
+  for (w, k) in widths.zipIdx do
+    let flipped := (Observation.of (← run (zeroOracle.set k (2 ^ w - 1)))).bits
+    let mut v := 0
+    let mut j := 0
+    for i in [0:flipped.size] do
+      if flipped[i]! != base[i]! then
+        if hwBits[i]! then v := v ||| 1 <<< j
+        j := j + 1
+    o := o.concat v
+  (do reproduces o (← run o)) <|> do
+    guard (widths.sum ≤ 12)
+    (assignments widths).findSome? fun o => do reproduces o (← run o)
+where
+  /-- Every oracle with values of the given widths. -/
+  assignments : List Nat → List Oracle
+    | [] => [[]]
+    | w :: ws => (assignments ws).flatMap fun o => (List.range (2 ^ w)).map (· :: o)
 
--- Runs `Effects` to completion, resolving every `undefined` choice with `h`. Also returns
--- whether any `undefined` choice was made.
-partial def evalEffects (h : UInt64) (sawUndef : Bool) : Effects → Option (MachineData × Bool)
-  | .done (s, _) => some (s, sawUndef)
-  | .require_read_access _ _ ok | .require_write_access _ _ ok | .require_exec_access _ ok => evalEffects h sawUndef (ok ())
-  | @Effects.undefined _ t cont => evalEffects h true (cont (t.from_hash h))
-  | _ => none
+/-- A hardware run of a sequence: the observable state after each instruction that completed; a
+fault stopped the run after them if there are fewer states than instructions. -/
+structure HardwareRun where
+  seq : String
+  states : Array Observation
 
-/-- Executes `asmCode` (straight-line, no jumps) from `d`, where the flags in `u` are currently
-undefined. Each instruction is run under every assignment of the undefined flags, and, if it makes
-`undefined` choices, with those resolved once to all-zeros and once to all-ones. Fails unless
-registers and memory agree across all runs; returns the resulting state and the flags that disagree.
+/-- Why Kraken does not reproduce a hardware run: what happens at instruction `instr`. -/
+structure Mismatch where
+  instr : Nat
+  message : String
+  diff : List String := []
+  /-- How Kraken ends the run there, when it does. -/
+  ending : Option Ending := none
 
-Resolving to all-zeros and all-ones makes every bit of an `undefined` value differ between the two
-runs. That suffices to expose any dependence on it because Semantics.lean only ever stores an
-undefined choice directly into a flag, all flags, or a register, never computes with it. -/
-def stepDeterministic (d : MachineData) (u : UndefFlags) (asmCode : String) : Option (MachineData × UndefFlags) := do
-  let exe := (← (Kraken.X64.Parser.parse asmCode).toOption).fakeLayout
+/-- The oracle under which Kraken reproduces `run`, and what it then observes: the hardware's states
+one by one, and for an instruction the hardware did not complete, Kraken's ending under the rest of
+the oracle, `[]`, just as `observe` computes it (the harness checks it against the signal). -/
+def observeHardware (run : HardwareRun) : Except Mismatch (Oracle × Result) := do
+  let prog ← (Kraken.X64.Parser.parse run.seq).mapError fun e => { instr := 0, message := s!"parse error: {e}" }
+  let exe := prog.fakeLayout
   let := exe.labels
-  let mut (d, u) := (d, u)
-  for (pc, dir, sz) in exe.withAddresses do
+  let mut (s, o) := (initData, ([] : Oracle))
+  for ((pc, dir, sz), i) in exe.withAddresses.zipIdx do
     let p : Std.Rco Int64 := .mk pc (pc + .ofNat sz)
-    let run (status : StatusFlags) (h : UInt64) : Option (MachineData × Bool) :=
-      evalEffects h false (dir.interp { d with status } p (fun s => .done (s, p.upper)) (fun _ _ => .unimplemented "jump"))
-    let mut outs : Array MachineData := #[]
-    for status in u.completions d.status do
-      let (s, sawUndef) ← run status 0
-      outs := outs.push s
-      if sawUndef then outs := outs.push (← run status (-1)).1
-    let s0 ← outs[0]?
-    if outs.any ({ · with status := s0.status } != s0) then failure
-    (d, u) := (s0, .disagreeing s0.status (outs.map (·.status)))
-  return (d, u)
+    let e := effectsOf dir p s
+    match run.states[i]? with
+    | some hw =>
+      match findOracle dir p s hw, (e.run i zeroOracle).1 with
+      | some (oi, s'), _ => (s, o) := (s', o ++ oi)
+      | none, .ok k =>
+        throw { instr := i, message := "Kraken's state differs from the hardware's", diff := (Observation.of k).diff hw }
+      | none, .error e =>
+        throw { instr := i, message := "Kraken ends the run here, but the hardware completed the instruction", ending := e }
+    | none =>
+      match (e.run i []).1 with
+      | .ok _ => throw { instr := i, message := "the hardware stopped here, but Kraken completes the instruction" }
+      | .error e => return (o, { state := .of s, ending := e })
+  return (o, { state := .of s, ending := .ok })
 
-def predict (asmCode : String) : Json :=
-  match stepDeterministic initData .none asmCode with
-  | some (s, ⟨0⟩) => Json.mkObj [("ok", toJson true), ("state", toJson (summarize s))]
-  | _ => Json.mkObj [("ok", toJson false), ("error", toJson "unparseable, faulting, jumping, or non-deterministic")]
+/-- A hardware state as the harness sends it: the GPRs in `Reg64s` order, rflags, each ymm as four
+little-endian 64-bit words, and the stack bytes that are not `0xff`. -/
+structure HardwareState where
+  regs : Array Nat
+  rflags : Nat
+  ymms : Array (Array Nat)
+  mem : Array (Nat × Nat)
+  deriving FromJson
+
+structure HardwareRunJson where
+  seq : String
+  states : Array HardwareState
+  deriving FromJson
+
+def HardwareState.toObservation (h : HardwareState) : Observation where
+  regs := let g (i : Nat) := h.regs[i]!.toUInt64
+    { rax := g 0, rbx := g 1, rcx := g 2, rdx := g 3, rsi := g 4, rdi := g 5, rsp := g 6, rbp := g 7,
+      r8 := g 8, r9 := g 9, r10 := g 10, r11 := g 11, r12 := g 12, r13 := g 13, r14 := g 14, r15 := g 15 }
+  status := let b := h.rflags.testBit
+    { cf := b 0, pf := b 2, af := b 4, zf := b 6, sf := b 7, of := b 11, df := b 10 }
+  ymms := h.ymms.toList.zipIdx.filterMap fun (ws, i) =>
+    let v := ws.zipIdx.foldl (fun acc (w, j) => acc ||| BitVec.ofNat 256 w <<< (64 * j)) (0 : BitVec 256)
+    if v == 0 then none else some (i, v)
+  mem := h.mem.toList.map fun (i, b) => (i, b.toUInt8)
+
+/-- Whether an access to `w` bytes at `addr` surely faults on the hardware too: the address is not
+canonical or in the kernel half, or it is in the unused middle of user space, above the 4 GiB that
+hold the harness binary and below the 0x7000_0000_0000 above which the mmap area, the stacks and the
+vDSO lie. Kraken's `nonmem` accesses nearer its stack may hit pages the harness has mapped around
+it, so they are not observable. -/
+def surelyUnmapped (addr : BitVec 64) (w : Nat) : Bool :=
+  2 ^ 32 ≤ addr.toNat && addr.toNat + w ≤ 0x7000_0000_0000 || 2 ^ 47 ≤ addr.toNat
+
+def Ending.toJson : Ending → Json
+  | .ok => Json.mkObj [("kind", "ok")]
+  | .fault i e => Json.mkObj [("kind", "fault"), ("instr", i), ("exception", e)]
+  | .unaligned i a w => Json.mkObj [("kind", "unaligned"), ("instr", i), ("addr", a.toNat), ("w", w)]
+  | .unmapped i a w => Json.mkObj [("kind", "unmapped"), ("instr", i), ("addr", a.toNat), ("w", w),
+      ("surelyUnmapped", surelyUnmapped a w)]
+  | .unsupported i m => Json.mkObj [("kind", "unsupported"), ("instr", i), ("message", m)]
+
+def observeJson (run : HardwareRunJson) : Json :=
+  match observeHardware { seq := run.seq, states := run.states.map (·.toObservation) } with
+  | .ok (o, r) => Json.mkObj [("ok", true), ("ending", r.ending.toJson), ("lean", observationDecl run.seq o r)]
+  | .error m => Json.mkObj [("ok", false), ("instr", m.instr), ("error", m.message), ("diff", toJson m.diff),
+      ("ending", match m.ending with | some e => e.toJson | none => Json.null)]
 
 /-! ## Random instruction sequence generation
 
@@ -155,8 +266,8 @@ Candidate instructions are random `Instr`s: `gen_ctors%` derives generators from
 in Syntax.lean, so every instruction form is covered without being listed here; the hand-written
 instances only choose operand values. Each `--generate` draws candidates (5000 unfiltered, 200000
 with prefix filter) with `ATT.instr` and keeps those `as` accepts (`genPool`, `assemblable`); every
-slot of a sequence then draws from that pool until Semantics.lean deems the candidate deterministic
-in the current state (`stepDeterministic`). -/
+slot of a sequence then draws from that pool until Semantics.lean runs the candidate in the current
+state (`genSequence`). -/
 
 abbrev GenM := OptionT (StateM StdGen)
 def nextNat (n : Nat) : GenM Nat := modifyGet (randNat · 0 (n - 1))
@@ -188,7 +299,7 @@ instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
 instance {α : Type} [Mnemonic α] : Gen α := ⟨(·.1) <$> pick Mnemonic.names⟩
 
 -- No labels (for `jcc`), nop lengths or alignments; other control flow is rejected by
--- `stepDeterministic`.
+-- `genSequence`.
 instance : Gen String := ⟨failure⟩
 instance : Gen Nat := ⟨failure⟩
 -- Small values (below 2^3), the boundaries of each width, and uniformly random values of each width.
@@ -253,17 +364,23 @@ def genSeed : GenM String := do
       let m ← movabs
       return s!"{m}\nmovq {r}, -16(%rsp)\nmovq {r}, -8(%rsp)\nmovups -16(%rsp), %xmm{← nextNat 16}"]
 
+/-- Whether a sequence may end with `e`: a fault the hardware shows as a signal. -/
+def observableEnding : Ending → Bool
+  | .fault .. | .unaligned .. => true
+  | .unmapped _ a w => surelyUnmapped a w
+  | .ok | .unsupported .. => false
+
 -- Four random register initializations (`genSeed`) followed by `length` instructions from `pool`, each drawn
--- until `stepDeterministic` accepts one. A final `add` makes all flags defined.
+-- until Semantics.lean runs it in the current state (with every `undefined` choice zero); the last
+-- one may instead fault (`observableEnding`).
 def genSequence (pool : Array String) (length : Nat) : StateM StdGen String := do
-  let mut (d, undef, lines) := (initData, UndefFlags.none, #[])
+  let mut (d, lines) := (initData, #[])
   for i in [0 : 4 + length] do
     for _ in [0 : 200] do
       let some cand ← (if i < 4 then genSeed else pick pool).run | continue
-      if let some (d', undef') := stepDeterministic d undef cand then
-        (d, undef, lines) := (d', undef', lines.push cand)
-        break
-  if undef != .none then lines := lines.push "addq %rax, %rax"
+      match runFrom zeroOracle d cand with
+      | (d', .ok) => (d, lines) := (d', lines.push cand); break
+      | (_, e) => if i == 3 + length && observableEnding e then lines := lines.push cand; break
   return "\n".intercalate lines.toList
 
 public def main (args : List String) : IO UInt32 := do
@@ -277,10 +394,10 @@ public def main (args : List String) : IO UInt32 := do
     let gen := (List.range count.toNat!).mapM fun _ => genSequence pool length.toNat!
     IO.println (toJson (gen.run' g).run).compress
     return 0
-  | ["--batch"] =>
+  | ["--observe"] =>
     let raw ← (← IO.getStdin).readToEnd
-    let seqs ← IO.ofExcept (Json.parse raw >>= fromJson? (α := Array String))
-    IO.println (toJson (seqs.map predict)).compress
+    let runs ← IO.ofExcept (Json.parse raw >>= fromJson? (α := Array HardwareRunJson))
+    IO.println (toJson (runs.map observeJson)).compress
     return 0
   | _ => pure ()
 
