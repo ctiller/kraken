@@ -652,6 +652,26 @@ def parseAvxSrcs (vex : Bool) : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w ×
     let (addr_w, ⟨w, src, dst⟩) ← parseAvxSrcDst
     pure (addr_w, ⟨w, src, dst, dst⟩)
 
+/-- Parse `SimdBlendvOp` (SSE and VEX) and `SimdFmaOp` operands. -/
+def parseAvxTer (mn v : String) (ps : Array (Parser Instr)) : Array (Parser Instr) := Id.run do
+  let mut ps := ps
+  if let some op := Mnemonic.ofName? (α := SimdBlendvOp) mn then ps := ps.push do
+    let (addr_w, ⟨_w, src, dst⟩) ←
+      (attempt do
+        skipHWs; let _ ← pstring "%xmm0"; parseComma
+        parseAvxSrcDst) <|>
+      parseAvxSrcDst
+    pure (toAvxInstr addr_w (.sseBlendv op dst src))
+  if let some op := Mnemonic.ofName? (α := SimdBlendvOp) v then ps := ps.push do
+    let ⟨w, mask⟩ ← parseAvxRegW; parseComma
+    let (addr_w, ⟨w', src2, src1, dst⟩) ← parseAvxSrc2Src1Dst
+    if h : w = w' then pure (toAvxInstr addr_w (.vexBlendv op dst src1 src2 (h ▸ mask)))
+    else fail "AVX operand widths differ"
+  if let some op := Mnemonic.ofName? (α := SimdFmaOp) v then ps := ps.push do
+    let (addr_w, ⟨_w, src3, src2, dst⟩) ← parseAvxSrc2Src1Dst
+    pure (toAvxInstr addr_w (.fma op dst src2 src3))
+  return ps
+
 /-- `$imm,` -/
 def parseImmComma : Parser ConstExpr := do
   skipHWs; let i ← parseInt64; parseComma; pure i
@@ -674,6 +694,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
     if let some op := Mnemonic.ofName? (α := SimdTestOp) name then ps := ps.push do
       let (addr_w, ⟨_w, src2, src1⟩) ← parseAvxSrcDst
       pure (toAvxInstr addr_w (.test (!vex) op src1 src2))
+  ps := parseAvxTer mn v ps
   if let some op := Mnemonic.ofName? (α := SimdScalarMov) mn then ps := ps.push do
     commaSeparatedAvx (some .W128) parseAvxRegOrMem parseAvxRegOrMem (.movs true op)
   if let some op := Mnemonic.ofName? (α := SimdScalarMov) v then ps := ps.push do

@@ -779,6 +779,14 @@ match i with
     let v := s1val.replaceLow (s2val.take (op.bytes * 8))
     next (s.setAvxReg dst (v.zeroExtend _))
 
+  | .sseBlendv op dst src =>
+    src.interp s p (checkAlign := true) (fun b s =>
+    next (s.setAvxReg (legacy := true) dst (op.interp (s.zmms.get dst) b (s.zmms.get ((AvxReg.xmm .mm0).as w)))))
+  | .vexBlendv op dst src1 src2 mask =>
+    src2.interp s p (fun b s => next (s.setAvxReg dst (op.interp (s.zmms.get src1) b (s.zmms.get mask))))
+  | .fma op dst src2 src3 =>
+    src3.interpSimd op.memBytes? s p (legacy := false) (fun c s =>
+    next (s.setAvxReg dst (op.interp (s.zmms.get dst) (s.zmms.get src2) c)))
   | .sse op dst src => bin true op dst dst src
   | .vex op dst src1 src2 => bin false op dst src1 src2
 

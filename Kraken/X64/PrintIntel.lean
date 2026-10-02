@@ -189,6 +189,10 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
     s!"{avxName l op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
   | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2}"
 
+  | .sseBlendv op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}, xmm0"
+  | .vexBlendv op dst src1 src2 mask =>
+    s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStr addr_w}, {mask}"
+  | .fma op dst src2 src3 => s!"v{Mnemonic.name op} {dst}, {src2}, {src3.toStrSimd op.memBytes? addr_w}"
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
 

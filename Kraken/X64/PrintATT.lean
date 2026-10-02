@@ -133,6 +133,9 @@ def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   | .vzeroall => "vzeroall"
   | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {avxReg src2}, {avxReg src1}, {avxReg dst}"
 
+  | .sseBlendv op d x => s!"{Mnemonic.name op} %xmm0, {avxRm aw x}, {avxReg d}"
+  | .vexBlendv op d a x m => s!"v{Mnemonic.name op} {avxReg m}, {avxRm aw x}, {avxReg a}, {avxReg d}"
+  | .fma op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
   | .sse op d x => s!"{Mnemonic.name op} {avxRm aw x}, {avxReg d}"
   | .vex op d a x => s!"v{Mnemonic.name op} {avxRm aw x}, {avxReg a}, {avxReg d}"
 
