@@ -729,6 +729,23 @@ set_option maxHeartbeats 1000000
     if cc.interp s.status
     then jmp (label l) s
     else next s
+  | .jrcxz l =>
+    if (s.regs.get64 .rcx).toAddressSize == 0
+    then jmp (label l) s
+    else next s
+  | .loop cond l =>
+    let rcx := s.regs.get64 .rcx - 1
+    let s := s.setReg (.low .rcx .W64) rcx
+    let take := match cond with
+      | .none => rcx != 0#64
+      | .e => rcx != 0#64 && s.status.zf
+      | .ne => rcx != 0#64 && !s.status.zf
+    if take then jmp (label l) s else next s
+  | .xlat =>
+    let addr : BitVec 64 := match address_size.address_size with
+      | .W32 => ((s.regs.get (.low .rbx .W32) + (s.regs.get (.low .rax .W8)).zeroExtend 32)).zeroExtend 64
+      | _ => s.regs.get64 .rbx + (s.regs.get (.low .rax .W8)).zeroExtend 64
+    s.load addr .W8 (fun val s => next (s.setReg (.low .rax .W8) val))
   | .jmp tgt =>
     tgt.interp s p (fun a s =>
     jmp (.ofBitVec a) s)

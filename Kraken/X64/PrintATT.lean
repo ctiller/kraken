@@ -108,6 +108,11 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .rcr d c => two "rcr" (count c) (rm aw d)
   | .bswap d => s!"bswap {reg d}"
   | .jcc cc l => s!"j{cc} {l}"
+  | .jrcxz l => if aw == .W32 then s!"jecxz {l}" else s!"jrcxz {l}"
+  | .loop .none l => s!"loop {l}"
+  | .loop .e l => s!"loope {l}"
+  | .loop .ne l => s!"loopne {l}"
+  | .xlat => if aw == .W32 then "xlatb (%ebx)" else "xlatb"
   | .jmp t => s!"jmp {target aw t}"
   | .call t => s!"call {target aw t}"
   | .ret => "ret"

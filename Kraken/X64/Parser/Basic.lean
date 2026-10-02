@@ -1044,6 +1044,22 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
   | "ret" | "retq" =>
     pure (toInstr .none (w := .W64) .ret)
 
+  | "xlat" | "xlatb" =>
+    (attempt do
+      let (addr_w, _) ← parseMemory
+      pure (toInstr (some addr_w) (w := .W8) .xlat)) <|>
+      pure (toInstr .none (w := .W8) .xlat)
+
+  | "jrcxz" | "jecxz" | "loop" | "loope" | "loopz" | "loopne" | "loopnz" =>
+    skipHWs
+    let target ← parseLabelRaw
+    let op := match mn with
+      | "jrcxz" | "jecxz" => .jrcxz target
+      | "loope" | "loopz" => .loop .e target
+      | "loopne" | "loopnz" => .loop .ne target
+      | _ => .loop .none target
+    pure (toInstr (if mn == "jecxz" then some .W32 else none) (w := .W64) op)
+
   | "call" | "callq" =>
     let ( addr_w, target ) ← parseRelRegOrMem
     pure (toInstr addr_w (w := .W64) (.call target))
