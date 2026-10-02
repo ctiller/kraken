@@ -102,6 +102,7 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .sar d c => two "sar" (count c) (rm aw d)
   | .shld d x c => s!"shld {count c}, {reg x}, {rm aw d}"
   | .shrd d x c => s!"shrd {count c}, {reg x}, {rm aw d}"
+  | .un op d x => s!"{Mnemonic.name op} {rm aw x}, {reg d}"
   | .rol d c => two "rol" (count c) (rm aw d)
   | .ror d c => two "ror" (count c) (rm aw d)
   | .rcl d c => two "rcl" (count c) (rm aw d)

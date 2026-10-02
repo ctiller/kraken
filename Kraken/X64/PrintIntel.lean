@@ -153,6 +153,7 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .sar dst cnt => s!"sar {dst.toStr addr_w}, {cnt}"
   | .shld dst src cnt => s!"shld {dst.toStr addr_w}, {src}, {cnt}"
   | .shrd dst src cnt => s!"shrd {dst.toStr addr_w}, {src}, {cnt}"
+  | .un op dst src => s!"{Mnemonic.name op} {dst}, {src.toStr addr_w}"
   | .rol dst cnt => s!"rol {dst.toStr addr_w}, {cnt}"
   | .ror dst cnt => s!"ror {dst.toStr addr_w}, {cnt}"
   | .rcl dst cnt => s!"rcl {dst.toStr addr_w}, {cnt}"

@@ -257,6 +257,8 @@ def NondetSupportingType.from_hash {α} [t : NondetSupportingType α] (h : UInt6
   | .avx_bitvec w => h.toBitVec.setWidth w.bits
 
 instance (w : Width) : NondetSupportingType w.type := .bitvec w
+-- For undefined 64-bit values written through a narrower `Reg` (e.g. `Regs.set64`).
+instance : NondetSupportingType (BitVec 64) := .bitvec .W64
 instance (w : AvxWidth) : NondetSupportingType w.type := .avx_bitvec w
 instance : NondetSupportingType Bool := .bool
 instance : NondetSupportingType StatusFlags := .statusFlags
@@ -719,6 +721,18 @@ set_option maxHeartbeats 1000000
       | _ /- ror -/ => let v := a.rotateRight count; (v, v.msb)
     (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
     { s with status := { s.status with cf, of } }.set dst v p next))
+  | .un op dst src =>
+    src.interp s p (fun a s =>
+    let (r, f) := op.interp a
+    s.status.update f fun status =>
+    match r with
+    | some r => next { s.setReg dst r with status }
+    | none =>
+      -- The SDM leaves DEST undefined; for a 32-bit register that includes whether the upper half
+      -- is zeroed (Intel processors leave the register unchanged).
+      match (generalizing := false) (motive := Width → Effects) w with
+      | .W32 => undefined fun (v64 : BitVec 64) => next { s with regs := s.regs.set64 dst.base v64, status }
+      | _ => undefined fun v => next { s.setReg dst v with status })
   | .rcr dst count | .rcl dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
