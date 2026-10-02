@@ -12,6 +12,8 @@ Semantics.lean leaves some results `undefined`; hardware picks one. This module 
 instruction sequence with those choices supplied by an *oracle* and reports what a hardware harness
 can observe, so that a hardware run becomes the checkable statement "there is an oracle under which
 Kraken computes what the hardware did": `∃ o : Oracle, observe o asm = result`.
+`Kraken/X64/Test/fuzz_x64.py` records such statements (`--lean-out`), with the oracle it extracted
+from the hardware run as the witness.
 -/
 
 /-! ## The initial state
