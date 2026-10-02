@@ -7,6 +7,7 @@ public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
+public import Kraken.X64.Ops.SimdImm
 public import Kraken.X64.Ops.SimdTest
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
@@ -268,6 +269,9 @@ inductive AvxOperation (w : AvxWidth)
   | mov (legacy : Bool) (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
   -- `dst := op dst src` on xmm registers, preserving the upper bits.
   | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
+  | unImm (legacy : Bool) (op : SimdUnImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | sseImm (op : SimdBinImmOp) (dst : AvxReg w) (src : AvxRegOrMem w) (imm : ConstExpr)
+  | vexImm (op : SimdBinImmOp) (dst : AvxReg w) (src1 : AvxReg w) (src2 : AvxRegOrMem w) (imm : ConstExpr)
   -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.
   | vex (op : SimdBinOp) (dst src1 : AvxReg w) (src2 : AvxRegOrMem w)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
