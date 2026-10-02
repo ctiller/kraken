@@ -443,10 +443,6 @@ structure StatusFlags.from_result.Remaining where
   cf : Bool
   af : Bool
   of : Bool
-  /-- The direction flag is not a status flag, so no instruction that computes a result changes it;
-  callers copy it from the previous flags by writing `{ s.status with cf, af, of }` (omitting the
-  source is a compile error). -/
-  df : Bool
   deriving Repr, BEq, DecidableEq
 
 -- TEMPORARY: definitions stolen from Lean 4.28's standard library, but with a
@@ -476,48 +472,50 @@ def StatusFlags.update (s : StatusFlags) (f : FlagsOut) (k : StatusFlags → Eff
 @[kstep] def StatusFlags.loadLow {n} (f : StatusFlags) (v : BitVec n) : StatusFlags :=
   { f with cf := v.getLsbD 0, pf := v.getLsbD 2, af := v.getLsbD 4, zf := v.getLsbD 6, sf := v.getLsbD 7 }
 
-@[kstep] def StatusFlags.from_result {w} (result : BitVec w) (f : from_result.Remaining) : StatusFlags :=
-  { f with
+@[kstep] def StatusFlags.from_result {w} (result : BitVec w) (f : from_result.Remaining) (old : StatusFlags := .mk false false false false false false false) : StatusFlags :=
+  { old with
     pf := (result.take 8).cpop_ % 2 == BitVec.zero _
     zf := result == BitVec.zero _
-    sf := result.msb }
+    sf := result.msb, cf := f.cf, af := f.af, of := f.of }
 
 @[kstep] def addFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
   let cin : BitVec w := if c then 1 else 0
   let v := a + b + cin
   let cint : Int := if c then 1 else 0
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
     cf := v.unsigned != a.unsigned + b.unsigned + cint
     af := (v.take 4).unsigned != (a.take 4).unsigned + (b.take 4).unsigned + cint
-    of := v.signed != a.signed + b.signed + cint })
+    of := v.signed != a.signed + b.signed + cint } old)
 
 @[kstep] def subFlags {w} (old : StatusFlags) (a b : BitVec w) (c : Bool := false) : BitVec w × StatusFlags :=
   let cin : BitVec w := if c then 1 else 0
   let v := a - b - cin
   let cint : Int := if c then 1 else 0
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
     cf := v.unsigned != a.unsigned - b.unsigned - cint
     af := (v.take 4).unsigned != (a.take 4).unsigned - (b.take 4).unsigned - cint
-    of := v.signed != a.signed - b.signed - cint })
+    of := v.signed != a.signed - b.signed - cint } old)
 
 @[kstep] def incFlags {w} (old : StatusFlags) (a : BitVec w) : BitVec w × StatusFlags :=
   let v := a + 1
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
+    cf := old.cf
     af := (v.take 4).unsigned != (a.take 4).unsigned + 1
-    of := v.signed != a.signed + 1 })
+    of := v.signed != a.signed + 1 } old)
 
 @[kstep] def decFlags {w} (old : StatusFlags) (a : BitVec w) : BitVec w × StatusFlags :=
   let v := a - 1
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
+    cf := old.cf
     af := (v.take 4).unsigned != (a.take 4).unsigned - 1
-    of := v.signed != a.signed - 1 })
+    of := v.signed != a.signed - 1 } old)
 
 @[kstep] def negFlags {w} (old : StatusFlags) (b : BitVec w) : BitVec w × StatusFlags :=
   let v := -b
-  (v, StatusFlags.from_result v { old with
+  (v, StatusFlags.from_result v {
     cf := b != 0
     af := (b.take 4) != 0
-    of := v.signed != - b.signed })
+    of := v.signed != - b.signed } old)
 
 
 
@@ -613,6 +611,31 @@ set_option maxHeartbeats 1000000
     let s := s.setReg r_lo (.ofInt _ v) -- if r_hi = r_li, hi is written:
     let s := s.setReg r_hi (.ofInt _ (v >>> w.bits))
     next s)
+  | .div src | .idiv src =>
+    src.interp s p (fun b s =>
+    let signed := i matches .idiv ..
+    let ext {n} (x : BitVec n) : Int := if signed then x.signed else x.unsigned
+    let bVal := ext b
+    if bVal == 0 then .fault "#DE: divide by zero" else
+    let aVal : Int := if w == .W8 then ext (s.regs.get (.low .rax .W16))
+      else (s.regs.get (Reg.low .rax w)).unsigned + (ext (s.regs.get (.low .rdx w)) <<< w.bits)
+    let q := aVal.tdiv bVal
+    let r := aVal.tmod bVal
+    let (lo, hi) : Int × Int := if signed then (-(2 ^ (w.bits - 1)), 2 ^ (w.bits - 1) - 1) else (0, 2 ^ w.bits - 1)
+    if q < lo || q > hi then .fault "#DE: divide overflow" else
+    let s := if w == .W8
+      then s.setReg (.low .rax .W16) (BitVec.ofInt 8 r ++ BitVec.ofInt 8 q)
+      else (s.setReg (.low .rax w) (.ofInt _ q)).setReg (.low .rdx w) (.ofInt _ r)
+    s.status.update .allUndef fun status => next { s with status })
+  | .cbw =>
+    if w == .W8 then .unimplemented "cbw w8" else
+    let low := (s.regs.get (Reg.low .rax w)).take (w.bits / 2)
+    next (s.setReg (.low .rax w) (low.signExtend w.bits))
+  | .cwd =>
+    if w == .W8 then .unimplemented "cwd w8" else
+    let ax := s.regs.get (Reg.low .rax w)
+    let dx := BitVec.ofInt w.bits (if ax.msb then -1 else 0)
+    next (s.setReg (.low .rdx w) dx)
   -- imul1 and imul collectively describe variants of the same
   -- syntax level `imul` instruction, where imul1 is the 1-operand case
   | .imul1 src =>
@@ -645,14 +668,14 @@ set_option maxHeartbeats 1000000
     b.interp s p (fun b s =>
     let v := a &&& b
     undefined (fun af =>
-    let status := .from_result v { s.status with cf := false, af, of := false }
+    let status := .from_result v { cf := false, af, of := false } s.status
     next { s with status})))
   | .and dst src | .or dst src | .xor dst src =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
     let v := match i with | .and _ _ => a &&& b | .or _ _ => a ||| b | _ => a ^^^ b
     undefined (fun af =>
-    let status := .from_result v { s.status with cf := false, of := false, af }
+    let status := .from_result v { cf := false, of := false, af } s.status
     { s with status }.set dst v p next)))
   | .not dst =>
     dst.interp s p (fun a s =>
@@ -696,11 +719,10 @@ set_option maxHeartbeats 1000000
       let cf := a.getLsbD (count-1)
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { s.status with cf, af, of })))) (λ (status : StatusFlags) =>
+      setstatus (.from_result v { cf, af, of})))) (λ status =>
     -- The result is undefined if the count exceeds the operand size (only possible for 16 bits).
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
-    -- Only the status flags can be undefined; DF is kept.
-    { s with status := { status with df := s.status.df } }.set dst v p next))))
+    { s with status }.set dst v p next))))
   | .shld dst src count =>
     dst.interp s p (fun a s =>
     src.interp s p (fun b s =>
@@ -711,10 +733,9 @@ set_option maxHeartbeats 1000000
       let cf := (a <<< (count-1)).msb
       undefined (λ af =>
       (λ setof => if count == 1 then setof (v.msb != a.msb) else undefined setof) (λ of =>
-      setstatus (.from_result v { s.status with cf, af, of })))) (λ (status : StatusFlags) =>
+      setstatus (.from_result v { cf, af, of})))) (λ status =>
     (λ setv => if count > w.bits then undefined setv else setv v) (λ v =>
-    -- Only the status flags can be undefined; DF is kept.
-    { s with status := { status with df := s.status.df } }.set dst v p next))))
+    { s with status }.set dst v p next))))
   | .rol dst count | .ror dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w

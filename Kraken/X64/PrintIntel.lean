@@ -143,6 +143,16 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .imul none src1 src2 => s!"imul {src1.toStr addr_w}, {src2.toStr addr_w}"
   | .imul (some dst) src1 src2 => s!"imul {dst.toStr addr_w}, {src1.toStr addr_w}, {src2.toStr addr_w}"
   | .imul1 src => s!"imul {src.toStr addr_w}"
+  | .div src => s!"div {src.toStr addr_w}"
+  | .idiv src => s!"idiv {src.toStr addr_w}"
+  | .cbw => match w with
+    | .W8 | .W16 => "cbw"
+    | .W32 => "cwde"
+    | .W64 => "cdqe"
+  | .cwd => match w with
+    | .W8 | .W16 => "cwd"
+    | .W32 => "cdq"
+    | .W64 => "cqo"
   | .test a b => s!"test {a.toStr addr_w}, {b.toStr addr_w}"
   | .and dst src => s!"and {dst.toStr addr_w}, {src.toStr addr_w}"
   | .not dst => s!"not {dst.toStr addr_w}"

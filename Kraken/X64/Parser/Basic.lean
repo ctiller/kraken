@@ -631,6 +631,15 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
 def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser Instr := do
   if repPfx != .none then
     fail "rep prefixes apply only to string instructions"
+  let (stem, w?) := splitWidthSuffix mn
+  match stem, w? with
+  | "div", w? =>
+    let (addr_w, ⟨_w, src⟩) ← parseUnaryRegOrMem w?
+    pure (toInstr addr_w (.div src))
+  | "idiv", w? =>
+    let (addr_w, ⟨_w, src⟩) ← parseUnaryRegOrMem w?
+    pure (toInstr addr_w (.idiv src))
+  | _, _ =>
   -- Match on full mnemonic name (no suffix stripping)
   match mn with
   -- Arithmetic (two-operand: src, dst) - 64-bit
@@ -758,6 +767,23 @@ def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser 
       let (addr_w, src) ← parseRegOrMemAO w
       pure (toInstr addr_w (.imul1 src))
     )
+  | "cbtw" | "cbw" =>
+    pure (toInstr .none (w := .W16) .cbw)
+
+  | "cwtl" | "cwde" =>
+    pure (toInstr .none (w := .W32) .cbw)
+
+  | "cltq" | "cdqe" =>
+    pure (toInstr .none (w := .W64) .cbw)
+
+  | "cwtd" | "cwd" =>
+    pure (toInstr .none (w := .W16) .cwd)
+
+  | "cltd" | "cdq" =>
+    pure (toInstr .none (w := .W32) .cwd)
+
+  | "cqto" | "cqo" =>
+    pure (toInstr .none (w := .W64) .cwd)
   | "neg" =>
     let ( addr_w, dst) ← parseRegOrMem
     let ⟨ _w, dst ⟩ ← assertW dst
