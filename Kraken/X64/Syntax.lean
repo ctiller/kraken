@@ -7,6 +7,7 @@ public import Kraken.X64.Ops.Hint
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
 public import Kraken.X64.Ops.SimdScalarMov
+public import Kraken.X64.Ops.SimdExtractInsert
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
 
@@ -275,6 +276,9 @@ inductive AvxOperation (w : AvxWidth)
   | vzeroall
   | movs (legacy : Bool) (op : SimdScalarMov) (dst : AvxRegOrMem w) (src : AvxRegOrMem w)
   | vexScalar (op : SimdScalarMov) (dst src1 src2 : AvxReg w)
+  | vextract (op : SimdExtract128Op) (dst : AvxDst .W128) (src : AvxReg w) (imm : ConstExpr)
+  | vinsert (op : SimdInsert128Op) (dst src1 : AvxReg w) (src2 : AvxRegOrMem .W128) (imm : ConstExpr)
+  | vcvtps2ph (dst : AvxDst .W128) (src : AvxReg w) (imm : ConstExpr)
   -- `dst := op dst src` on xmm registers, preserving the upper bits.
   | sse (op : SimdBinOp) (dst : AvxReg w) (src : AvxRegOrMem w)
   -- `vop src2, src1, dst`: `dst := op src1 src2`, zeroing the upper bits.

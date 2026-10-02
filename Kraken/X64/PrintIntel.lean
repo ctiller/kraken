@@ -186,6 +186,14 @@ def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : Stri
     s!"{avxName l op} {dst.toStrSimd (some op.bytes) addr_w}, {src.toStrSimd (some op.bytes) addr_w}"
   | .vexScalar op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2}"
 
+  | .vextract op dst src imm =>
+    s!"v{Mnemonic.name op} {dst.toStrSimd (some 16) addr_w}, {src}, {imm}"
+  | .vinsert op dst src1 src2 imm =>
+    s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd (some 16) addr_w}, {imm}"
+  | .vcvtps2ph dst src imm =>
+    let ptr := if w matches .W128 then some 8 else some 16
+    s!"vcvtps2ph {dst.toStrSimd ptr addr_w}, {src}, {imm}"
+
   | .sse op dst src => s!"{Mnemonic.name op} {dst}, {src.toStrSimd op.memBytes? addr_w}"
   | .vex op dst src1 src2 => s!"v{Mnemonic.name op} {dst}, {src1}, {src2.toStrSimd op.memBytes? addr_w}"
 

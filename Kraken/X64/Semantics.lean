@@ -754,6 +754,37 @@ match i with
     let v := s1val.replaceLow (s2val.take (op.bytes * 8))
     next (s.setAvxReg dst (v.zeroExtend _))
 
+  | .vextract _ dst src imm =>
+    let bit := ((imm.interp p).toBitVec.take 1)[0]
+    let yval : BitVec 256 := (s.zmms.get src).take 256
+    let val128 : BitVec 128 := if bit then yval.extractLsb' 128 128 else yval.take 128
+    s.setAvx dst val128 p next
+  | .vinsert _ dst src1 src2 imm =>
+    src2.interp s p (fun b s =>
+    let bit := ((imm.interp p).toBitVec.take 1)[0]
+    let yval : BitVec 256 := (s.zmms.get src1).take 256
+    let low128 := if bit then yval.take 128 else b
+    let high128 := if bit then b else yval.extractLsb' 128 128
+    let res256 : BitVec 256 := (BitVec.append high128 low128).setWidth _
+    next (s.setAvxReg dst (res256.zeroExtend _)))
+  | .vcvtps2ph dst src imm =>
+    let mode := roundImmMode (imm.imm8 p)
+    let sval := s.zmms.get src
+    match w with
+    | .W128 =>
+      let res64 : BitVec 64 := BitVec.ofLanes 64 16 fun i =>
+        f32ToF16 mode (sval.lane 32 i)
+      match dst with
+      | .avx r => next (s.setAvxReg r (res64.zeroExtend 128))
+      | .mem addr =>
+        let a := (addr.interp s.regs p).zeroExtend 64
+        s.store a res64 next
+    | .W256 =>
+      let res128 : BitVec 128 := BitVec.ofLanes 128 16 fun i =>
+        f32ToF16 mode (sval.lane 32 i)
+      s.setAvx dst res128 p next
+    | _ => .unimplemented "vcvtps2ph requires 128- or 256-bit source"
+
   | .sse op dst src => bin true op dst dst src
   | .vex op dst src1 src2 => bin false op dst src1 src2
 

@@ -632,6 +632,23 @@ def parseAvxSrc2Src1Dst : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxRe
   if h : dst.w = w then pure (addr_w, ⟨w, ← ascribeAvx w src2, src1, h ▸ dst.reg⟩)
   else fail "AVX operand widths differ"
 
+/-- Parse `vinserti128`, `vextracti128`, `vinsertf128`, `vextractf128`, and `vcvtps2ph`. -/
+def parseAvxExtractInsert (v : String) (ps : Array (Parser Instr)) : Array (Parser Instr) :=
+  if let some op := Mnemonic.ofName? (α := SimdInsert128Op) v then
+    ps.push do
+      skipHWs; let imm ← parseInt64; parseComma
+      let (addr_w, src2) ← parseAvxAO parseAvxRegOrMem .W128; parseComma
+      let (.none, ⟨_w, .avx src1, dst⟩) ← parseAvxSrcDst | fail "expected register"
+      pure (toAvxInstr addr_w (.vinsert op dst src1 src2 imm))
+  else if let some mk := (Mnemonic.ofName? (α := SimdExtract128Op) v).map (fun op {w} => AvxOperation.vextract (w := w) op) <|>
+      (if v == "cvtps2ph" then some (@AvxOperation.vcvtps2ph) else none) then
+    ps.push do
+      skipHWs; let imm ← parseInt64; parseComma
+      let src ← parseAvxRegW; parseComma
+      let (addr_w, dst) ← parseAvxAO parseAvxRegOrMem .W128
+      pure (toAvxInstr addr_w (mk dst src.reg imm))
+  else ps
+
 /-- `src2, %dst` (legacy SSE: `src1` is `dst`) or `src2, %src1, %dst` (VEX). -/
 def parseAvxSrcs (vex : Bool) : Parser (MaybeAddrWidth × Σ w, AvxRegOrMem w × AvxReg w × AvxReg w) :=
   if vex then parseAvxSrc2Src1Dst else do
@@ -676,6 +693,7 @@ def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
         let ⟨w, dst⟩ ← parseAvxRegW
         if h : w = .W128 then pure (toAvxInstr .none (.vexScalar op (h ▸ dst) src1 src2))
         else fail "scalar destination must be xmm"
+  ps := parseAvxExtractInsert v ps
   return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
