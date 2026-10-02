@@ -28,6 +28,19 @@ def map2 {n} (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec n)
 /-- All ones (-1) if `p` is true, else 0. -/
 def mask (k : Nat) (p : Bool) : BitVec k := if p then -1#k else 0#k
 
+/-- `v` saturated to the signed range of `k` bits. -/
+def satS (k : Nat) (v : Int) : BitVec k := .ofInt k (max (-2 ^ (k - 1)) (min (2 ^ (k - 1) - 1) v))
+
+/-- `v` saturated to the unsigned range of `k` bits. -/
+def satU (k : Nat) (v : Int) : BitVec k := .ofInt k (max 0 (min (2 ^ k - 1) v))
+
+/-- Horizontal operation on one 128-bit lane: first half from pairs of `a`, second half from pairs of `b`. -/
+def hop (k : Nat) (f : BitVec k → BitVec k → BitVec k) (a b : BitVec 128) : BitVec 128 :=
+  ofLanes 128 k fun i =>
+    let half := 128 / (2 * k)
+    if i < half then f (a.lane k (2 * i)) (a.lane k (2 * i + 1))
+    else f (b.lane k (2 * (i - half))) (b.lane k (2 * (i - half) + 1))
+
 def toFloat32 (v : BitVec 32) : Float32 := Float32.ofBits (UInt32.ofBitVec v)
 def toFloat (v : BitVec 64) : Float := Float.ofBits (UInt64.ofBitVec v)
 
