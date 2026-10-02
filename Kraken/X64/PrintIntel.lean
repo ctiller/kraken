@@ -109,7 +109,8 @@ def RelRegOrMem.toStr (rel : RelRegOrMem) (addr_w : Width := .W64) : String := m
 instance : ToString RelRegOrMem where toString rel := rel.toStr
 
 instance : ToString CondCode where toString
-  | .z => "e" | .nz => "ne" | .c => "b" | .nc => "ae" | .a => "a" | .be => "be" | .l => "l" | .le => "le"
+  | .o => "o" | .no => "no" | .c => "b" | .nc => "ae" | .z => "e" | .nz => "ne" | .be => "be" | .a => "a"
+  | .s => "s" | .ns => "ns" | .p => "p" | .np => "np" | .l => "l" | .ge => "ge" | .le => "le" | .g => "g"
 
 instance : ToString ShiftCountExpr where toString
   | .cl => "cl"
@@ -179,6 +180,8 @@ def avxName {α} [Mnemonic α] [DecidableEq α] (legacy : Bool) (op : α) : Stri
   (if legacy then "" else "v") ++ Mnemonic.name op
 
 def AvxOperation.toStr {w} (op : AvxOperation w) (addr_w : Width := .W64) : String := match op with
+
+  | .test l op src1 src2 => s!"{avxName l op} {src1}, {src2.toStrSimd op.memBytes? addr_w}"
   | .mov l op dst src => s!"{avxName l op} {dst.toStr addr_w}, {src.toStr addr_w}"
   | .vzeroupper => "vzeroupper"
   | .vzeroall => "vzeroall"

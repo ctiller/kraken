@@ -125,6 +125,8 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
 def avxOperation {w} (aw : Width) (op : AvxOperation w) : String :=
   let two (mn : String) {w} (d x : AvxRegOrMem w) := s!"{mn} {avxRm aw x}, {avxRm aw d}"
   match op with
+
+  | .test l op a x => s!"{avxName l op} {avxRm aw x}, {avxReg a}"
   | .mov l op d x => two (avxName l op) d x
   | .movs l op d x => two (avxName l op) d x
   | .vzeroupper => "vzeroupper"

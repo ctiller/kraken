@@ -1,11 +1,13 @@
 module
 
+public import Kraken.X64.Ops.Flags
 import Kraken.Attribute
 public import Kraken.Layout
 public import Kraken.X64.Mnemonic
 public import Kraken.X64.Ops.Hint
 public import Kraken.X64.Ops.SimdBin
 public import Kraken.X64.Ops.SimdMov
+public import Kraken.X64.Ops.SimdTest
 public import Kraken.X64.Ops.SimdScalarMov
 public import Lean.ToExpr
 meta import Lean.Elab.Deriving.ToExpr
@@ -188,7 +190,7 @@ attribute [coe] Operand.imm
 abbrev Operand.reg {w} (r : Reg w) : Operand w := regOrMem (.reg r)
 abbrev Operand.mem {w} (m : AddrExpr) : Operand w := regOrMem (.mem m)
 
-inductive CondCode | z | nz | c | nc | a | be | l | le
+inductive CondCode | o | no | c | nc | z | nz | be | a | s | ns | p | np | l | ge | le | g
   deriving Repr, BEq, DecidableEq, Hashable, Lean.ToExpr
 abbrev CondCode.e := CondCode.z
 abbrev CondCode.ne := CondCode.nz
@@ -268,6 +270,7 @@ inductive Operation (w : Width)
 -- forms of an instruction whose legacy SSE and `v` (VEX) forms have the same operands.
 -- TODO: AVX512 extensions (write-masking, ...)
 inductive AvxOperation (w : AvxWidth)
+  | test (legacy : Bool) (op : SimdTestOp) (src1 : AvxReg w) (src2 : AvxRegOrMem w)
   -- Full-vector moves; the legacy forms preserve the upper bits of a register destination, the
   -- `v` forms zero them.
   | mov (legacy : Bool) (op : SimdMov) (_ : AvxDst w) (src : AvxRegOrMem w)
