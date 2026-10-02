@@ -97,6 +97,9 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .not d => one "not" (rm aw d)
   | .or d x => two "or" (operand aw x) (rm aw d)
   | .xor d x => two "xor" (operand aw x) (rm aw d)
+  | .movbe d x => two "movbe" (rm aw x) (rm aw d)
+  | .crc32 (w' := w') d x => s!"crc32{suffix w'} {rm aw x}, {reg d}"
+  | .rorx d x c => s!"rorx{s} ${const c}, {rm aw x}, {reg d}"
   | .shl d c => two "shl" (count c) (rm aw d)
   | .shr d c => two "shr" (count c) (rm aw d)
   | .sar d c => two "sar" (count c) (rm aw d)

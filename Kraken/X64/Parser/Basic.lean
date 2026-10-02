@@ -605,6 +605,10 @@ def parseUnaryRegOrMem (op_w : Option Width) : Parser (MaybeAddrWidth × Σ w, R
     let ⟨w, src⟩ ← assertW src
     pure (addr_w, ⟨w, src⟩)
 
+def parseMovbe (op_w : Option Width) : Parser Instr := do
+  let (addr_w, ⟨_w, a, b⟩) ← parseBinaryRegOrMem op_w
+  pure (toInstr addr_w (.movbe b a))
+
 /-- The family opcode named `mn`, or named `mn` without a width suffix, together with that width. -/
 def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :=
   (Mnemonic.ofName? mn).map (·, none) <|> do
@@ -631,6 +635,21 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
 def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser Instr := do
   if repPfx != .none then
     fail "rep prefixes apply only to string instructions"
+  let (stem, w?) := splitWidthSuffix mn
+  match stem, w? with
+  | "movbe", w? =>
+    parseMovbe w?
+  | "crc32", w? =>
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨_dst_w, dst⟩ ← parseRegW
+    let some w := w? <|> src.1 | fail "crc32 with a memory source needs a size suffix"
+    pure (toInstr addr_w (.crc32 dst (← ascribe w src)))
+  | "rorx", _w? =>
+    let cnt ← parseImm8; parseComma
+    let (addr_w, src) ← parseRegOrMem; parseComma
+    let ⟨w, dst⟩ ← parseRegW
+    pure (toInstr addr_w (.rorx dst (← ascribe w src) cnt))
+  | _, _ =>
   -- Match on full mnemonic name (no suffix stripping)
   match mn with
   -- Arithmetic (two-operand: src, dst) - 64-bit

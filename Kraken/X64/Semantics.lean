@@ -426,6 +426,12 @@ def CondCode.interp (cc : CondCode) (s : StatusFlags) : Bool := match cc with
 @[kstep] def ShiftCountExpr.interpMasked [Labels] (c : ShiftCountExpr) (s : MachineData) (p : Std.Rco Int64) (w : Width) : Nat :=
   (c.interp s p).toNat &&& match w with | .W64 => 0x3f | _ => 0x1f -- "masked to 5 bits (or 6 bits with a 64-bit operand)"
 
+def crc32cStep (crc : BitVec 32) (b : BitVec 8) : BitVec 32 :=
+  let poly : BitVec 32 := 0x82F63B78#32
+  (List.range 8).foldl (fun c _ =>
+    if c.getLsbD 0 then (c >>> 1) ^^^ poly else c >>> 1
+  ) (crc ^^^ b.zeroExtend 32)
+
 def RelRegOrMem.interp [Labels] [AddressSize]
   (o : RelRegOrMem) (s : MachineData) (p : Std.Rco Int64)
   (ret : BitVec 64 → MachineData → Effects) :=
@@ -632,6 +638,28 @@ set_option maxHeartbeats 1000000
     dst.interp s p (fun a s =>
     let v := ~~~a
     s.set dst v p next)
+  | .movbe dst src =>
+    match dst, src with
+    | .reg d, .mem _ =>
+      src.interp s p (fun v s =>
+        next (s.setReg d (byteSwap v)))
+    | .mem _, .reg s_reg =>
+      let v := s.regs.get s_reg
+      s.set dst (byteSwap v) p next
+    | _, _ => Effects.fault "movbe requires one memory and one register operand"
+  | .crc32 (w' := w') dst src =>
+    src.interp s p (fun src_val s =>
+      let acc := (s.regs.get dst).take 32
+      let n_bytes := w'.bytes
+      let res32 := (List.range n_bytes).foldl (fun c i =>
+        crc32cStep c (src_val.extractLsb' (i * 8) 8)
+      ) acc
+      next (s.setReg dst (res32.zeroExtend _)))
+  | .rorx dst src cnt =>
+    src.interp s p (fun a s =>
+      let count := (cnt.interp p).toInt.emod w.bits |>.toNat
+      let res := a.rotateRight count
+      next (s.setReg dst res))
   | .shl dst count =>
     dst.interp s p (fun a s =>
     let count := count.interpMasked s p w
