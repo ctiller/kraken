@@ -194,6 +194,7 @@ instance : Gen AvxWidth := ⟨gen_ctors% AvxWidth⟩
 instance : Gen RegMm := ⟨gen_ctors% RegMm⟩
 instance : Gen Reg64 := ⟨gen_ctors% Reg64⟩
 instance : Gen CondCode := ⟨gen_ctors% CondCode⟩
+instance : Gen RepPrefix := ⟨gen_ctors% RepPrefix⟩
 instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
 -- Opcode families: uniformly over their opcodes.
 instance {α : Type} [Mnemonic α] : Gen α := ⟨(·.1) <$> pick Mnemonic.names⟩

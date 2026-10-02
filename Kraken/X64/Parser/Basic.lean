@@ -611,6 +611,16 @@ def lookupSized (α) [Mnemonic α] (mn : String) : Option (α × Option Width) :
     let (stem, some w) := splitWidthSuffix mn | none
     return (← Mnemonic.ofName? stem, some w)
 
+/-- If `mn` names a string operation (e.g. `movsb`, `cmpsl`), return the instruction. -/
+def stringOp? (mn : String) (repPfx : RepPrefix := .none) : Option Instr := do
+  guard (mn.length == 5)
+  let w ← match mn.back with
+    | 'b' => some Width.W8 | 'w' => some .W16 | 'l' => some .W32 | 'q' => some .W64
+    -- GNU as also takes the SSE mnemonics `movsd`/`cmpsd` without operands as string operations.
+    | 'd' => if mn == "movsd" || mn == "cmpsd" then some .W32 else none
+    | _ => none
+  pure (toInstr .none (w := w) (.str (← Mnemonic.ofName? (mn.take 4).copy) repPfx))
+
 /-- `$imm` immediate operand (used for imm8 counts and bit offsets). -/
 def parseImm8 : Parser ConstExpr := do
   skipHWs; let _ ← pchar '$'; let v ← parseInt
@@ -629,6 +639,8 @@ def parseFamily? (mn : String) : Option (Parser Instr) :=
 /-- Parse the operands of the instructions not in a family, named `mn` (lowercase `mnemonic`).
     AT&T syntax: src, dst (reversed from Intel). -/
 def parseExplicit (mnemonic mn : String) (repPfx : RepPrefix := .none) : Parser Instr := do
+  if let some instr := stringOp? mn repPfx then
+    return instr
   if repPfx != .none then
     fail "rep prefixes apply only to string instructions"
   -- Match on full mnemonic name (no suffix stripping)

@@ -83,6 +83,9 @@ def AddrExpr.toStr (a : AddrExpr) (addr_w : Width := .W64) : String :=
 def Width.ptrName : Width → String
   | .W8 => "BYTE" | .W16 => "WORD" | .W32 => "DWORD" | .W64 => "QWORD"
 
+def Width.strSuffix : Width → String
+  | .W8 => "b" | .W16 => "w" | .W32 => "d" | .W64 => "q"
+
 def RegOrMem.toStr {w} (rm : RegOrMem w) (addr_w : Width := .W64) : String := match rm with
   | .reg r => ToString.toString r
   | .mem a => s!"{w.ptrName} PTR {a.toStr addr_w}"
@@ -135,6 +138,7 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .inc dst => s!"inc {dst.toStr addr_w}"
   | .dec dst => s!"dec {dst.toStr addr_w}"
   | .neg dst => s!"neg {dst.toStr addr_w}"
+  | .str op rep => s!"{rep.toStrPrefix}{Mnemonic.name op}{w.strSuffix}"
   | .sub dst src => s!"sub {dst.toStr addr_w}, {src.toStr addr_w}"
   | .sbb dst src => s!"sbb {dst.toStr addr_w}, {src.toStr addr_w}"
   | .cmp a b => s!"cmp {a.toStr addr_w}, {b.toStr addr_w}"

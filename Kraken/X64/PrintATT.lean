@@ -84,6 +84,7 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .inc d => one "inc" (rm aw d)
   | .dec d => one "dec" (rm aw d)
   | .neg d => one "neg" (rm aw d)
+  | .str op rep => s!"{rep.toStrPrefix}{Mnemonic.name op}{s}"
   | .sub d x => two "sub" (operand aw x) (rm aw d)
   | .sbb d x => two "sbb" (operand aw x) (rm aw d)
   | .cmp a b => two "cmp" (operand aw b) (rm aw a)
