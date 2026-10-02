@@ -1,5 +1,6 @@
 module
 
+public import Kraken.X64.Ops.SimdInt
 public import Kraken.X64.Ops.SimdFp
 public import Kraken.X64.Ops.SimdLogic
 
@@ -11,6 +12,7 @@ lane, which wider forms apply to each lane. -/
 @[expose] public section
 
 inductive SimdBinOp
+  | int (op : SimdInt)
   | fp (op : SimdFp)
   | logic (op : SimdLogic)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
@@ -18,6 +20,7 @@ inductive SimdBinOp
 instance : Mnemonic SimdBinOp := ⟨mnemonics% SimdBinOp⟩
 
 def SimdBinOp.interp {n} : SimdBinOp → BitVec n → BitVec n → BitVec n
+  | .int op => .map2 128 op.interp
   | .fp op => .map2 128 op.interp
   | .logic op => .map2 128 op.interp
 
