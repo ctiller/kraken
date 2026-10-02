@@ -11,6 +11,8 @@ meta import Lean.Elab.Deriving.ToExpr
 
 inductive SimdCrypto
   | aesenc | aesenclast | aesdec | aesdeclast
+  | sha1msg1 | sha1msg2 | sha1nexte | sha256msg1 | sha256msg2
+  | gf2p8mulb
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
 instance : Mnemonic SimdCrypto := ⟨mnemonics% SimdCrypto⟩
@@ -125,3 +127,33 @@ def SimdCrypto.interp : SimdCrypto → BitVec 128 → BitVec 128 → BitVec 128
   | .aesenclast => fun a b => aesShiftRowsSubBytes a ^^^ b
   | .aesdec => fun a b => aesInvMixColumns (aesInvShiftRowsInvSubBytes a) ^^^ b
   | .aesdeclast => fun a b => aesInvShiftRowsInvSubBytes a ^^^ b
+  | .sha1msg1 => fun a b =>
+      let w5 := b.lane 32 2; let w4 := b.lane 32 3
+      let w3 := a.lane 32 0; let w2 := a.lane 32 1; let w1 := a.lane 32 2; let w0 := a.lane 32 3
+      .ofLanes 128 32 fun | 0 => w5 ^^^ w3 | 1 => w4 ^^^ w2 | 2 => w3 ^^^ w1 | _ => w2 ^^^ w0
+  | .sha1msg2 => fun a b =>
+      let w15 := b.lane 32 0; let w14 := b.lane 32 1; let w13 := b.lane 32 2
+      let w16 := (a.lane 32 3 ^^^ w13).rotateLeft 1
+      let w17 := (a.lane 32 2 ^^^ w14).rotateLeft 1
+      let w18 := (a.lane 32 1 ^^^ w15).rotateLeft 1
+      let w19 := (a.lane 32 0 ^^^ w16).rotateLeft 1
+      .ofLanes 128 32 fun | 0 => w19 | 1 => w18 | 2 => w17 | _ => w16
+  | .sha1nexte => fun a b =>
+      let tmp := (a.lane 32 3).rotateLeft 30
+      .ofLanes 128 32 fun | 3 => b.lane 32 3 + tmp | i => b.lane 32 i
+  | .sha256msg1 => fun a b =>
+      let w0 := a.lane 32 0; let w1 := a.lane 32 1; let w2 := a.lane 32 2; let w3 := a.lane 32 3
+      let w4 := b.lane 32 0
+      .ofLanes 128 32 fun
+        | 0 => w0 + sha256Sigma0 w1
+        | 1 => w1 + sha256Sigma0 w2
+        | 2 => w2 + sha256Sigma0 w3
+        | _ => w3 + sha256Sigma0 w4
+  | .sha256msg2 => fun a b =>
+      let w14 := b.lane 32 2; let w15 := b.lane 32 3
+      let w16 := a.lane 32 0 + sha256Sigma1 w14
+      let w17 := a.lane 32 1 + sha256Sigma1 w15
+      let w18 := a.lane 32 2 + sha256Sigma1 w16
+      let w19 := a.lane 32 3 + sha256Sigma1 w17
+      .ofLanes 128 32 fun | 0 => w16 | 1 => w17 | 2 => w18 | _ => w19
+  | .gf2p8mulb => .map2 8 gf2p8Mul
