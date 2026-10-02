@@ -81,6 +81,7 @@ def operation {w} (aw : Width) (op : Operation w) : String :=
   | .adc d x => two "adc" (operand aw x) (rm aw d)
   | .adcx d x => s!"adcx {rm aw x}, {reg d}"
   | .adox d x => s!"adox {rm aw x}, {reg d}"
+  | .nullary op => Mnemonic.name op
   | .inc d => one "inc" (rm aw d)
   | .dec d => one "dec" (rm aw d)
   | .neg d => one "neg" (rm aw d)

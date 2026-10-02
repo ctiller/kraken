@@ -132,6 +132,7 @@ def Operation.toStr {w} (op : Operation w) (addr_w : Width := .W64) : String := 
   | .adc dst src => s!"adc {dst.toStr addr_w}, {src.toStr addr_w}"
   | .adcx dst src => s!"adcx {dst}, {src.toStr addr_w}"
   | .adox dst src => s!"adox {dst}, {src.toStr addr_w}"
+  | .nullary op => Mnemonic.name op
   | .inc dst => s!"inc {dst.toStr addr_w}"
   | .dec dst => s!"dec {dst.toStr addr_w}"
   | .neg dst => s!"neg {dst.toStr addr_w}"

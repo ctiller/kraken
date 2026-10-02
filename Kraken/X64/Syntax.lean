@@ -219,6 +219,7 @@ inductive Operation (w : Width)
   | adc  (_ : Dst w) (src : Operand w)
   | adcx (_ : Reg w) (src : RegOrMem w) -- {_ : 32 <= w.bits}
   | adox (dst : Reg w) (src : RegOrMem w) -- {_ : 32 <= w.bits}
+  | nullary (op : NullaryOp)
   | inc  (_ : RegOrMem w)
   | dec  (_ : RegOrMem w)
   | neg  (_ : RegOrMem w)

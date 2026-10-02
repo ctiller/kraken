@@ -618,7 +618,11 @@ def parseImm8 : Parser ConstExpr := do
 
 /-- The parsers for the operands of the family opcodes (see Kraken/X64/Ops) named `mn`. A mnemonic
 may belong to several families with different operand shapes. -/
-def familyParsers (_mn : String) : Array (Parser Instr) := #[]
+def familyParsers (mn : String) : Array (Parser Instr) := Id.run do
+  let mut ps : Array (Parser Instr) := #[]
+  if let some op := Mnemonic.ofName? (α := NullaryOp) mn then ps := ps.push do
+    pure (toInstr .none (w := .W64) (.nullary op))
+  return ps
 
 /-- The parser for the operands of a family opcode named `mn`, if any: the first family whose
 operand shape matches. -/
