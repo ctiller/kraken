@@ -19,6 +19,7 @@ Output:
 -/
 
 import Kraken.Mem
+import Kraken.X64.Observe
 import Kraken.X64.Parser
 import Kraken.X64.PrintATT
 import Kraken.X64.Semantics
@@ -67,18 +68,6 @@ def summarize (s : MachineData) : StateSummary :=
 
 def _start: String := "_start"
 def _end: String := "_end"
-
--- Give the program a stack of 800B initially, mapped at a plausible place.
-def stackSize := 800
--- Place the stack somewhere high in memory, aligned to 256 bytes. This will
--- help us avoid disagreements with the actual machine: we will avoid over/underflow
--- when we allocate stack memory using arithmetic instructions (which would happen
--- if the stack were at 0), and fixing the last byte of the address at 0 means that
--- we will match PF for these operations. The hardware harness (`reset_state` in
--- Kraken/X64/Test/asm_tests.py) runs with exactly this rsp and stack mapping.
-def stackLocation: UInt64 := 0x7ffecafee200
-def initStack : DataMem := (List.replicate stackSize 0xff).At (stackLocation - stackSize)
-def initData : MachineData := {regs := {rsp := stackLocation}, dmem := initStack}
 
 def finishCriterion (p: Program) (s: MachineState): Bool :=
   s.2 = p.fakeLayout.labels.label _end

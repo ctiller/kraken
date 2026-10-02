@@ -25,7 +25,7 @@ SAFE_YMMS = [f"ymm{i}" for i in range(16)]
 FLAG_MAP = {"cf": 0, "pf": 2, "af": 4, "zf": 6, "sf": 7, "of": 11, "df": 10}
 TIMEOUT_SECONDS = 50
 # Kraken's initial rsp and its stack mapping [STACK - STACK_SIZE, STACK), filled with 0xff
-# (`stackLocation`, `stackSize` and `initStack` in KrakenRunnerX64.lean). The low byte of STACK
+# (`stackLocation`, `stackSize` and `initStack` in Kraken/X64/Observe.lean). The low byte of STACK
 # is 0, so PF of rsp arithmetic (e.g. `subq $8, %rsp`) is predictable.
 STACK = 0x7ffecafee200
 STACK_SIZE = 800
@@ -46,7 +46,7 @@ class Color:
     RESET = "\033[0m"
 
 def reset_state() -> str:
-  """Assembly that sets up Kraken's initial state (`initData` in KrakenRunnerX64.lean): rsp = STACK,
+  """Assembly that sets up Kraken's initial state (`initData` in Kraken/X64/Observe.lean): rsp = STACK,
   rflags = 0, the stack filled with 0xff, and all other GPRs and ymm registers zero."""
   zero_gprs = "\n    ".join(f"movq $0, %{r}" for r in REGS if r != "rsp")
   return f"""
