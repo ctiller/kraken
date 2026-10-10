@@ -8,6 +8,8 @@ meta import Lean.Elab.Deriving.ToExpr
 /-! Packed integer SSE/AVX operations `dst := op(src1, src2)` (see `SimdBinOp`). -/
 
 @[expose] public section
+instance instMinBitVecCompat {n : Nat} : Min (BitVec n) := minOfLe
+instance instMaxBitVecCompat {n : Nat} : Max (BitVec n) := maxOfLe
 
 inductive SimdInt
   | paddb | paddw | paddd | paddq
