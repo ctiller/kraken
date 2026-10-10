@@ -202,11 +202,14 @@ def failing (α) [Mnemonic α] (forms : α → String → List String) : List St
   | _, _ => false
 
 -- Every program in the hardware test corpus round-trips.
-#eval show IO Unit from do
-  for f in ← System.FilePath.readDir "Kraken/X64/Test/asm" do
+#eval show Lean.Elab.Command.CommandElabM Unit from do
+  -- Locate the corpus from this source file, not the working directory, so the
+  -- test also builds when Kraken is a dependency of another package.
+  let src : System.FilePath := (← IO.currentDir) / (← Lean.getFileName)
+  for f in ← System.FilePath.readDir (src.parent.get! / "Test" / "asm") do
     if f.path.extension == some "S" then
       unless roundtrips (stripDirectives (← IO.FS.readFile f.path)) do
-        throw <| .userError s!"{f.path} does not round-trip"
+        throwError "{f.path} does not round-trip"
 
 /-- Programs the parser rejects. -/
 def rejected : List String := [
