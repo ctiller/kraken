@@ -51,13 +51,16 @@ def run_fuzzer(asm_tests, as_cmd, ld_cmd, emu_cmd=(), description=None):
     p.add_argument("--batches", type=int, default=5)
     p.add_argument("--batch-size", type=int, default=100)
     p.add_argument("--length", type=int, default=12)
+    p.add_argument("--only", default="", help="comma-separated mnemonic prefixes to draw instructions from")
     args = p.parse_args()
 
     failures = total = 0
     start = time.perf_counter()
     for b in range(args.batches):
         seed = args.seed + b
-        seqs = kraken(asm_tests.KRAKEN_RUNNER, "--generate", seed, args.batch_size, args.length)
+        seqs = kraken(
+            asm_tests.KRAKEN_RUNNER, "--generate", seed, args.batch_size, args.length, *filter(None, args.only.split(","))
+        )
         preds = kraken(asm_tests.KRAKEN_RUNNER, "--batch", inp=json.dumps(seqs).encode())
         hw_states = run_hardware(asm_tests, seqs, as_cmd, ld_cmd, emu_cmd)
         for i, (seq, hw, k) in enumerate(zip(seqs, hw_states, preds, strict=True)):

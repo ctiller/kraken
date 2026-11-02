@@ -6,7 +6,8 @@ KrakenRunnerX64 - Run assembly instructions through Kraken Semantics and obtain 
 At this point this expects a file only containing a list of assembly instructions, no data block or similar.
 
 Usage: krakenrunner_x64 <assembly.S>
-       krakenrunner_x64 --generate <seed> <count> <length>  (random sequences that Kraken deems deterministic)
+       krakenrunner_x64 --generate <seed> <count> <length> [prefix...]  (random sequences that Kraken deems
+        deterministic, optionally drawing only instructions starting with one of the prefixes)
        krakenrunner_x64 --batch < sequences.json              (predict final states for a JSON array of sequences)
 
 Arguments:
@@ -104,6 +105,8 @@ instance : Gen RegMm := ⟨gen_ctors% RegMm⟩
 instance : Gen Reg64 := ⟨gen_ctors% Reg64⟩
 instance : Gen CondCode := ⟨gen_ctors% CondCode⟩
 instance : Gen AddrIndex := ⟨gen_ctors% AddrIndex⟩
+-- Opcode families: uniformly over their opcodes.
+instance {α : Type} [Mnemonic α] : Gen α := ⟨(·.1) <$> pick Mnemonic.names⟩
 
 -- No nop lengths or alignments; other control flow is rejected by `stepDeterministic`.
 instance : Gen Nat := ⟨failure⟩
@@ -131,15 +134,25 @@ instance {w} : Gen (Operation w) := ⟨gen_ctors% Operation⟩
 instance {w} : Gen (AvxOperation w) := ⟨gen_ctors% AvxOperation⟩
 instance : Gen Instr := ⟨gen_ctors% Instr⟩
 
--- Loads a random 64-bit value into a register other than rsp.
+/-- One random instruction in AT&T syntax. A separate definition so that the `Instr` generator,
+which grows with every opcode family, is compiled once rather than specialized into `genPool`. -/
+def genInstr : GenM String := Kraken.X64.ATT.instr <$> gen
+
+-- Initializes a register other than rsp.
 def genSeed : GenM String := do
   let r ← gen; guard (r != Reg64.rsp)
   let r := Kraken.X64.ATT.reg (.low r .W64)
-  let movabs := s!"movabsq ${← nextNat (2 ^ 64)}, {r}"
-  if ← pick #[true, false] then return movabs
-  -- Also copy it into one of xmm0-15 via the stack; they start zeroed, so SSE ops would
-  -- otherwise see only zeros.
-  return s!"{movabs}\nmovq {r}, -16(%rsp)\nmovq {r}, -8(%rsp)\nmovups -16(%rsp), %xmm{← nextNat 16}"
+  let movabs : GenM String := do return s!"movabsq ${← nextNat (2 ^ 64)}, {r}"
+  oneOf #[movabs,
+    -- An address in the stack mapping, for memory operands.
+    do return s!"leaq -{(← nextNat (stackSize - 300)) + 300}(%rsp), {r}",
+    -- A small count (for rep, loop, and shifts by %cl).
+    do return s!"movq ${← nextNat 16}, {r}",
+    -- Also copy a random value into one of xmm0-15 via the stack; they start zeroed, so SSE ops
+    -- would otherwise see only zeros.
+    do
+      let m ← movabs
+      return s!"{m}\nmovq {r}, -16(%rsp)\nmovq {r}, -8(%rsp)\nmovups -16(%rsp), %xmm{← nextNat 16}"]
 
 -- APX is excluded because the hardware lacks it (e.g. `imul %edx, %r12d, %edi`), AVX-512 because
 -- the harness only observes ymm0-15.
@@ -153,7 +166,7 @@ def fuzzConfig : FuzzConfig MachineData StatusFlags StateSummary where
     return exe.withAddresses.map fun d : Kraken.Addressable Directive =>
       { d with directive := fun s p h => evalEffects h false (d.directive.interp s p (fun s => .done ⟨s, p.upper⟩) (fun _ _ => .unimplemented "jump")) }
   summarize := summarize
-  genInstr := Kraken.X64.ATT.instr <$> gen
+  genInstr := genInstr
   runAssembler path := IO.Process.output { cmd := "as", args := #["-march=+noapx_f+noavx512f", "-o", "/dev/null", path.toString] }
   genSeed := genSeed
   defineAllFlagsInstr := "addq %rax, %rax"

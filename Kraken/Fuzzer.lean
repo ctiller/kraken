@@ -169,14 +169,17 @@ def FuzzConfig.genSequence (cfg : FuzzConfig MachineData StatusFlags StateSummar
   if undef != .none then lines := lines.push cfg.defineAllFlagsInstr
   return "\n".intercalate lines.toList
 
-/-- Handles `--generate <seed> <count> <length>` and `--batch` CLI invocations, returning `none`
-when `args` is a normal single-file runner invocation. -/
+/-- Handles `--generate <seed> <count> <length> [prefix...]` and `--batch` CLI invocations,
+returning `none` when `args` is a normal single-file runner invocation. -/
 def FuzzConfig.handleCli? (cfg : FuzzConfig MachineData StatusFlags StateSummary)
     (args : List String) : IO (Option UInt32) := do
   match args with
-  | ["--generate", seed, count, length] =>
-    let (pool, g) := (cfg.genPool 5000).run (mkStdGen seed.toNat!)
-    let pool ← cfg.assemblable pool
+  | "--generate" :: seed :: count :: length :: only =>
+    -- Draw more candidates when only instructions starting with one of `only` are wanted.
+    let (pool, g) := (cfg.genPool (if only.isEmpty then 5000 else 200000)).run (mkStdGen seed.toNat!)
+    -- Deduplicated, so that forms with few operand choices (e.g. `vzeroall`) don't dominate.
+    let pool := (pool.filter fun l => only.isEmpty || only.any fun o => l.startsWith o).qsort (· < ·)
+    let pool ← cfg.assemblable pool.toList.eraseReps.toArray
     let gen := (List.range count.toNat!).mapM fun _ => cfg.genSequence pool length.toNat!
     IO.println (toJson (gen.run' g).run).compress
     return some 0
