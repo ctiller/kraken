@@ -20,6 +20,8 @@ Output:
 
 import Kraken.Fuzzer
 meta import Kraken.Fuzzer
+import Kraken.Mem
+import Kraken.X64.Observe
 import Kraken.X64.Parser
 import Kraken.X64.PrintATT
 import Kraken.X64.Semantics
@@ -63,15 +65,6 @@ def summarize (s : MachineData) : StateSummary :=
              ("zmm28", z.zmm28), ("zmm29", z.zmm29), ("zmm30", z.zmm30), ("zmm31", z.zmm31)],
     flags := [("cf", f.cf), ("pf", f.pf), ("af", f.af),
               ("zf", f.zf), ("sf", f.sf), ("of", f.of), ("df", f.df)] }
-
--- Place the stack somewhere high in memory, aligned to 256 bytes. This will
--- help us avoid disagreements with the actual machine: we will avoid over/underflow
--- when we allocate stack memory using arithmetic instructions (which would happen
--- if the stack were at 0), and fixing the last byte of the address at 0 means that
--- we will match PF for these operations. The hardware harness (`reset_state` in
--- Kraken/X64/Test/asm_tests.py) runs with exactly this rsp and stack mapping.
-def stackLocation : UInt64 := 0x7ffecafee200
-def initData : MachineData := {regs := {rsp := stackLocation}, dmem := initStack stackLocation}
 
 def finishCriterion (p : Program) (s : MachineState) : Bool :=
   s.pc = p.fakeLayout.labels.label _end

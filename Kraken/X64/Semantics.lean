@@ -249,12 +249,18 @@ class inductive NondetSupportingType : Type -> Type
   | bool : NondetSupportingType Bool
   | statusFlags : NondetSupportingType StatusFlags
 
+/-- The value of type `α` that the natural number `v` denotes: its low bits (a `Bool` is bit 0;
+`StatusFlags` are bits 0-5 as cf, pf, af, zf, sf, of, with df false; a bit-vector is `v` modulo its
+width), so that every value of every `NondetSupportingType` is denoted by some number. -/
+def NondetSupportingType.decode {α} : NondetSupportingType α → Nat → α
+  | .bool, v => v % 2 != 0
+  | .statusFlags, v => let h := BitVec.ofNat 6 v; .mk h[0] h[1] h[2] h[3] h[4] h[5] false
+  | .bitvec w, v => BitVec.ofNat w.bits v
+  | .avx_bitvec w, v => BitVec.ofNat w.bits v
+
+/-- The value a 64-bit hash denotes (`decode` of the hash). -/
 def NondetSupportingType.from_hash {α} [t : NondetSupportingType α] (h : UInt64) : α :=
-  match t with
-  | .bool => h % 2 != 0
-  | .statusFlags => let h := h.toBitVec; (.mk h[0] h[1] h[2] h[3] h[4] h[5] false)
-  | .bitvec w => h.toBitVec.setWidth w.bits
-  | .avx_bitvec w => h.toBitVec.setWidth w.bits
+  t.decode h.toNat
 
 instance (w : Width) : NondetSupportingType w.type := .bitvec w
 instance (w : AvxWidth) : NondetSupportingType w.type := .avx_bitvec w
