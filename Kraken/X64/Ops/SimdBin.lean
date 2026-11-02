@@ -1,6 +1,7 @@
 module
 
 public import Kraken.X64.Ops.SimdFp
+public import Kraken.X64.Ops.SimdCrypto
 public import Kraken.X64.Ops.SimdLogic
 
 /-! SSE/AVX operations of shape `dst := op(src1, src2)`, as a sum of opcode families (one file each).
@@ -12,6 +13,7 @@ lane, which wider forms apply to each lane. -/
 
 inductive SimdBinOp
   | fp (op : SimdFp)
+  | crypto (op : SimdCrypto)
   | logic (op : SimdLogic)
   deriving Repr, DecidableEq, Hashable, Lean.ToExpr
 
@@ -19,6 +21,7 @@ instance : Mnemonic SimdBinOp := ⟨mnemonics% SimdBinOp⟩
 
 def SimdBinOp.interp {n} : SimdBinOp → BitVec n → BitVec n → BitVec n
   | .fp op => .map2 128 op.interp
+  | .crypto op => .map2 128 op.interp
   | .logic op => .map2 128 op.interp
 
 /-- The size in bytes of a memory operand, if smaller than the vector (scalar operations). -/

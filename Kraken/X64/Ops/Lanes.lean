@@ -43,3 +43,23 @@ end BitVec
 def Float32.toBitVec (f : Float32) : BitVec 32 := UInt32.toBitVec (Float32.toBits f)
 def Float.toBitVec (f : Float) : BitVec 64 := UInt64.toBitVec (Float.toBits f)
 
+/-- `(unordered, a < b, a = b)` for single-precision `a` and `b`. -/
+def fcmp32 (a b : BitVec 32) : Bool × Bool × Bool :=
+  let (x, y) := (a.toFloat32, b.toFloat32); (x.isNaN || y.isNaN, x < y, x == y)
+
+/-- `fcmp32` for double precision. -/
+def fcmp64 (a b : BitVec 64) : Bool × Bool × Bool :=
+  let (x, y) := (a.toFloat, b.toFloat); (x.isNaN || y.isNaN, x < y, x == y)
+
+/-- Floating-point element type and lane/scalar configuration. -/
+inductive FpType | ps | pd | ss | sd
+  deriving Repr, DecidableEq, Hashable, Lean.ToExpr
+
+instance : Mnemonic FpType := ⟨mnemonics% FpType⟩
+
+namespace FpType
+def scalar : FpType → Bool | .ss | .sd => true | _ => false
+def elemBits : FpType → Nat | .ps | .ss => 32 | .pd | .sd => 64
+/-- The size in bytes of a memory operand, if smaller than the vector (scalar types). -/
+def memBytes? (t : FpType) : Option Nat := if t.scalar then some (t.elemBits / 8) else none
+end FpType
