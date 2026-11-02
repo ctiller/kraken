@@ -503,16 +503,23 @@ def elabExtMovOp (stx : TSyntax `x64_ext_mov_op) : TermElabM (Expr × Width × W
     | _           => throwError "invalid extension width suffix '{sfx}'"
   pure (op, ws)
 
-/-- The `AvxOperation` constructor of an `x64_avx_op`. -/
-def elabAvxOp (stx : TSyntax `x64_avx_op) : TermElabM Expr := withRef stx do
+/-- Elaborate an `x64_avx_op` instruction into an `Expr` of type `AvxOperation w`. -/
+def elabAvxInstr (stx : TSyntax `x64_avx_op) (src dst : TSyntax `x64_avx_operand) : X64ElabM Expr := withRef stx do
   let (stem, sfx) ← splitSuffixed stx
+  let src ← elabAvxRegOrMem src
   match stem, sfx with
-  | "movu",  "ps" => pure (mkConst ``AvxOperation.movups)
-  | "vmovu", "ps" => pure (mkConst ``AvxOperation.vmovups)
-  | "mova",  "ps" => pure (mkConst ``AvxOperation.movaps)
-  | "add",   "ps" => pure (mkConst ``AvxOperation.addps)
-  | "sub",   "ps" => pure (mkConst ``AvxOperation.subps)
+  | "movu",  "ps" => mkAppWidth (mkConst ``AvxOperation.mov) #[toExpr true,  toExpr SimdMov.movups, ← elabAvxRegOrMem dst, src]
+  | "vmovu", "ps" => mkAppWidth (mkConst ``AvxOperation.mov) #[toExpr false, toExpr SimdMov.movups, ← elabAvxRegOrMem dst, src]
+  | "mova",  "ps" => mkAppWidth (mkConst ``AvxOperation.mov) #[toExpr true,  toExpr SimdMov.movaps, ← elabAvxRegOrMem dst, src]
+  | "add",   "ps" => mkAppWidth (mkConst ``AvxOperation.sse) #[toExpr (SimdBinOp.fp .addps), ← elabAvxRegOperand dst, src]
+  | "sub",   "ps" => mkAppWidth (mkConst ``AvxOperation.sse) #[toExpr (SimdBinOp.fp .subps), ← elabAvxRegOperand dst, src]
   | _, _          => throwError "invalid AVX mnemonic"
+where
+  elabAvxRegOperand (stx : TSyntax `x64_avx_operand) : X64ElabM Expr := withRef stx do
+    match stx with
+    | `(x64_avx_operand| $r:x64_avx_reg) => elabAvxReg r
+    | `(x64_avx_operand| ❰ $t ❱) => elabAntiquot t (← mkAppWidth (mkConst ``AvxReg))
+    | _ => throwError "expected AVX register operand"
 
 /-- The `Operation` constructor of an `x64_shift_op`. -/
 def elabShiftOp (stx : TSyntax `x64_shift_op) : TermElabM Expr := withRef stx do
@@ -624,10 +631,7 @@ def elabInstr (stx : TSyntax `x64_instr) : X64ElabM Expr := withRef stx do
     let dst ← elabReg dst
     mkRegularInstr (← mkAppWidth mk #[dst, src])
   | `(x64_instr| $op:x64_avx_op $src:x64_avx_operand, $dst:x64_avx_operand) =>
-    let mk ← elabAvxOp op
-    let src ← elabAvxRegOrMem src
-    let dst ← elabAvxRegOrMem dst
-    mkAvxInstr (← mkAppWidth mk #[dst, src])
+    mkAvxInstr (← elabAvxInstr op src dst)
   | `(x64_instr| $op:x64_shift_op $dst:x64_operand) =>
     let mk ← elabShiftOp op
     setSuffixWidth op

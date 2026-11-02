@@ -259,7 +259,7 @@ info: [Directive.instr
 /--
 info: [Directive.instr
     (avx Width.W64 AvxWidth.W128
-      (AvxOperation.movups ↑(AvxReg.xmm RegMm.mm0)
+      (AvxOperation.mov true SimdMov.movups ↑(AvxReg.xmm RegMm.mm0)
         ↑{ base := some RegOrRip.rip, idx := none,
             disp := (↑"sym").sub ConstExpr.after_current_instruction }))] : List _root_.Directive
 -/
@@ -547,7 +547,8 @@ info: [Directive.instr
 /--
 info: [Directive.instr
     (avx Width.W64 AvxWidth.W256
-      (AvxOperation.vmovups ↑v ↑{ base := some (RegOrRip.reg Reg64.rax), idx := none }))] : List _root_.Directive
+      (AvxOperation.mov false SimdMov.movups ↑v
+        ↑{ base := some (RegOrRip.reg Reg64.rax), idx := none }))] : List _root_.Directive
 -/
 #guard_msgs in
 #check [x64| vmovups (%rax), %❰v❱ ]
@@ -575,7 +576,8 @@ variable (o : Operand .W32) (rm : RegOrMem w) (av : AvxRegOrMem .W128) (rt : Rel
 
 /--
 info: [Directive.instr
-    (avx Width.W64 AvxWidth.W128 (AvxOperation.movaps (↑(AvxReg.xmm RegMm.mm1)) av))] : List _root_.Directive
+    (avx Width.W64 AvxWidth.W128
+      (AvxOperation.mov true SimdMov.movaps (↑(AvxReg.xmm RegMm.mm1)) av))] : List _root_.Directive
 -/
 #guard_msgs in
 #check [x64| movaps ❰av❱, %xmm1 ]
